@@ -1,9 +1,11 @@
 import Foundation
 import SwiftUI
+import Combine
 import simd
 import OCCTSwift
 import OCCTSwiftViewport
 import OCCTSwiftTools
+import OCCTSwiftAIS
 
 /// Manages a loaded B-Rep `Shape`, drives the Metal viewport, and routes
 /// face-picking results back to the caller.
@@ -13,6 +15,10 @@ import OCCTSwiftTools
 /// flat-pattern outlines is staged via the `setOverlay(id:bodies:)` API; the
 /// service composites them with the model bodies and any selection highlight
 /// every time it rebuilds the viewport's body list.
+///
+/// AIS widgets (manipulator, dimensions, sub-shape selection) install against
+/// `interactiveContext`; the bodies they append are composited with the
+/// CADKit-owned bodies into a single rendered array.
 @MainActor
 @Observable
 public final class CADViewportService {
@@ -20,9 +26,19 @@ public final class CADViewportService {
     /// etc. Construct with custom configuration via `init(configuration:)`.
     public let controller: _ViewportController
 
+    /// AIS interactive context backed by this service's viewport. Use to
+    /// install `ManipulatorWidget`, add dimensions, or display extra
+    /// `InteractiveObject`s. Bodies appended via `display(_:)` /
+    /// `appendInternalBody(_:)` are composited with the CADKit-owned bodies
+    /// (model + overlays + selection highlight) and rendered through the
+    /// same array that `CADViewportView` binds to.
+    public let interactiveContext: InteractiveContext
+
     /// All bodies currently displayed in the viewport. Composed of: model
     /// bodies (from imported file) + overlay layers (caller-managed) +
-    /// selection highlight (managed internally on pick).
+    /// selection highlight (managed internally on pick) + AIS-owned bodies
+    /// (manipulator handles, displayed shapes, dimensions). Mirrors
+    /// `interactiveContext.bodies`.
     public private(set) var bodies: [_ViewportBody] = []
 
     /// The loaded OCCTSwift shape. `nil` until something is loaded.
@@ -35,6 +51,8 @@ public final class CADViewportService {
     private var metadata: [String: CADBodyMetadata] = [:]
     private var overlays: [String: [_ViewportBody]] = [:]
     private var selectionBody: _ViewportBody?
+    private var ownedBodyIDs: Set<String> = []
+    private var bodiesSubscription: AnyCancellable?
 
     public init(configuration: _ViewportConfiguration = .init(
         rotationStyle: .turntable,
@@ -45,12 +63,19 @@ public final class CADViewportService {
         showGrid: true,
         pickingConfiguration: _PickingConfiguration(isEnabled: true)
     )) {
-        self.controller = _ViewportController(configuration: configuration)
-        self.controller.onPick = { [weak self] result in
+        let controller = _ViewportController(configuration: configuration)
+        self.controller = controller
+        self.interactiveContext = InteractiveContext(viewport: controller)
+        controller.onPick = { [weak self] result in
             Task { @MainActor in
                 self?.handlePick(result)
             }
         }
+        self.bodiesSubscription = interactiveContext.$bodies
+            .receive(on: RunLoop.main)
+            .sink { [weak self] new in
+                self?.bodies = new
+            }
     }
 
     // MARK: - File Import
@@ -58,8 +83,15 @@ public final class CADViewportService {
     /// Load a CAD file (STEP/.stp, STL, BREP) from disk into the viewport.
     /// Returns the loaded `Shape`. Camera is automatically focused on the
     /// shape's bounding box.
+    ///
+    /// Pass an `ImportProgress` (e.g. `ImportProgressClosure`) to observe
+    /// STEP/IGES import progress and/or request cooperative cancellation;
+    /// cancellation surfaces as `ImportError.cancelled`.
     @discardableResult
-    public func loadFile(from url: URL) async throws -> OCCTSwift.Shape {
+    public func loadFile(
+        from url: URL,
+        progress: ImportProgress? = nil
+    ) async throws -> OCCTSwift.Shape {
         let ext = url.pathExtension.lowercased()
         let format: CADFileFormat
         switch ext {
@@ -69,7 +101,7 @@ public final class CADViewportService {
         default: throw CADViewportError.unsupportedFormat(ext)
         }
 
-        let result = try await CADFileLoader.load(from: url, format: format)
+        let result = try await CADFileLoader.load(from: url, format: format, progress: progress)
         guard let firstShape = result.shapes.first else {
             throw CADViewportError.emptyFile
         }
@@ -106,12 +138,16 @@ public final class CADViewportService {
     /// Convenience for callers that have file `Data` rather than a URL
     /// (e.g. `.fileImporter` results, drag-and-drop on iOS).
     @discardableResult
-    public func loadFromData(_ data: Data, filename: String) async throws -> OCCTSwift.Shape {
+    public func loadFromData(
+        _ data: Data,
+        filename: String,
+        progress: ImportProgress? = nil
+    ) async throws -> OCCTSwift.Shape {
         let tempDir = FileManager.default.temporaryDirectory
         let tempURL = tempDir.appendingPathComponent(filename)
         try data.write(to: tempURL)
         defer { try? FileManager.default.removeItem(at: tempURL) }
-        return try await loadFile(from: tempURL)
+        return try await loadFile(from: tempURL, progress: progress)
     }
 
     private func focusOnLoadedShape() {
@@ -286,12 +322,21 @@ public final class CADViewportService {
     // MARK: - Private
 
     private func rebuildBodies() {
-        var all: [_ViewportBody] = []
-        all.append(contentsOf: modelBodies)
+        var fresh: [_ViewportBody] = []
+        fresh.append(contentsOf: modelBodies)
         for key in overlays.keys.sorted() {
-            all.append(contentsOf: overlays[key] ?? [])
+            fresh.append(contentsOf: overlays[key] ?? [])
         }
-        if let sel = selectionBody { all.append(sel) }
-        self.bodies = all
+        if let sel = selectionBody { fresh.append(sel) }
+
+        let newIDs = Set(fresh.map { $0.id })
+        let toRemove = ownedBodyIDs.union(newIDs)
+
+        var combined = interactiveContext.bodies
+        combined.removeAll { toRemove.contains($0.id) }
+        combined.append(contentsOf: fresh)
+
+        interactiveContext.bodies = combined
+        ownedBodyIDs = newIDs
     }
 }

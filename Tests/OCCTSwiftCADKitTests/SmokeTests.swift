@@ -1,9 +1,44 @@
 import Testing
 import simd
+import OCCTSwiftViewport
 @testable import OCCTSwiftCADKit
 
 @Suite("Smoke")
 struct SmokeTests {
+    @MainActor
+    @Test("interactiveContext shares the service viewport, and CADKit/AIS bodies coexist on rebuild")
+    func interactiveContextMergeProtocol() {
+        let service = CADViewportService()
+
+        #expect(service.interactiveContext.viewport === service.controller)
+
+        let aisHandle = _ViewportBody(
+            id: "ais.handle.x",
+            vertexData: [0, 0, 0, 1, 0, 0],
+            indices: [0],
+            edges: [],
+            color: SIMD4<Float>(1, 0, 0, 1)
+        )
+        service.interactiveContext.bodies.append(aisHandle)
+
+        let stock = _ViewportBody(
+            id: "stock.box",
+            vertexData: [0, 0, 0, 0, 1, 0],
+            indices: [0],
+            edges: [],
+            color: SIMD4<Float>(0.5, 0.5, 0.5, 0.5)
+        )
+        service.setOverlay(id: "stock", bodies: [stock])
+
+        #expect(service.interactiveContext.bodies.contains { $0.id == "ais.handle.x" })
+        #expect(service.interactiveContext.bodies.contains { $0.id == "stock.box" })
+
+        service.clearOverlay(id: "stock")
+
+        #expect(service.interactiveContext.bodies.contains { $0.id == "ais.handle.x" })
+        #expect(!service.interactiveContext.bodies.contains { $0.id == "stock.box" })
+    }
+
     @Test("PickedFaceInfo round-trips through equality")
     func pickedFaceInfoEquality() {
         let bounds = FaceBounds(minX: 0, maxX: 10, minY: 0, maxY: 5)

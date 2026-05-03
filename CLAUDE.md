@@ -26,11 +26,12 @@ Targets: macOS 15+ / iOS 18+ (set by `OCCTSwiftViewport`'s Metal requirements, n
 
 ## Dependency wiring (important)
 
-`Package.swift` consumes three sibling repos as **URL-based SPM dependencies**:
+`Package.swift` consumes four sibling repos as **URL-based SPM dependencies**:
 
 - `OCCTSwift` (geometry kernel; ships a binary `OCCT.xcframework` via its own release artefact — fetched transparently)
 - `OCCTSwiftViewport` (Metal renderer)
 - `OCCTSwiftTools` (`CADFileLoader`, `CADBodyMetadata`, `BodyUtilities`, `CADFileFormat`)
+- `OCCTSwiftAIS` (`InteractiveContext`, `ManipulatorWidget`, `Dimension`, sub-shape selection — exposed via `service.interactiveContext`)
 
 `OCCTSwiftTools` used to live as a target inside `OCCTSwiftViewport`. It was split into its own repo (https://github.com/gsdali/OCCTSwiftTools) as of `OCCTSwiftViewport 0.51.0` and must now be sourced from its own package — don't try to pull the `OCCTSwiftTools` product from the Viewport package, it's no longer there.
 
@@ -44,13 +45,14 @@ URL-based deps are the preferred form. If you hit a version-resolution problem y
 
 ## Architecture in one paragraph
 
-`CADViewportService` is `@MainActor @Observable`. It composites three sources of `_ViewportBody`s into the controller's render list every time anything changes: (1) **model bodies** from the most recent `loadFile`/`loadShape`/`loadFromData`, (2) **overlay layers** added by callers via `setOverlay`, sorted alphabetically by id, (3) the **selection highlight** built from triangle-level metadata when picking succeeds. The controller's `onPick` callback resolves a `_PickResult` back to a face index using `CADBodyMetadata.faceIndices` (one entry per triangle), looks the OCCTSwift `Face` up, computes orientation/area/Z metadata, and emits a `PickedFaceInfo`.
+`CADViewportService` is `@MainActor @Observable`. It owns a `_ViewportController` and an `InteractiveContext` (shared viewport — `interactiveContext.viewport === controller`). Bodies live in `interactiveContext.bodies` (single source of truth, the array that `_MetalViewportView` actually renders); the service mirrors them into its own `bodies` for `@Observable` consumers via a Combine `$bodies` sink. The service composes four kinds of body into that single array: (1) **model bodies** from the most recent `loadFile`/`loadShape`/`loadFromData`, (2) **overlay layers** added by callers via `setOverlay`, sorted alphabetically by id, (3) the **selection highlight** built from triangle-level metadata when picking succeeds, (4) **AIS-owned bodies** appended by `interactiveContext.display(_:)` / `appendInternalBody(_:)` (manipulator handles, dimensions). On rebuild, the service tracks the set of CADKit-owned ids and only replaces those — AIS-owned bodies are left untouched. The controller's `onPick` callback resolves a `_PickResult` back to a face index using `CADBodyMetadata.faceIndices`, looks the OCCTSwift `Face` up, and emits a `PickedFaceInfo`; `InteractiveContext` separately observes `viewport.$pickResult` for AIS-side selection.
 
 ## Things to be careful about
 
 - **`PadCAMEngineOCCT` import has been removed.** The original PadCAM service exposed an `OCCTGeometrySource` from the engine package; consumers that need one should construct it themselves from `loadedShape`. Don't add `PadCAMEngine`/`PadCAMEngineOCCT` back as a dependency — that's the kind of domain leak this package exists to avoid.
 - **`generateLegacyMesh()` was dropped.** It returned a CAM-specific `GeometryModel` for the SceneKit-based `ScenePreviewView`. If a consumer needs raw triangle data, expose a generic mesh accessor — don't reintroduce CAM types.
 - **Stock display and toolpath display were dropped.** They live behind the `setOverlay(id:bodies:)` API now. Anything that's adding domain-specific methods (`setStock`, `setToolpath`, `setFlatPattern`) should be doing it in the consuming app, not here.
+- **Don't write to `service.bodies` directly.** It's `private(set)` for a reason — it's a Combine-mirrored read-only view of `interactiveContext.bodies`. Mutations go through `setOverlay`/`clearOverlay` (CADKit-owned) or through `interactiveContext.display(_:)`/`appendInternalBody(_:)` (AIS-owned). The `rebuildBodies()` merge protocol depends on each writer staying in its lane.
 
 ## Files
 

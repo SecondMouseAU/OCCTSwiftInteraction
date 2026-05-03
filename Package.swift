@@ -17,6 +17,7 @@ let package = Package(
         .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "0.169.0"),
         .package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.55.1"),
         .package(url: "https://github.com/gsdali/OCCTSwiftTools.git", from: "0.5.0"),
+        .package(url: "https://github.com/gsdali/OCCTSwiftAIS.git", from: "0.7.1"),
     ],
     targets: [
         .target(
@@ -25,6 +26,7 @@ let package = Package(
                 .product(name: "OCCTSwift", package: "OCCTSwift"),
                 .product(name: "OCCTSwiftViewport", package: "OCCTSwiftViewport"),
                 .product(name: "OCCTSwiftTools", package: "OCCTSwiftTools"),
+                .product(name: "OCCTSwiftAIS", package: "OCCTSwiftAIS"),
             ],
             path: "Sources/OCCTSwiftCADKit",
             swiftSettings: [
