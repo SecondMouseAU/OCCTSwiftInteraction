@@ -14,13 +14,9 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // Sibling path packages (consistent with how PadCAM consumes OCCTSwift /
-        // OCCTSwiftViewport / PadCAMEngine — the OCCTSwift repo ships a binary
-        // OCCT.xcframework and OCCTSwiftViewport's `OCCTSwiftTools` target is
-        // not yet published as a versioned product). Once those repos publish
-        // tagged products, swap to URL-based dependencies.
-        .package(path: "../OCCTSwift"),
-        .package(path: "../OCCTSwiftViewport"),
+        .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "0.169.0"),
+        .package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.55.1"),
+        .package(url: "https://github.com/gsdali/OCCTSwiftTools.git", from: "0.5.0"),
     ],
     targets: [
         .target(
@@ -28,7 +24,7 @@ let package = Package(
             dependencies: [
                 .product(name: "OCCTSwift", package: "OCCTSwift"),
                 .product(name: "OCCTSwiftViewport", package: "OCCTSwiftViewport"),
-                .product(name: "OCCTSwiftTools", package: "OCCTSwiftViewport"),
+                .product(name: "OCCTSwiftTools", package: "OCCTSwiftTools"),
             ],
             path: "Sources/OCCTSwiftCADKit",
             swiftSettings: [

@@ -15,16 +15,26 @@ swift build
 swift test
 ```
 
-Targets: macOS 15+ / iOS 18+ (set by `OCCTSwiftViewport`'s Metal requirements, not by anything here).
+Tests use Swift Testing (`@Suite` / `@Test`). Filter to a suite or single test with:
+
+```bash
+swift test --filter SmokeTests
+swift test --filter SmokeTests.pickedFaceInfoEquality
+```
+
+Targets: macOS 15+ / iOS 18+ (set by `OCCTSwiftViewport`'s Metal requirements, not by anything here). Both targets are pinned to `.swiftLanguageMode(.v6)` in `Package.swift` — that's why `CADViewportService` is `@MainActor`-isolated and the public value types are `Sendable`. Don't relax this when adding new targets.
 
 ## Dependency wiring (important)
 
-`Package.swift` consumes `OCCTSwift` and `OCCTSwiftViewport` via **sibling path packages** (`../OCCTSwift`, `../OCCTSwiftViewport`). Reasons:
+`Package.swift` consumes three sibling repos as **URL-based SPM dependencies**:
 
-1. `OCCTSwift` ships a binary `OCCT.xcframework` that SPM can't fetch from a private GitHub release without auth gymnastics — every consumer in this constellation (PadCAM, UnfoldEngine, this package) uses path-package mode.
-2. `OCCTSwiftTools` (which provides `CADFileLoader`, `CADBodyMetadata`, `BodyUtilities`, `CADFileFormat`) is a target inside the `OCCTSwiftViewport` package. It is **not yet exported as a product on any published tag** — only the `main` branch of `OCCTSwiftViewport` exposes it as `.library(name: "OCCTSwiftTools", ...)`. Until OCCTSwiftViewport cuts a release that publishes that product, path-package consumption is the only option.
+- `OCCTSwift` (geometry kernel; ships a binary `OCCT.xcframework` via its own release artefact — fetched transparently)
+- `OCCTSwiftViewport` (Metal renderer)
+- `OCCTSwiftTools` (`CADFileLoader`, `CADBodyMetadata`, `BodyUtilities`, `CADFileFormat`)
 
-Switching to URL-based dependencies is the obvious cleanup once those upstream constraints lift. Don't do it preemptively — verify the published tag actually exports `OCCTSwiftTools` before changing `Package.swift`.
+`OCCTSwiftTools` used to live as a target inside `OCCTSwiftViewport`. It was split into its own repo (https://github.com/gsdali/OCCTSwiftTools) as of `OCCTSwiftViewport 0.51.0` and must now be sourced from its own package — don't try to pull the `OCCTSwiftTools` product from the Viewport package, it's no longer there.
+
+URL-based deps are the preferred form. If you hit a version-resolution problem you need to debug locally, you can temporarily point `Package.swift` at sibling working trees (`.package(path: "../OCCTSwiftTools")` etc.) — but commits should always land with URL-based deps.
 
 ## API design rules
 
@@ -44,8 +54,8 @@ Switching to URL-based dependencies is the obvious cleanup once those upstream c
 
 ## Files
 
-- `Sources/OCCTSwiftCADKit/CADViewportService.swift` — the service (one file, ~280 lines)
+- `Sources/OCCTSwiftCADKit/CADViewportService.swift` — the service (one file, ~300 lines)
 - `Sources/OCCTSwiftCADKit/CADViewportView.swift` — SwiftUI wrapper
-- `Sources/OCCTSwiftCADKit/PickedFaceInfo.swift` — picking result types
+- `Sources/OCCTSwiftCADKit/PickedFaceInfo.swift` — `PickedFaceInfo` and `FaceBounds` (the local face-bounds type that replaced PadCAM's `DetectedSurface.SurfaceBounds` — keep it here)
 - `Sources/OCCTSwiftCADKit/CADViewportError.swift` — error type
 - `Tests/OCCTSwiftCADKitTests/SmokeTests.swift` — value-type smoke tests (no viewport I/O)
