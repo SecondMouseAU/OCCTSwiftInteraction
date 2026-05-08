@@ -14,10 +14,10 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "0.169.0"),
+        .package(url: "https://github.com/gsdali/OCCTSwift.git", from: "1.0.1"),
         .package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.55.1"),
-        .package(url: "https://github.com/gsdali/OCCTSwiftTools.git", from: "0.6.0"),
-        .package(url: "https://github.com/gsdali/OCCTSwiftAIS.git", from: "0.7.1"),
+        .package(url: "https://github.com/gsdali/OCCTSwiftTools.git", from: "1.0.0"),
+        .package(url: "https://github.com/gsdali/OCCTSwiftAIS.git", from: "1.0.0"),
     ],
     targets: [
         .target(
