@@ -1,0 +1,10 @@
+okf_version: 1
+repo: OCCTSwiftCADKit
+cluster: kernel
+visibility: private
+status: active
+language: Swift
+summary: Shared SwiftUI Metal CAD viewport with STEP/STL/BREP import and face picking for OCCT-based apps.
+products: []
+depends_on: [OCCTSwift, OCCTSwiftViewport, OCCTSwiftTools, OCCTSwiftAIS]
+maintainer: gsdali
