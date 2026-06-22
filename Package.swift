@@ -11,7 +11,7 @@ func occtDep(_ name: String, from version: String) -> Package.Dependency {
     if FileManager.default.fileExists(atPath: manifestDir + "/../\(name)/Package.swift") {
         return .package(path: "../\(name)")
     }
-    return .package(url: "https://github.com/gsdali/\(name).git", from: Version(version)!)
+    return .package(url: "https://github.com/SecondMouseAU/\(name).git", from: Version(version)!)
 }
 
 let package = Package(
