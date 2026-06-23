@@ -1,0 +1,19 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "OCCTSwiftCADKit",
+  "description": "Shared SwiftUI Metal CAD viewport for OCCTSwift apps: import STEP/STL/BREP, render, pick faces, and composite caller overlays. iOS 18+/macOS 15+.",
+  "folders": ["docs", "Sources/OCCTSwiftCADKit"],
+  "excludeFolders": ["Tests", ".build", "okf", "Examples"],
+  "rules": [
+    "Import with `import OCCTSwiftCADKit`. Public surface: CADViewportService, CADViewportView, PickedFaceInfo, FaceBounds, CADViewportError. Requires iOS 18+/macOS 15+ for Metal.",
+    "CADViewportService is an @Observable @MainActor final class. Create with `CADViewportService()` (default config enables face picking) or `init(configuration:)` passing a _ViewportConfiguration.",
+    "Import geometry with `loadFile(from:progress:)` (async throws). Extension picks the format: .step/.stp, .stl, .brep; the camera auto-focuses on the shape's bounds.",
+    "Use `loadFromData(_:filename:progress:)` for .fileImporter/drag-drop Data, and `loadShape(_:id:)` to display an in-memory OCCTSwift.Shape without the file loader.",
+    "Import throws CADViewportError: .unsupportedFormat(ext), .emptyFile, .loadFailed(msg). It is a LocalizedError, so read errorDescription for a user-facing message.",
+    "Embed CADViewportView(bodies:controller:selectedFace:onClearSelection:), passing service.bodies, service.controller, service.selectedFace, and { service.clearSelection() }.",
+    "Face picking is on by default. On a pick the service sets selectedFace (PickedFaceInfo?); read it (the service is @Observable) and call clearSelection() to reset.",
+    "PickedFaceInfo has faceIndex (0-based index into loadedShape.faces()), bodyID, isHorizontal, isVertical, bounds (FaceBounds), zLevel, area, and description.",
+    "Stage caller geometry (stock, toolpaths, outlines) via setOverlay(id:bodies:), clearOverlay(id:), clearAllOverlays(); overlays composite in ascending id order with model + selection.",
+    "Install AIS widgets (ManipulatorWidget, dimensions, extra InteractiveObjects) on service.interactiveContext; their bodies composite into service.bodies alongside CADKit-owned bodies."
+  ]
+}
