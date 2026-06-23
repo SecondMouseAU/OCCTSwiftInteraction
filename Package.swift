@@ -28,7 +28,7 @@ let package = Package(
     ],
     dependencies: [
         occtDep("OCCTSwift", from: "1.0.1"),
-        occtDep("OCCTSwiftViewport", from: "0.55.1"),
+        occtDep("OCCTSwiftViewport", from: "1.1.22"),
         occtDep("OCCTSwiftTools", from: "1.0.0"),
         occtDep("OCCTSwiftAIS", from: "1.0.0"),
     ],
