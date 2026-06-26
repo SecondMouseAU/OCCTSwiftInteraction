@@ -71,6 +71,76 @@ struct CADFileLoaderTests {
         #expect(CADFileFormat(fileExtension: "IGS") == .iges)
     }
 
+    // MARK: - Direct-mesh bridge (Option A): directMesh: true forwards OCCT's triangulation
+
+    @Test func t_directMeshBridgeMatchesInterleavedGeometry() {
+        guard let box = Shape.box(width: 10, height: 5, depth: 3) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let color = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
+        let (interleavedOpt, _) = CADFileLoader.shapeToBodyAndMetadata(box, id: "box", color: color)
+        let (directOpt, directMeta) = CADFileLoader.shapeToBodyAndMetadata(
+            box, id: "box", color: color, directMesh: true
+        )
+        guard let interleaved = interleavedOpt, let direct = directOpt, let directMeta else {
+            Issue.record("conversion returned nil")
+            return
+        }
+
+        // The direct body carries de-interleaved mesh buffers, not stride-6 vertexData.
+        #expect(direct.usesDirectMesh, "directMesh:true should produce a usesDirectMesh body")
+        #expect(direct.vertexData.isEmpty, "direct body carries no interleaved vertexData")
+        #expect(!direct.meshPositions.isEmpty)
+        #expect(direct.meshNormals.count == direct.meshPositions.count, "one normal per position")
+
+        // Same topology as the interleaved body.
+        #expect(direct.indices == interleaved.indices, "indices unchanged by the direct path")
+        #expect(direct.faceIndices == interleaved.faceIndices, "per-triangle face ids unchanged")
+        #expect(directMeta.faceIndices == direct.faceIndices, "metadata mirrors body face ids")
+
+        // Same vertex COUNT: interleaved stride-6 → direct stride-3 positions.
+        #expect(direct.meshPositions.count == interleaved.vertexData.count / 2,
+                "de-interleaved positions = half the interleaved float count")
+
+        // Same POSITIONS: the direct path forwards the exact mesh positions (normals differ
+        // because the interleaved path runs NormalSmoothing, which the direct path skips).
+        var maxPosDelta: Float = 0
+        let n = direct.meshPositions.count
+        var i = 0
+        while i + 2 < n {
+            let vi = i / 3
+            maxPosDelta = max(maxPosDelta, abs(direct.meshPositions[i]     - interleaved.vertexData[vi * 6]))
+            maxPosDelta = max(maxPosDelta, abs(direct.meshPositions[i + 1] - interleaved.vertexData[vi * 6 + 1]))
+            maxPosDelta = max(maxPosDelta, abs(direct.meshPositions[i + 2] - interleaved.vertexData[vi * 6 + 2]))
+            i += 3
+        }
+        #expect(maxPosDelta == 0, "direct positions must be byte-identical to the interleaved positions, got \(maxPosDelta)")
+
+        // The direct body is still bbox/raycast-ready (derived mesh vertices), and the
+        // metadata still exposes the full pick vertices for app-side picking.
+        #expect(direct.boundingBox != nil, "direct body should produce a bounding box")
+        #expect(!directMeta.vertices.isEmpty, "metadata retains B-Rep pick vertices")
+    }
+
+    @Test func t_directMeshBridgeDefaultsToInterleaved() {
+        guard let box = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let (body, _) = CADFileLoader.shapeToBodyAndMetadata(
+            box, id: "box", color: SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
+        )
+        guard let body else {
+            Issue.record("conversion returned nil")
+            return
+        }
+        // Default (directMesh omitted) is unchanged — interleaved stride-6, not direct.
+        #expect(!body.usesDirectMesh, "default path must remain interleaved")
+        #expect(!body.vertexData.isEmpty)
+        #expect(body.vertexData.count % 6 == 0)
+    }
+
     // MARK: - v0.4.1: ViewportBody.edgeIndices / vertices for AIS edge+vertex picking
 
     @Test func t_boxBodyHasEdgePickData() {

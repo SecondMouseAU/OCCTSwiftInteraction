@@ -211,6 +211,19 @@ public enum CADFileLoader {
     /// - Parameter includeMeasurements: If true, populates `metadata.measurements`
     ///   with per-face areas and per-edge lengths (via `Shape.measure`). Off by
     ///   default — face-area iteration is O(faces) and not free for large assemblies.
+    /// - Parameter directMesh: If true, hand OCCT's de-interleaved triangulation
+    ///   (`mesh.vertexData` / `mesh.normalData`) straight to the renderer via
+    ///   `ViewportBody.directMesh(...)`, skipping the per-vertex interleave loop, the
+    ///   `NormalSmoothing` pass, and the extra resident CPU copy. A load-time / memory
+    ///   win for large or many-body scenes; the rendered result is the same (OCCT's
+    ///   per-vertex normals from a fine B-Rep mesh are already analytic-quality — see
+    ///   OCCTSwiftViewport v1.1.22 / #81, where skipping NormalSmoothing is the intended
+    ///   behaviour). **Caveat:** a direct body carries the mesh vertices (for bbox / fit /
+    ///   CPU raycast) but not the B-Rep corner vertex-pick data or per-segment edge-pick
+    ///   indices, so face display, face GPU-pick, CPU raycast and edge *display* work, but
+    ///   B-Rep vertex-picking and edge-index picking on the body itself do not. The
+    ///   returned `metadata` still carries the full pick vertices / face indices, so an app
+    ///   can drive those itself. Off by default (source/behaviour-compatible).
     public static func shapeToBodyAndMetadata(
         _ shape: Shape,
         id bodyID: String,
@@ -220,7 +233,8 @@ public enum CADFileLoader {
         gpuTessellation: Bool = false,
         edgeDeflection: Double = defaultEdgeDeflection,
         maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
-        includeMeasurements: Bool = false
+        includeMeasurements: Bool = false,
+        directMesh useDirectMesh: Bool = false
     ) -> (ViewportBody?, CADBodyMetadata?) {
         let measurements: ShapeMeasurements? = includeMeasurements ? shape.measure() : nil
         let mesh: Mesh?
@@ -261,17 +275,6 @@ public enum CADFileLoader {
             return (nil, nil)
         }
 
-        let vertexCount = mesh.vertexCount
-        var vertexData: [Float] = []
-        vertexData.reserveCapacity(vertexCount * 6)
-        let positions = mesh.vertices
-        let normals = mesh.normals
-        for i in 0..<vertexCount {
-            let p = positions[i]
-            let n = normals[i]
-            vertexData.append(contentsOf: [p.x, p.y, p.z, n.x, n.y, n.z])
-        }
-
         let triangles = mesh.trianglesWithFaces()
         var faceIndices: [Int32] = []
         faceIndices.reserveCapacity(triangles.count)
@@ -281,9 +284,6 @@ public enum CADFileLoader {
 
         let indices = mesh.indices
 
-        // Apply crease-aware normal smoothing for smooth curved surfaces
-        NormalSmoothing.smoothNormals(vertexData: &vertexData, indices: indices)
-
         let edgePolylines = extractEdgePolylines(
             from: shape, deflection: edgeDeflection, maxPointsPerEdge: maxPointsPerEdge
         )
@@ -291,14 +291,44 @@ public enum CADFileLoader {
         let pickVerts = sourceShapeVertexPickData(from: shape)
         let edgeIndices = flattenEdgeIndices(edgePolylines)
 
-        let body = ViewportBody(
-            id: bodyID, vertexData: vertexData, indices: indices,
-            edges: edges, faceIndices: faceIndices,
-            edgeIndices: edgeIndices,
-            vertices: pickVerts.positions,
-            vertexIndices: pickVerts.indices,
-            color: rgba
-        )
+        let body: ViewportBody
+        if useDirectMesh {
+            // Direct path (Option A): forward OCCT's de-interleaved triangulation untouched —
+            // no interleave loop, no NormalSmoothing, no second CPU copy. `vertexData` /
+            // `normalData` are single contiguous-Float copies straight from the kernel.
+            body = ViewportBody.directMesh(
+                id: bodyID,
+                positions: mesh.vertexData,
+                normals: mesh.normalData,
+                indices: indices,
+                color: rgba,
+                faceIndices: faceIndices,
+                edges: edges
+            )
+        } else {
+            // Interleaved path: repack into stride-6 [px,py,pz,nx,ny,nz] and crease-smooth.
+            let vertexCount = mesh.vertexCount
+            var vertexData: [Float] = []
+            vertexData.reserveCapacity(vertexCount * 6)
+            let positions = mesh.vertices
+            let normals = mesh.normals
+            for i in 0..<vertexCount {
+                let p = positions[i]
+                let n = normals[i]
+                vertexData.append(contentsOf: [p.x, p.y, p.z, n.x, n.y, n.z])
+            }
+            // Apply crease-aware normal smoothing for smooth curved surfaces
+            NormalSmoothing.smoothNormals(vertexData: &vertexData, indices: indices)
+
+            body = ViewportBody(
+                id: bodyID, vertexData: vertexData, indices: indices,
+                edges: edges, faceIndices: faceIndices,
+                edgeIndices: edgeIndices,
+                vertices: pickVerts.positions,
+                vertexIndices: pickVerts.indices,
+                color: rgba
+            )
+        }
         let meta = CADBodyMetadata(
             faceIndices: faceIndices, edgePolylines: edgePolylines,
             vertices: pickVerts.positions,
