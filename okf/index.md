@@ -27,3 +27,8 @@ See [`components/`](components/index.md) for the public surface.
 ## References
 
 See [`references/`](references/index.md) for sibling repos and upstream links.
+
+## Policies
+
+- [Query `context` first for OCCT / OCCTSwift docs](policies/context-first.md)
+- [Documentation updates are mandatory](policies/docs-current.md)
