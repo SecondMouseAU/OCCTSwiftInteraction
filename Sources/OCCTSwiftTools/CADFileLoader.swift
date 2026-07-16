@@ -369,19 +369,21 @@ public enum CADFileLoader {
         deflection: Double = defaultEdgeDeflection,
         maxPointsPerEdge: Int = defaultMaxPointsPerEdge
     ) -> [(edgeIndex: Int, points: [SIMD3<Float>])] {
-        let count = shape.edgeCount
+        // One bulk bridge pass (OCCTSwift ≥1.10.0). Looping `edgePolyline(at:)` rebuilds
+        // the shape's full edge map per call — O(edges²), 20s at 12k edges and the reason
+        // mesh-scale imports hung every shapeToBodyAndMetadata consumer (OCCTSwift#275,
+        // OCCTMCP#75). The INDEXED variant is required here, not `allEdgePolylines`:
+        // `edgeIndex` feeds `ViewportBody.edgeIndices` pick identity, and the dense
+        // variant's positions drift off the `edge(at:)` index space at the first
+        // skipped (degenerate/failed) edge.
         var result: [(edgeIndex: Int, points: [SIMD3<Float>])] = []
-        result.reserveCapacity(count)
-
-        for i in 0..<count {
-            guard let polyline = shape.edgePolyline(
-                at: i, deflection: deflection, maxPoints: maxPointsPerEdge
-            ) else { continue }
+        for (edgeIndex, polyline) in shape.allEdgePolylinesIndexed(
+            deflection: deflection, maxPointsPerEdge: maxPointsPerEdge
+        ) {
             let floatPoints = polyline.map { SIMD3<Float>(Float($0.x), Float($0.y), Float($0.z)) }
             guard floatPoints.count >= 2 else { continue }
-            result.append((edgeIndex: i, points: floatPoints))
+            result.append((edgeIndex: edgeIndex, points: floatPoints))
         }
-
         return result
     }
 
