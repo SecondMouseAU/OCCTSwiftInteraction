@@ -36,7 +36,7 @@ let package = Package(
     ],
     dependencies: [
         occtDep("OCCTSwift", from: "1.7.1"),
-        occtDep("OCCTSwiftViewport", from: "1.1.20"),
+        occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.0.1"),
     ],
     targets: [
