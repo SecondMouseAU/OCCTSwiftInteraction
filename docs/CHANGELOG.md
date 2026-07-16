@@ -2,6 +2,22 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.3.0 — 2026-07-16
+
+Adopts the OCCTSwiftViewport direct-mesh render path, closing [#31](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/31).
+
+`CADFileLoader.shapeToBodyAndMetadata` walked every vertex to interleave OCCT's separate position/normal arrays into `ViewportBody.vertexData`, then ran `NormalSmoothing` over the result — an extra full pass and CPU copy, re-deriving normals that OCCT's `Poly_Triangulation` already computes correctly.
+
+New parameter (default preserves historical behaviour exactly):
+
+- `shapeToBodyAndMetadata(..., directMesh: Bool = false)` — when true, forwards `mesh.vertexData` / `mesh.normalData` straight into `ViewportBody.directMesh(...)` (Viewport v1.1.23), skipping the interleave loop, `NormalSmoothing`, and the extra resident copy. A load-time / memory win for large or many-body scenes; rendered result is the same, since OCCT's per-vertex normals from a fine B-Rep mesh are already analytic-quality.
+
+**Caveat:** a direct body carries the mesh vertices (bbox / fit / CPU raycast) but not the B-Rep corner vertex-pick data or per-segment edge-pick indices — face display, face GPU-pick, CPU raycast and edge *display* all work; B-Rep vertex-picking and edge-index picking on the body itself do not. `metadata` still carries the full pick vertices / face indices for app-side use.
+
+Bumped to **MINOR** per the cohort SemVer policy: new opt-in functionality, no behaviour change for existing callers.
+
+**Dep bump:** `OCCTSwiftViewport from: "1.1.20"` → `from: "1.1.23"`. Required for `ViewportBody.directMesh(...)`.
+
 ## v1.2.0 — 2026-06-21
 
 Wireframe edge polyline extraction is now **tunable**, closing [#24](https://github.com/gsdali/OCCTSwiftTools/issues/24).
