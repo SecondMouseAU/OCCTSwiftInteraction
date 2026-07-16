@@ -172,6 +172,37 @@ struct CADFileLoaderTests {
         }
     }
 
+    // Since v1.3.1, edge polylines come from the bulk allEdgePolylinesIndexed
+    // pass (OCCTSwift#275) instead of a per-index loop. A sphere has degenerate
+    // pole edges the discretizer skips — the surviving polylines must still
+    // carry their ORIGINAL edge(at:) indices, matching the per-index accessor
+    // point-for-point, or edge picking silently mis-maps from the first skip.
+    @Test func t_edgePolylineIndicesSurviveDegenerateSkips() {
+        guard let sphere = Shape.sphere(radius: 5) else {
+            Issue.record("Shape.sphere returned nil")
+            return
+        }
+        let (_, meta) = CADFileLoader.shapeToBodyAndMetadata(
+            sphere, id: "sphere", color: SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
+        )
+        guard let meta else {
+            Issue.record("sphere conversion produced no metadata")
+            return
+        }
+        #expect(meta.edgePolylines.count < sphere.edgeCount,
+                "sphere fixture no longer skips a degenerate edge — pick a new fixture")
+        for (edgeIndex, points) in meta.edgePolylines {
+            let single = sphere.edgePolyline(
+                at: edgeIndex,
+                deflection: CADFileLoader.defaultEdgeDeflection,
+                maxPoints: CADFileLoader.defaultMaxPointsPerEdge
+            )
+            #expect(single != nil, "edge \(edgeIndex) not resolvable per-index")
+            #expect(single?.count == points.count,
+                    "edge \(edgeIndex) point count drifted between bulk and per-index paths")
+        }
+    }
+
     @Test func t_boxBodyVerticesAreSourceShapeIndexed() {
         // v0.5.0 (closes #10): body.vertices and body.vertexIndices follow
         // the source-shape convention so AIS can round-trip a picked

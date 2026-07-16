@@ -35,7 +35,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.7.1"),
+        occtDep("OCCTSwift", from: "1.10.0"),  // ≥1.10.0: allEdgePolylinesIndexed (bulk O(edges) wireframe with pick identity, #275)
         occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.0.1"),
     ],

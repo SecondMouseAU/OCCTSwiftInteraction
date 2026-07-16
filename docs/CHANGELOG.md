@@ -2,6 +2,18 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.3.1 — 2026-07-16
+
+Wireframe edge extraction is now **O(edges), not O(edges²)** — the Tools half of [OCCTSwift#275](https://github.com/SecondMouseAU/OCCTSwift/issues/275).
+
+`extractEdgePolylines` (inside every `shapeToBodyAndMetadata` call) looped `Shape.edgePolyline(at:)`, and each of those bridge calls rebuilt the shape's full edge map — measured 0.11s @ 800 edges, 1.29s @ 3.1k, 20.3s @ 12k, extrapolating to ~84 hours at the ~1.3M edges of a 442k-triangle STL import (one face per facet). This quadratic is what hung OCCTMCP's `render_preview` / `pick_surface_point` / `overlay_render` on mesh-scale scans ([OCCTMCP#75](https://github.com/SecondMouseAU/OCCTMCP/issues/75)).
+
+Now a single bulk pass via `Shape.allEdgePolylinesIndexed` (OCCTSwift v1.10.0). The **indexed** variant, not the dense `allEdgePolylines`: `edgeIndex` feeds `ViewportBody.edgeIndices` pick identity, and the dense variant's positions drift off the `edge(at:)` index space at the first skipped (degenerate/failed) edge. Output — polylines, indices, ordering, skip behaviour — is unchanged.
+
+No API change; PATCH per the cohort SemVer policy.
+
+**Dep bump:** `OCCTSwift from: "1.7.1"` → `from: "1.10.0"`. Required for `allEdgePolylinesIndexed`.
+
 ## v1.3.0 — 2026-07-16
 
 Adopts the OCCTSwiftViewport direct-mesh render path, closing [#31](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/31).
