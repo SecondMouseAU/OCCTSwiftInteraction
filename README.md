@@ -1,6 +1,6 @@
 # OCCTSwiftCADKit
 
-SwiftUI Metal viewport + CAD file import (STEP/STL/BREP) + face picking, for apps built on [OCCTSwift](https://github.com/gsdali/OCCTSwift) and [OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport).
+SwiftUI Metal viewport + CAD file import (STEP/STL/BREP) + face picking, for apps built on [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) and [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport).
 
 Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-based apps (PadCAM, an UnfoldEngine test app, etc.) can share the same viewport plumbing without forking it.
 
@@ -48,8 +48,8 @@ Overlays composite in alphabetical order of their `id` (so use `0_stock`, `1_too
 
 ## Dependencies
 
-- [OCCTSwift](https://github.com/gsdali/OCCTSwift) — geometry kernel
-- [OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport) — Metal renderer (`OCCTSwiftViewport`) and file/body utilities (`OCCTSwiftTools`)
+- [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) — geometry kernel
+- [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) — Metal renderer (`OCCTSwiftViewport`) and file/body utilities (`OCCTSwiftTools`)
 
 Currently consumed via sibling path packages (matching the PadCAM convention) — see `Package.swift`. Once `OCCTSwiftViewport` publishes a release tag that exports the `OCCTSwiftTools` product, this will switch to URL-based dependencies.
 
