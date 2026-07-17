@@ -116,8 +116,10 @@ public enum CADFileLoader {
             }
         }
 
-        // Single-shape STL/IGES fallback path: re-load via the robust loader
-        // and bridge again. Both formats currently produce a single shape.
+        // STL/IGES fallback path: re-load via the robust loader and bridge again.
+        // Since OCCTSwift v1.11.3 a multibody STL comes back as a compound of
+        // solids (OCCTSwift#302), so this is no longer single-shape — the reload
+        // splits it into one ViewportBody per body.
         if needsRobustReload {
             return reloadRobustAndBridge(idPrefix: idPrefix, url: url, format: format, progress: progress)
         }
@@ -141,10 +143,10 @@ public enum CADFileLoader {
             switch format {
             case .stl:
                 let robust = try Shape.loadSTLRobust(from: url)
-                ioRobust = ShapeLoadResult(shapesWithColors: [(shape: robust, color: nil)])
+                ioRobust = ShapeLoadResult(shapesWithColors: bodyEntries(from: robust))
             case .iges:
                 let robust = try Shape.loadIGESRobust(from: url, progress: progress)
-                ioRobust = ShapeLoadResult(shapesWithColors: [(shape: robust, color: nil)])
+                ioRobust = ShapeLoadResult(shapesWithColors: bodyEntries(from: robust))
             default:
                 return CADLoadResult()
             }
@@ -168,6 +170,23 @@ public enum CADFileLoader {
         } catch {
             return CADLoadResult()
         }
+    }
+
+    /// One `shapesWithColors` entry per body, so a multibody robust reload becomes
+    /// one `ViewportBody` per body rather than a single lumped one.
+    ///
+    /// Mirrors `OCCTSwiftIO.ShapeLoader`'s own split — this path calls
+    /// `Shape.loadSTLRobust` directly (it is sync, `ShapeLoader.loadRobust` is
+    /// async), so it needs the same handling rather than inheriting it. A `.solid`
+    /// stays one entry; a compound splits into its solids; a result with no solids
+    /// stays the whole shape. Robust reloads carry no colour.
+    ///
+    /// Internal rather than private so it can be unit-tested directly: the
+    /// robust-reload path that uses it only fires when the primary mesh bridge
+    /// fails, which is not deterministically reproducible in a test.
+    static func bodyEntries(from shape: Shape) -> [(shape: Shape, color: SIMD4<Float>?)] {
+        let bodies = shape.shapeType == .solid ? [shape] : shape.subShapes(ofType: .solid)
+        return (bodies.isEmpty ? [shape] : bodies).map { (shape: $0, color: nil) }
     }
 
     // MARK: - Mesh parameter presets

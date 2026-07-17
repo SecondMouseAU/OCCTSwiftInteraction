@@ -27,6 +27,14 @@ IGES loads that fail the primary bridge are transparently re-loaded via the
 robust sewing/healing variants (`Shape.loadSTLRobust` / `Shape.loadIGESRobust`);
 STEP / OBJ / BREP have no fallback.
 
+When the robust reload returns a multibody result — since OCCTSwift v1.11.3 a
+sewn multibody STL comes back as a compound of solids
+([OCCTSwift#302](https://github.com/SecondMouseAU/OCCTSwift/issues/302)) — it is
+split into **one `ViewportBody` per body** rather than one lumped body, matching
+the STEP path. Note the *primary* STL path meshes loose faces as a single body:
+per-body identity for a mesh file only arises once sewing has recovered solids,
+i.e. on the robust reload.
+
 ```swift
 public static func load(
     from url: URL,

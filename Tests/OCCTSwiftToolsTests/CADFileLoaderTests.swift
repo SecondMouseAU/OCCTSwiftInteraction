@@ -313,4 +313,43 @@ struct CADFileLoaderTests {
         }
         #expect(Self.totalEdgePoints(implicit) == Self.totalEdgePoints(explicit))
     }
+
+    // MARK: - #36: robust reload splits a multibody compound into per-body entries
+
+    // The robust-reload fallback (loadSTLRobust called directly) previously wrapped
+    // its whole result in one entry, so a multibody compound of solids collapsed to
+    // one ViewportBody. bodyEntries is the split it now applies. Tested directly
+    // because the fallback only fires on primary-bridge failure, which isn't
+    // deterministically reproducible.
+    @Test func t_bodyEntriesSplitsCompoundOfSolids() {
+        let a = Shape.box(origin: SIMD3<Double>(0, 0, 0), width: 1, height: 1, depth: 1)
+        let b = Shape.box(origin: SIMD3<Double>(5, 0, 0), width: 1, height: 1, depth: 1)
+        guard let a, let b, let compound = Shape.compound([a, b]) else {
+            Issue.record("failed to build two-body compound"); return
+        }
+        let entries = CADFileLoader.bodyEntries(from: compound)
+        #expect(entries.count == 2, "compound of two solids should split into two entries, got \(entries.count)")
+        #expect(entries.allSatisfy { $0.shape.shapeType == .solid }, "each entry should be a solid")
+        #expect(entries.allSatisfy { $0.color == nil }, "robust reloads carry no colour")
+    }
+
+    @Test func t_bodyEntriesKeepsSingleSolidAsOneEntry() {
+        guard let box = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil"); return
+        }
+        let entries = CADFileLoader.bodyEntries(from: box)
+        #expect(entries.count == 1, "a single solid stays one entry, got \(entries.count)")
+    }
+
+    @Test func t_bodyEntriesFallsBackWhenNoSolids() {
+        // A raw-mesh STL loads as loose faces (no solids). The split must not drop
+        // it to zero entries — it returns the whole shape as one.
+        guard let box = Shape.box(width: 2, height: 2, depth: 2),
+              let faces = Shape.compound(box.subShapes(ofType: .face)) else {
+            Issue.record("failed to build faces-only compound"); return
+        }
+        #expect(faces.subShapes(ofType: .solid).isEmpty, "precondition: no solids")
+        let entries = CADFileLoader.bodyEntries(from: faces)
+        #expect(entries.count == 1, "no-solids shape stays one entry, never zero, got \(entries.count)")
+    }
 }

@@ -2,6 +2,18 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.4.0 — 2026-07-18
+
+**The robust STL/IGES reload splits a multibody file into one `ViewportBody` per body.** Closes [#36](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/36).
+
+OCCTSwift v1.11.3 ([OCCTSwift#302](https://github.com/SecondMouseAU/OCCTSwift/issues/302)) changed the robust importers to return a **compound of solids** for a multibody file, where before they silently dropped all but the first body. The robust-reload fallback in `CADFileLoader` (which calls `Shape.loadSTLRobust` / `loadIGESRobust` directly, bypassing `OCCTSwiftIO.ShapeLoader`) wrapped that whole compound in a single `shapesWithColors` entry, so it meshed as **one** `ViewportBody` — one selectable unit, one colour, one metadata blob for the entire multibody model.
+
+**Change:** the reload now splits a compound into one entry per solid (`.solid` → one; no-solids result → the whole shape, never zero), so each body becomes its own `ViewportBody`. This mirrors the split `OCCTSwiftIO.ShapeLoader` gained in v1.7.0 for its own primary path — the reload needs its own copy because it calls the loader directly and is synchronous, where `ShapeLoader.loadRobust` is async.
+
+**Scope note:** this covers the robust-reload path, which fires when the *primary* mesh bridge fails. A well-formed multibody STL loads through the primary path as loose faces and still meshes as one body — per-body identity for a mesh file only exists once sewing has recovered solids, which is the robust path. Splitting a valid raw mesh into components is connected-component analysis, a separate feature.
+
+Pins bumped: OCCTSwift `1.11.3` (the reload has nothing to split without #302), OCCTSwiftIO `1.7.0` (so the primary path splits too).
+
 ## v1.3.1 — 2026-07-16
 
 Wireframe edge extraction is now **O(edges), not O(edges²)** — the Tools half of [OCCTSwift#275](https://github.com/SecondMouseAU/OCCTSwift/issues/275).
