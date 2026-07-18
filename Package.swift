@@ -35,7 +35,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.11.3"),   // ≥1.11.3: robust importers split multibody files (#302); allEdgePolylinesIndexed since 1.10.0 (#275)
+        occtDep("OCCTSwift", from: "1.12.3"),   // ≥1.12.3: thread-safe 3D fillet/chamfer (#298); multibody importers (#302); allEdgePolylinesIndexed (#275)
         occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.7.0"),  // ≥1.7.0: ShapeLoader splits multibody into per-body entries (#21)
     ],

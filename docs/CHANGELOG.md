@@ -2,6 +2,10 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.4.1 — 2026-07-18
+
+**Repin OCCTSwift floor to 1.12.3.** OCCTSwift v1.12.3 carries OCCT kernel patch 0003, making 3D fillet/chamfer reentrant across threads ([OCCTSwift#298](https://github.com/SecondMouseAU/OCCTSwift/issues/298) / upstream [OCCT#1374](https://github.com/Open-Cascade-SAS/OCCT/pull/1374)) — concurrent fillet builds no longer corrupt each other into wrong-but-plausible solids. Ecosystem-wide floor bump; no API or behaviour change.
+
 ## v1.4.0 — 2026-07-18
 
 **The robust STL/IGES reload splits a multibody file into one `ViewportBody` per body.** Closes [#36](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/36).
