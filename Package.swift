@@ -27,7 +27,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.12.3"),   // ≥1.12.3: thread-safe 3D fillet/chamfer (#298, kernel patch 0003)
+        occtDep("OCCTSwift", from: "1.12.6"),   // ≥1.12.6: kernel fixes — thread-safe fillet (#298) + free-bounds crash (#310)
         occtDep("OCCTSwiftViewport", from: "1.1.22"),
         occtDep("OCCTSwiftTools", from: "1.0.0"),
         occtDep("OCCTSwiftAIS", from: "1.0.0"),
