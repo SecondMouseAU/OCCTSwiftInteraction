@@ -35,7 +35,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.12.6"),   // ≥1.12.6: kernel fixes — thread-safe fillet (#298) + free-bounds crash (#310)
+        occtDep("OCCTSwift", from: "1.12.7"),   // ≥1.12.7: kernel crash fixes (fillet #298, free-bounds #310, ShapeFix_Face null-context #317)
         occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.7.0"),  // ≥1.7.0: ShapeLoader splits multibody into per-body entries (#21)
     ],
