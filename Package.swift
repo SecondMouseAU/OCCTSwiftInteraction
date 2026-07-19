@@ -35,7 +35,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.12.3"),   // ≥1.12.3: thread-safe 3D fillet/chamfer (#298); multibody importers (#302); allEdgePolylinesIndexed (#275)
+        occtDep("OCCTSwift", from: "1.12.6"),   // ≥1.12.6: kernel fixes — thread-safe fillet (#298) + free-bounds crash (#310)
         occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.7.0"),  // ≥1.7.0: ShapeLoader splits multibody into per-body entries (#21)
     ],
