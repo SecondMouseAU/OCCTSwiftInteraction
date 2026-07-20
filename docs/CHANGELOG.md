@@ -2,6 +2,19 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.5.0 — 2026-07-20
+
+**`FaceIdentityTable` captures face-ordinal identity at tessellation time.** Closes [#42](https://github.com/gsdali/OCCTSwiftTools/issues/42).
+
+`ViewportBody.faceIndices` (mirrored in `CADBodyMetadata.faceIndices`) stores one render-path face ordinal per triangle. Consumers have resolved that ordinal back to a `TopoDS_Face` via `shape.subShapes(ofType: .face)[ordinal]` — which assumes the render-path ordinal agrees with that deduplicated enumeration. It doesn't, reliably: the mesher assigns `faceIndex` by walking faces with a raw, non-deduplicating `TopExp_Explorer` (the same traversal `Shape.faces()` uses), while `subShapes(ofType:)` and a `TopologyGraph`'s node ordering both collapse a face shared between two shells into one entry. The two enumerations coincide on a clean single solid and silently diverge — shifting every later index — on multi-shell, mixed-orientation topology.
+
+New API:
+
+- `FaceIdentityTable` — `shapes: [Shape]` indexed by render-path ordinal (built from `Shape.faces()`, so it's exact by construction, not reconstructed from a mismatched enumeration), plus an optional `uids: [TopologyGraph.GraphUID?]?` when a graph is supplied. `shape(forOrdinal:)` / `uid(forOrdinal:)` accessors.
+- `CADFileLoader.shapeToBodyMetadataAndIdentity(..., graph: TopologyGraph? = nil)` — overload of `shapeToBodyAndMetadata` returning `(ViewportBody?, CADBodyMetadata?, FaceIdentityTable?)`. Pass a `TopologyGraph` built from the same shape to populate `uids`, minted via `graph.findNode(for:)` on each ordinal's face so `IsSame` semantics hold. `shapeToBodyAndMetadata` itself is unchanged.
+
+Bumped to **MINOR** per the cohort SemVer policy: new opt-in API, no behaviour change for existing callers. No dep bump — `TopologyGraph.GraphUID.graphID` provenance shipped in OCCTSwift v1.12.0, already inside the existing `1.12.9` floor.
+
 ## v1.4.4 — 2026-07-20
 
 **Repin OCCTSwift floor to 1.12.9.** OCCTSwift v1.12.8 added kernel patch 0006 (a `BRepGProp_EdgeTool` null-curve-on-surface guard, [OCCTSwift#318](https://github.com/SecondMouseAU/OCCTSwift/issues/318)) and v1.12.9 added patches 0007 through 0009 (free-bounds `lwire` reset, boolean-path BSpline O(1) periodic normalization, STEP-writer oversized-string split; [OCCTSwift#323](https://github.com/SecondMouseAU/OCCTSwift/issues/323)), on top of the earlier patches. Ecosystem-wide floor bump; no API or behaviour change.

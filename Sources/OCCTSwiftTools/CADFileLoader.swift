@@ -255,6 +255,61 @@ public enum CADFileLoader {
         includeMeasurements: Bool = false,
         directMesh useDirectMesh: Bool = false
     ) -> (ViewportBody?, CADBodyMetadata?) {
+        let (body, meta, _) = bridgeShapeToBody(
+            shape, id: bodyID, color: rgba, stl: stl, deflection: customDeflection,
+            gpuTessellation: gpuTessellation, edgeDeflection: edgeDeflection,
+            maxPointsPerEdge: maxPointsPerEdge, includeMeasurements: includeMeasurements,
+            directMesh: useDirectMesh, graph: nil
+        )
+        return (body, meta)
+    }
+
+    /// Overload of `shapeToBodyAndMetadata` that also emits a `FaceIdentityTable` mapping every
+    /// ordinal in the returned metadata's `faceIndices` back to the `Shape` it was tessellated
+    /// from — and, when `graph` is supplied, to the durable `GraphUID` minted from that graph.
+    /// See issue #42 and `FaceIdentityTable`'s documentation for why this exists: a face ordinal
+    /// resolved via `shape.subShapes(ofType: .face)[ordinal]` silently misaligns once a face is
+    /// shared between two shells, and this captures the correspondence directly instead.
+    ///
+    /// Pass a `TopologyGraph` built from this same `shape` to populate `FaceIdentityTable.uids`
+    /// — minted via `graph.findNode(for:)` on each ordinal's face `Shape`, so `IsSame` semantics
+    /// hold. Without a graph, only `FaceIdentityTable.shapes` is populated.
+    ///
+    /// All other parameters match `shapeToBodyAndMetadata`.
+    public static func shapeToBodyMetadataAndIdentity(
+        _ shape: Shape,
+        id bodyID: String,
+        color rgba: SIMD4<Float>,
+        stl: Bool = false,
+        deflection customDeflection: Double? = nil,
+        gpuTessellation: Bool = false,
+        edgeDeflection: Double = defaultEdgeDeflection,
+        maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
+        includeMeasurements: Bool = false,
+        directMesh useDirectMesh: Bool = false,
+        graph: TopologyGraph? = nil
+    ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?) {
+        bridgeShapeToBody(
+            shape, id: bodyID, color: rgba, stl: stl, deflection: customDeflection,
+            gpuTessellation: gpuTessellation, edgeDeflection: edgeDeflection,
+            maxPointsPerEdge: maxPointsPerEdge, includeMeasurements: includeMeasurements,
+            directMesh: useDirectMesh, graph: graph
+        )
+    }
+
+    private static func bridgeShapeToBody(
+        _ shape: Shape,
+        id bodyID: String,
+        color rgba: SIMD4<Float>,
+        stl: Bool,
+        deflection customDeflection: Double?,
+        gpuTessellation: Bool,
+        edgeDeflection: Double,
+        maxPointsPerEdge: Int,
+        includeMeasurements: Bool,
+        directMesh useDirectMesh: Bool,
+        graph: TopologyGraph?
+    ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?) {
         let measurements: ShapeMeasurements? = includeMeasurements ? shape.measure() : nil
         let mesh: Mesh?
         if let customDeflection {
@@ -289,9 +344,9 @@ public enum CADFileLoader {
                     vertices: pickVerts.positions,
                     measurements: measurements
                 )
-                return (body, meta)
+                return (body, meta, FaceIdentityTable(shapes: [], uids: graph != nil ? [] : nil))
             }
-            return (nil, nil)
+            return (nil, nil, nil)
         }
 
         let triangles = mesh.trianglesWithFaces()
@@ -353,8 +408,26 @@ public enum CADFileLoader {
             vertices: pickVerts.positions,
             measurements: measurements
         )
+        let faceIdentity = makeFaceIdentityTable(from: shape, graph: graph)
 
-        return (body, meta)
+        return (body, meta, faceIdentity)
+    }
+
+    /// Builds a `FaceIdentityTable` from `shape.faces()` — the same raw, non-deduplicating
+    /// `TopExp_Explorer` traversal `OCCTShapeCreateMeshWithParams` uses to assign
+    /// `Mesh.Triangle.faceIndex` — so `shapes[ordinal]` always names the exact face tessellated
+    /// into the triangles carrying that ordinal, even when a face is shared between two shells
+    /// (where it appears once per shell here, but collapses to one node in `graph`).
+    private static func makeFaceIdentityTable(from shape: Shape, graph: TopologyGraph?) -> FaceIdentityTable {
+        let faceShapes = shape.faces().compactMap { Shape.fromFace($0) }
+        guard let graph else {
+            return FaceIdentityTable(shapes: faceShapes)
+        }
+        let uids: [TopologyGraph.GraphUID?] = faceShapes.map { faceShape in
+            guard let node = graph.findNode(for: faceShape) else { return nil }
+            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
+        }
+        return FaceIdentityTable(shapes: faceShapes, uids: uids)
     }
 
     // MARK: - Edge / Vertex extraction helpers
