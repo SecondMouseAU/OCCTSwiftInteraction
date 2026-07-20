@@ -60,7 +60,7 @@ Per-type API reference for every public symbol:
 Add OCCTSwiftTools to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.0"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.1"),
 ```
 
 Then declare it as a dependency of your target:

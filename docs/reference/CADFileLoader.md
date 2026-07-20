@@ -146,16 +146,16 @@ public static func shapeToBodyMetadataAndIdentity(
     maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
     includeMeasurements: Bool = false,
     directMesh useDirectMesh: Bool = false,
-    graph: TopologyGraph? = nil
+    graph: BRepGraph? = nil
 ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?)
 ```
 
-- **Parameters:** same as `shapeToBodyAndMetadata`, plus `graph`, an optional `TopologyGraph` built from this same `shape`. When supplied, it populates `FaceIdentityTable.uids`, minted via `graph.findNode(for:)` on each ordinal's face so `IsSame` semantics hold. Without a graph, only `FaceIdentityTable.shapes` is populated.
+- **Parameters:** same as `shapeToBodyAndMetadata`, plus `graph`, an optional `BRepGraph` built from this same `shape`. When supplied, it populates `FaceIdentityTable.uids`, minted via `graph.findNode(for:)` on each ordinal's face so `IsSame` semantics hold. Without a graph, only `FaceIdentityTable.shapes` is populated.
 - **Returns:** a tuple `(ViewportBody?, CADBodyMetadata?, FaceIdentityTable?)`. `shapeToBodyAndMetadata` itself is unchanged; this is a separate, additive overload.
 - **Example:**
   ```swift
   let box = Shape.box(width: 10, height: 5, depth: 3)!
-  let graph = TopologyGraph(shape: box)!
+  let graph = BRepGraph(shape: box)!
   let (body, meta, faceTable) = CADFileLoader.shapeToBodyMetadataAndIdentity(
       box, id: "box", color: SIMD4<Float>(0.6, 0.6, 0.65, 1), graph: graph
   )
@@ -184,16 +184,16 @@ public static func shapeToBodyMetadataAndIdentities(
     maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
     includeMeasurements: Bool = false,
     directMesh useDirectMesh: Bool = false,
-    graph: TopologyGraph? = nil
+    graph: BRepGraph? = nil
 ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?, EdgeIdentityTable?, VertexIdentityTable?)
 ```
 
-- **Parameters:** same as `shapeToBodyMetadataAndIdentity`. Pass a `TopologyGraph` built from this same `shape` to populate every table's `uids`; without one, only `shapes` is populated on each table.
+- **Parameters:** same as `shapeToBodyMetadataAndIdentity`. Pass a `BRepGraph` built from this same `shape` to populate every table's `uids`; without one, only `shapes` is populated on each table.
 - **Returns:** a five-element tuple. `shapeToBodyAndMetadata` and `shapeToBodyMetadataAndIdentity` are both unchanged; this is a separate, additive overload rather than an extension of either existing return shape.
 - **Example:**
   ```swift
   let box = Shape.box(width: 10, height: 5, depth: 3)!
-  let graph = TopologyGraph(shape: box)!
+  let graph = BRepGraph(shape: box)!
   let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
       box, id: "box", color: SIMD4<Float>(0.6, 0.6, 0.65, 1), graph: graph
   )

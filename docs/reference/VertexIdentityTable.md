@@ -6,7 +6,7 @@ parent: API Reference
 # VertexIdentityTable
 
 Maps a render-path vertex ordinal, the value stored in `ViewportBody.vertexIndices`, back to the
-`Shape` it was extracted from, and, when a `TopologyGraph` was supplied, to the durable `GraphUID`
+`Shape` it was extracted from, and, when a `BRepGraph` was supplied, to the durable `GraphUID`
 minted from that graph. Mirrors [FaceIdentityTable](FaceIdentityTable) and
 [EdgeIdentityTable](EdgeIdentityTable), but for vertices.
 
@@ -28,16 +28,16 @@ hand-roll the `graph.findNode(for:)` plus `graph.uid(ofNodeKind:index:)` resolut
 ```swift
 public struct VertexIdentityTable: Sendable {
     public let shapes: [Shape]
-    public let uids: [TopologyGraph.GraphUID?]?
+    public let uids: [BRepGraph.GraphUID?]?
 
-    public init(shapes: [Shape], uids: [TopologyGraph.GraphUID?]? = nil)
+    public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil)
     public func shape(forOrdinal ordinal: Int) -> Shape?
-    public func uid(forOrdinal ordinal: Int) -> TopologyGraph.GraphUID?
+    public func uid(forOrdinal ordinal: Int) -> BRepGraph.GraphUID?
 }
 ```
 
 - `shapes` is indexed by the ordinal stored in `ViewportBody.vertexIndices`, built from `Shape.subShapes(ofType: .vertex)`.
-- `uids` is populated only when a `TopologyGraph` was supplied to the entry point that produced this table. Each element is `nil` if that ordinal's vertex could not be resolved in the graph.
+- `uids` is populated only when a `BRepGraph` was supplied to the entry point that produced this table. Each element is `nil` if that ordinal's vertex could not be resolved in the graph.
 - `shape(forOrdinal:)` / `uid(forOrdinal:)` return `nil` for an out-of-range ordinal (or, for `uid(forOrdinal:)`, when no graph was supplied at all).
 
 Obtained from [`CADFileLoader.shapeToBodyMetadataAndIdentities`](CADFileLoader#cadfileloadershapetobodymetadataandidentities).
@@ -46,7 +46,7 @@ Obtained from [`CADFileLoader.shapeToBodyMetadataAndIdentities`](CADFileLoader#c
 
 ```swift
 let box = Shape.box(width: 10, height: 5, depth: 3)!
-let graph = TopologyGraph(shape: box)!
+let graph = BRepGraph(shape: box)!
 let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
     box, id: "box", color: SIMD4<Float>(0.6, 0.6, 0.65, 1), graph: graph
 )

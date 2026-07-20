@@ -8,7 +8,7 @@ The bridge layer between [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift)
 
 Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md) — see the ecosystem map for how this package fits with the kernel, viewport, and sibling layers.
 
-> Status: **v1.6.0**. SemVer-stable from v1.0.0; versioning follows the [cohort SemVer policy](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md). See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
+> Status: **v1.6.1**. SemVer-stable from v1.0.0; versioning follows the [cohort SemVer policy](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md). See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
 
 ## What it does
 
@@ -58,7 +58,7 @@ Per-domain helpers that turn an OCCT-or-raw input into a `ViewportBody`:
 
 `shapeToBodyMetadataAndIdentities` (and the narrower `shapeToBodyMetadataAndIdentity`) resolve a
 render-path face / edge / vertex ordinal back to the `Shape` it was extracted from, and, when a
-`TopologyGraph` is supplied, to a durable `GraphUID`. See
+`BRepGraph` is supplied, to a durable `GraphUID`. See
 [FaceIdentityTable](docs/reference/FaceIdentityTable.md),
 [EdgeIdentityTable](docs/reference/EdgeIdentityTable.md), and
 [VertexIdentityTable](docs/reference/VertexIdentityTable.md).
@@ -66,7 +66,7 @@ render-path face / edge / vertex ordinal back to the `Shape` it was extracted fr
 ## Installation
 
 ```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.0"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.1"),
 ```
 
 ## Supported platforms
@@ -82,7 +82,7 @@ The platform floor is the **higher** of OCCTSwift's (12.0 / 15.0) and OCCTSwiftV
 
 ## Status
 
-Active. Requires `OCCTSwift` ≥ `v0.168.0` (for `ImportProgress`) and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
+Active. Requires `OCCTSwift` ≥ `v1.15.0` (for `BRepGraph`) and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
 
 ## License
 

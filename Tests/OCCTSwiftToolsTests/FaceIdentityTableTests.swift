@@ -20,7 +20,7 @@ struct FaceIdentityTableTests {
             return
         }
         #expect(table.shapes.count == box.faces().count)
-        #expect(table.uids == nil, "no TopologyGraph was supplied")
+        #expect(table.uids == nil, "no BRepGraph was supplied")
 
         for ordinal in Set(body.faceIndices.map(Int.init)) {
             guard let faceShape = table.shape(forOrdinal: ordinal) else {
@@ -70,7 +70,7 @@ struct FaceIdentityTableTests {
     }
 
     /// Regression for issue #42: a face shared between two shells is one node in a
-    /// `TopologyGraph` but appears once *per shell* in the render-path traversal
+    /// `BRepGraph` but appears once *per shell* in the render-path traversal
     /// `Shape.faces()` uses — the very enumeration `FaceIdentityTable.shapes` is built from.
     /// Build two shells from a box's faces that both include the identical face `Shape`
     /// (same underlying `TopoDS_Face`, so `IsSame` holds), compound them, and verify:
@@ -104,8 +104,8 @@ struct FaceIdentityTableTests {
         #expect(compound.faces().count == 7)
         #expect(compound.subShapes(ofType: .face).count == 6)
 
-        guard let graph = TopologyGraph(shape: compound) else {
-            Issue.record("TopologyGraph(shape:) returned nil")
+        guard let graph = BRepGraph(shape: compound) else {
+            Issue.record("BRepGraph(shape:) returned nil")
             return
         }
 
@@ -125,7 +125,7 @@ struct FaceIdentityTableTests {
         #expect(uids.count == table.shapes.count)
 
         // Every ordinal must resolve back through the supplied graph.
-        var nodes: [(kind: TopologyGraph.NodeKind, index: Int)] = []
+        var nodes: [(kind: BRepGraph.NodeKind, index: Int)] = []
         for ordinal in 0..<table.shapes.count {
             guard let faceShape = table.shape(forOrdinal: ordinal) else {
                 Issue.record("no shape recorded for ordinal \(ordinal)")

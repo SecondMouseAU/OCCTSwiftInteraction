@@ -2,6 +2,16 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.6.1 (2026-07-20)
+
+**Renamed `TopologyGraph` to `BRepGraph` throughout, matching OCCTSwift v1.15.0.** Closes [#45](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/45).
+
+OCCTSwift renamed `TopologyGraph` to `BRepGraph` ([OCCTSwift#333](https://github.com/SecondMouseAU/OCCTSwift/issues/333)) to match the C++ package it wraps, keeping a deprecated typealias so existing code compiled unchanged. This repo used the old name in its own public API (`graph: TopologyGraph? = nil` on the identity-table entry points, `uids: [TopologyGraph.GraphUID?]?` on `FaceIdentityTable` / `EdgeIdentityTable` / `VertexIdentityTable`), which surfaced as a deprecation warning on every build. Mechanical rename across `Sources/`, `Tests/`, and the current-state docs; no behaviour change, and source-compatible for callers since `TopologyGraph` and `BRepGraph` are the identical type via OCCTSwift's typealias.
+
+Bumped to **PATCH** per the cohort SemVer policy: pure rename, no new API surface, no behaviour change.
+
+**Dep bump:** `OCCTSwift from: "1.12.9"` → `from: "1.15.0"`. Required for `BRepGraph`.
+
 ## v1.6.0 (2026-07-20)
 
 **`EdgeIdentityTable` and `VertexIdentityTable` extend the tessellation-time identity capture from #42 to edges and vertices.** Closes [#43](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/43).

@@ -13,7 +13,7 @@ import OCCTSwift
 /// `ViewportBody.edgeIndices` is already keyed to `Shape.edge(at:)`'s index space: both
 /// `Shape.edge(at:)` and the bulk polyline extractor behind it build one `TopTools_IndexedMapOfShape`
 /// over the shape's edges, so a shared edge collapses to a single ordinal there, the same as it does
-/// in `Shape.subShapes(ofType: .edge)` and in a `TopologyGraph`. There is no raw-vs-deduplicated split
+/// in `Shape.subShapes(ofType: .edge)` and in a `BRepGraph`. There is no raw-vs-deduplicated split
 /// to reconcile the way there is for faces.
 ///
 /// `EdgeIdentityTable` exists for the same reasons `FaceIdentityTable` does anyway: it captures the
@@ -29,12 +29,12 @@ public struct EdgeIdentityTable: Sendable {
     /// that ordinal.
     public let shapes: [Shape]
 
-    /// Durable per-ordinal handle, minted from the `TopologyGraph` supplied when the table was
+    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was
     /// built. `nil` when no graph was supplied. When present, an individual element is `nil`
     /// only if that ordinal's edge could not be resolved in the graph.
-    public let uids: [TopologyGraph.GraphUID?]?
+    public let uids: [BRepGraph.GraphUID?]?
 
-    public init(shapes: [Shape], uids: [TopologyGraph.GraphUID?]? = nil) {
+    public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil) {
         self.shapes = shapes
         self.uids = uids
     }
@@ -46,7 +46,7 @@ public struct EdgeIdentityTable: Sendable {
 
     /// The durable `GraphUID` a render-path edge ordinal resolves to, if a graph was supplied
     /// when the table was built.
-    public func uid(forOrdinal ordinal: Int) -> TopologyGraph.GraphUID? {
+    public func uid(forOrdinal ordinal: Int) -> BRepGraph.GraphUID? {
         guard let uids, uids.indices.contains(ordinal) else { return nil }
         return uids[ordinal]
     }

@@ -20,7 +20,7 @@ struct EdgeIdentityTableTests {
             return
         }
         #expect(edgeTable.shapes.count == box.edgeCount)
-        #expect(edgeTable.uids == nil, "no TopologyGraph was supplied")
+        #expect(edgeTable.uids == nil, "no BRepGraph was supplied")
         #expect(meta.faceIndices == body.faceIndices)
 
         for ordinal in Set(body.edgeIndices.map(Int.init)) {
@@ -115,8 +115,8 @@ struct EdgeIdentityTableTests {
         #expect(compound.edgeCount == box.edgeCount)
         #expect(compound.vertexCount == box.vertexCount)
 
-        guard let graph = TopologyGraph(shape: compound) else {
-            Issue.record("TopologyGraph(shape:) returned nil")
+        guard let graph = BRepGraph(shape: compound) else {
+            Issue.record("BRepGraph(shape:) returned nil")
             return
         }
 

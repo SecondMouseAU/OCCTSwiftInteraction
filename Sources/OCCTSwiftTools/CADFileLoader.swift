@@ -271,7 +271,7 @@ public enum CADFileLoader {
     /// resolved via `shape.subShapes(ofType: .face)[ordinal]` silently misaligns once a face is
     /// shared between two shells, and this captures the correspondence directly instead.
     ///
-    /// Pass a `TopologyGraph` built from this same `shape` to populate `FaceIdentityTable.uids`
+    /// Pass a `BRepGraph` built from this same `shape` to populate `FaceIdentityTable.uids`
     /// — minted via `graph.findNode(for:)` on each ordinal's face `Shape`, so `IsSame` semantics
     /// hold. Without a graph, only `FaceIdentityTable.shapes` is populated.
     ///
@@ -288,7 +288,7 @@ public enum CADFileLoader {
         maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
         includeMeasurements: Bool = false,
         directMesh useDirectMesh: Bool = false,
-        graph: TopologyGraph? = nil
+        graph: BRepGraph? = nil
     ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?) {
         let (body, meta, faceIdentity, _, _) = bridgeShapeToBody(
             shape, id: bodyID, color: rgba, stl: stl, deflection: customDeflection,
@@ -305,7 +305,7 @@ public enum CADFileLoader {
     /// (`faceIndices` / `edgeIndices` / `vertexIndices`) back to the `Shape` it was extracted
     /// from, and, when `graph` is supplied, to the durable `GraphUID` minted from that graph.
     ///
-    /// Pass a `TopologyGraph` built from this same `shape` to populate every table's `uids`.
+    /// Pass a `BRepGraph` built from this same `shape` to populate every table's `uids`.
     /// Without a graph, only `shapes` is populated on each table.
     ///
     /// All other parameters match `shapeToBodyAndMetadata`.
@@ -320,7 +320,7 @@ public enum CADFileLoader {
         maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
         includeMeasurements: Bool = false,
         directMesh useDirectMesh: Bool = false,
-        graph: TopologyGraph? = nil
+        graph: BRepGraph? = nil
     ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?, EdgeIdentityTable?, VertexIdentityTable?) {
         bridgeShapeToBody(
             shape, id: bodyID, color: rgba, stl: stl, deflection: customDeflection,
@@ -341,7 +341,7 @@ public enum CADFileLoader {
         maxPointsPerEdge: Int,
         includeMeasurements: Bool,
         directMesh useDirectMesh: Bool,
-        graph: TopologyGraph?
+        graph: BRepGraph?
     ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?, EdgeIdentityTable?, VertexIdentityTable?) {
         let measurements: ShapeMeasurements? = includeMeasurements ? shape.measure() : nil
         let mesh: Mesh?
@@ -456,12 +456,12 @@ public enum CADFileLoader {
     /// `Mesh.Triangle.faceIndex` — so `shapes[ordinal]` always names the exact face tessellated
     /// into the triangles carrying that ordinal, even when a face is shared between two shells
     /// (where it appears once per shell here, but collapses to one node in `graph`).
-    private static func makeFaceIdentityTable(from shape: Shape, graph: TopologyGraph?) -> FaceIdentityTable {
+    private static func makeFaceIdentityTable(from shape: Shape, graph: BRepGraph?) -> FaceIdentityTable {
         let faceShapes = shape.faces().compactMap { Shape.fromFace($0) }
         guard let graph else {
             return FaceIdentityTable(shapes: faceShapes)
         }
-        let uids: [TopologyGraph.GraphUID?] = faceShapes.map { faceShape in
+        let uids: [BRepGraph.GraphUID?] = faceShapes.map { faceShape in
             guard let node = graph.findNode(for: faceShape) else { return nil }
             return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
         }
@@ -472,12 +472,12 @@ public enum CADFileLoader {
     /// traversal `Shape.edge(at:)` and the bulk edge-polyline extractor behind
     /// `ViewportBody.edgeIndices` use, so `shapes[ordinal]` always names the exact edge behind
     /// the segments carrying that ordinal.
-    private static func makeEdgeIdentityTable(from shape: Shape, graph: TopologyGraph?) -> EdgeIdentityTable {
+    private static func makeEdgeIdentityTable(from shape: Shape, graph: BRepGraph?) -> EdgeIdentityTable {
         let edgeShapes = shape.edges().compactMap { Shape.fromEdge($0) }
         guard let graph else {
             return EdgeIdentityTable(shapes: edgeShapes)
         }
-        let uids: [TopologyGraph.GraphUID?] = edgeShapes.map { edgeShape in
+        let uids: [BRepGraph.GraphUID?] = edgeShapes.map { edgeShape in
             guard let node = graph.findNode(for: edgeShape) else { return nil }
             return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
         }
@@ -488,12 +488,12 @@ public enum CADFileLoader {
     /// `TopTools_IndexedMapOfShape` traversal `Shape.vertices()` / `Shape.vertex(at:)` behind
     /// `ViewportBody.vertexIndices` use, so `shapes[ordinal]` always names the exact vertex
     /// behind the pick point carrying that ordinal.
-    private static func makeVertexIdentityTable(from shape: Shape, graph: TopologyGraph?) -> VertexIdentityTable {
+    private static func makeVertexIdentityTable(from shape: Shape, graph: BRepGraph?) -> VertexIdentityTable {
         let vertexShapes = shape.subShapes(ofType: .vertex)
         guard let graph else {
             return VertexIdentityTable(shapes: vertexShapes)
         }
-        let uids: [TopologyGraph.GraphUID?] = vertexShapes.map { vertexShape in
+        let uids: [BRepGraph.GraphUID?] = vertexShapes.map { vertexShape in
             guard let node = graph.findNode(for: vertexShape) else { return nil }
             return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
         }

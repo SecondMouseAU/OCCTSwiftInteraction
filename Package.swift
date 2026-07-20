@@ -35,7 +35,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.12.9"),   // ≥1.12.9: OCCT kernel crash/hang fixes through #318 and #323 (patches 0003-0009)
+        occtDep("OCCTSwift", from: "1.15.0"),   // ≥1.15.0: TopologyGraph renamed to BRepGraph (OCCTSwift#333)
         occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.7.0"),  // ≥1.7.0: ShapeLoader splits multibody into per-body entries (#21)
     ],

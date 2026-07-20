@@ -26,12 +26,12 @@ public struct VertexIdentityTable: Sendable {
     /// vertex behind the pick point carrying that ordinal.
     public let shapes: [Shape]
 
-    /// Durable per-ordinal handle, minted from the `TopologyGraph` supplied when the table was
+    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was
     /// built. `nil` when no graph was supplied. When present, an individual element is `nil`
     /// only if that ordinal's vertex could not be resolved in the graph.
-    public let uids: [TopologyGraph.GraphUID?]?
+    public let uids: [BRepGraph.GraphUID?]?
 
-    public init(shapes: [Shape], uids: [TopologyGraph.GraphUID?]? = nil) {
+    public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil) {
         self.shapes = shapes
         self.uids = uids
     }
@@ -43,7 +43,7 @@ public struct VertexIdentityTable: Sendable {
 
     /// The durable `GraphUID` a render-path vertex ordinal resolves to, if a graph was supplied
     /// when the table was built.
-    public func uid(forOrdinal ordinal: Int) -> TopologyGraph.GraphUID? {
+    public func uid(forOrdinal ordinal: Int) -> BRepGraph.GraphUID? {
         guard let uids, uids.indices.contains(ordinal) else { return nil }
         return uids[ordinal]
     }

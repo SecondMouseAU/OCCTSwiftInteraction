@@ -19,7 +19,7 @@ and SPEC.md):
   input-format enum (`.step`, `.stl`, `.obj`, `.brep`).
 - **`FaceIdentityTable`** / **`EdgeIdentityTable`** / **`VertexIdentityTable`**: resolve a
   render-path face/edge/vertex ordinal (as stored in `ViewportBody.faceIndices` /
-  `edgeIndices` / `vertexIndices`) back to its `Shape` and, when a `TopologyGraph` is supplied, its
+  `edgeIndices` / `vertexIndices`) back to its `Shape` and, when a `BRepGraph` is supplied, its
   durable `GraphUID`. Obtained from `CADFileLoader.shapeToBodyMetadataAndIdentity` (face only) or
   `shapeToBodyMetadataAndIdentities` (all three).
 - **`ExportManager`** / **`ExportFormat`** — shape export to OBJ / PLY / STEP / BREP.

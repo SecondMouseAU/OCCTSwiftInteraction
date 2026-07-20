@@ -20,7 +20,7 @@ struct VertexIdentityTableTests {
             return
         }
         #expect(vertexTable.shapes.count == box.vertexCount)
-        #expect(vertexTable.uids == nil, "no TopologyGraph was supplied")
+        #expect(vertexTable.uids == nil, "no BRepGraph was supplied")
 
         for ordinal in Set(body.vertexIndices.map(Int.init)) {
             guard let vertexShape = vertexTable.shape(forOrdinal: ordinal) else {
@@ -75,8 +75,8 @@ struct VertexIdentityTableTests {
         #expect(compound.faces().count == 7)
         #expect(compound.vertexCount == box.vertexCount)
 
-        guard let graph = TopologyGraph(shape: compound) else {
-            Issue.record("TopologyGraph(shape:) returned nil")
+        guard let graph = BRepGraph(shape: compound) else {
+            Issue.record("BRepGraph(shape:) returned nil")
             return
         }
 
