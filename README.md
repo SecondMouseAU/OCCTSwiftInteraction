@@ -8,7 +8,7 @@ The bridge layer between [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift)
 
 Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md) — see the ecosystem map for how this package fits with the kernel, viewport, and sibling layers.
 
-> Status: **v1.2.0**. SemVer-stable from v1.0.0; versioning follows the [cohort SemVer policy](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md). See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
+> Status: **v1.6.0**. SemVer-stable from v1.0.0; versioning follows the [cohort SemVer policy](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md). See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
 
 ## What it does
 
@@ -54,10 +54,19 @@ Per-domain helpers that turn an OCCT-or-raw input into a `ViewportBody`:
 
 > **Note on `PointConverter`**: produces a `ViewportBody` with `primitiveKind == .point`, drawn by the point-cloud rendering pipeline added in [OCCTSwiftViewport v1.0.2](https://github.com/SecondMouseAU/OCCTSwiftViewport/releases/tag/v1.0.2) (issue [#28](https://github.com/SecondMouseAU/OCCTSwiftViewport/issues/28)). `pointRadius` and `perPointColors` are now carried through to the body's `pointRadius` and `vertexColors` fields; consumers (e.g. OCCTMCP's `add_scene_primitive(pointCloud)`) can lift their previous sphere-compound caps and render tens of thousands of points cleanly.
 
+## Identity tables
+
+`shapeToBodyMetadataAndIdentities` (and the narrower `shapeToBodyMetadataAndIdentity`) resolve a
+render-path face / edge / vertex ordinal back to the `Shape` it was extracted from, and, when a
+`TopologyGraph` is supplied, to a durable `GraphUID`. See
+[FaceIdentityTable](docs/reference/FaceIdentityTable.md),
+[EdgeIdentityTable](docs/reference/EdgeIdentityTable.md), and
+[VertexIdentityTable](docs/reference/VertexIdentityTable.md).
+
 ## Installation
 
 ```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.3.1"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.0"),
 ```
 
 ## Supported platforms

@@ -53,14 +53,14 @@ Task-oriented recipes, each runnable against the real API:
 
 Per-type API reference for every public symbol:
 
-- [API Reference](reference/) — `PointConverter`, `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`, `CADFileLoader`
+- [API Reference](reference/) — `PointConverter`, `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`, `CADFileLoader`, `FaceIdentityTable`, `EdgeIdentityTable`, `VertexIdentityTable`
 
 ## Project
 
 Add OCCTSwiftTools to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.2.1"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.0"),
 ```
 
 Then declare it as a dependency of your target:

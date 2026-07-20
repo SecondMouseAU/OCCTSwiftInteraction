@@ -2,6 +2,21 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.6.0 (2026-07-20)
+
+**`EdgeIdentityTable` and `VertexIdentityTable` extend the tessellation-time identity capture from #42 to edges and vertices.** Closes [#43](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/43).
+
+OCCTSwiftAIS#31 needed durable `GraphUID`s for edge and vertex sub-shape selections, not just faces, and had to hand-roll the resolution (`shape.subShape(type: .edge/.vertex, index: ordinal)` then `graph.findNode(for:)` then `graph.uid(ofNodeKind:index:)`) at pick time instead of getting it from a captured table the way `FaceIdentityTable` already provides for faces.
+
+Verified against the OCCTBridge source while implementing this: edges and vertices do not carry the same raw-vs-deduplicated ordinal split that motivated `FaceIdentityTable`. `Shape.faces()` (and the mesher's `faceIndex`) walk with a raw, non-deduplicating `TopExp_Explorer`, so a face shared between two shells is visited once per shell. `Shape.edge(at:)` / `Shape.vertex(at:)`, the bulk edge-polyline extractor behind `ViewportBody.edgeIndices`, and `Shape.subShapes(ofType: .edge/.vertex)` all build one `TopTools_IndexedMapOfShape` instead, which deduplicates up front, so `ViewportBody.edgeIndices` / `vertexIndices` are already in the same ordinal space `subShape(type:index:)` resolves against. The two new tables still earn their keep: they capture the ordinal to `Shape` to `GraphUID` correspondence once at tessellation time, so a consumer doesn't re-walk the shape's edge/vertex map on every pick or reimplement the graph resolution `FaceIdentityTable` already does, and edge/vertex identity keeps working even if that deduplication behaviour ever changed.
+
+New API:
+
+- `EdgeIdentityTable` / `VertexIdentityTable`: same shape as `FaceIdentityTable`. `shapes: [Shape]` indexed by the ordinal in `ViewportBody.edgeIndices` / `vertexIndices`, plus an optional `uids: [TopologyGraph.GraphUID?]?` when a graph is supplied. `shape(forOrdinal:)` / `uid(forOrdinal:)` accessors.
+- `CADFileLoader.shapeToBodyMetadataAndIdentities(..., graph: TopologyGraph? = nil)`: overload of `shapeToBodyAndMetadata` returning `(ViewportBody?, CADBodyMetadata?, FaceIdentityTable?, EdgeIdentityTable?, VertexIdentityTable?)`. `shapeToBodyAndMetadata` and `shapeToBodyMetadataAndIdentity` are both unchanged; the three-table tuple is additive rather than an extension of either existing overload's return shape, so no caller destructuring those tuples breaks.
+
+Bumped to **MINOR** per the cohort SemVer policy: new opt-in API, no behaviour change for existing callers. No dep bump.
+
 ## v1.5.0 — 2026-07-20
 
 **`FaceIdentityTable` captures face-ordinal identity at tessellation time.** Closes [#42](https://github.com/gsdali/OCCTSwiftTools/issues/42).

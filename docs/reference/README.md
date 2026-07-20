@@ -26,3 +26,4 @@ Per-type pages:
 - [WireConverter](WireConverter) — `Wire` → edge-only `ViewportBody`
 - [BodyUtilities](BodyUtilities) — marker spheres and offset helpers for `ViewportBody`
 - [CADFileLoader](CADFileLoader) — load CAD files / manifests, and the `Shape` → body bridge
+- [FaceIdentityTable](FaceIdentityTable) / [EdgeIdentityTable](EdgeIdentityTable) / [VertexIdentityTable](VertexIdentityTable): resolve a render-path face / edge / vertex ordinal back to its `Shape` and durable `GraphUID`

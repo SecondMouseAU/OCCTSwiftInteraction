@@ -15,6 +15,7 @@ use `OCCTSwiftIO.ShapeLoader` directly instead.
 ## Topics
 
 - [load](#cadfileloaderload) · [loadFromManifest](#cadfileloaderloadfrommanifest) · [shapeToBodyAndMetadata](#cadfileloadershapetobodyandmetadata)
+- Identity-table overloads: [shapeToBodyMetadataAndIdentity](#cadfileloadershapetobodymetadataandidentity) · [shapeToBodyMetadataAndIdentities](#cadfileloadershapetobodymetadataandidentities)
 - Presets & defaults: [`highQualityMeshParams`](#mesh-presets) · [`tessellationMeshParams`](#mesh-presets) · [`defaultEdgeDeflection`](#static-defaults) · [`defaultMaxPointsPerEdge`](#static-defaults)
 - [`CADLoadResult`](#cadloadresult)
 
@@ -119,6 +120,82 @@ public static func shapeToBodyAndMetadata(
       id: "box",
       color: SIMD4<Float>(0.6, 0.6, 0.65, 1),
       includeMeasurements: true
+  )
+  ```
+
+---
+
+## `CADFileLoader.shapeToBodyMetadataAndIdentity(...)`
+
+Overload of `shapeToBodyAndMetadata` that also emits a [`FaceIdentityTable`](FaceIdentityTable)
+mapping every ordinal in the returned metadata's `faceIndices` back to the `Shape` it was
+tessellated from, and, when `graph` is supplied, to the durable `GraphUID` minted from that graph.
+See [FaceIdentityTable](FaceIdentityTable) for why this exists: a face ordinal resolved via
+`shape.subShapes(ofType: .face)[ordinal]` silently misaligns once a face is shared between two
+shells, and this captures the correspondence directly instead.
+
+```swift
+public static func shapeToBodyMetadataAndIdentity(
+    _ shape: Shape,
+    id bodyID: String,
+    color rgba: SIMD4<Float>,
+    stl: Bool = false,
+    deflection customDeflection: Double? = nil,
+    gpuTessellation: Bool = false,
+    edgeDeflection: Double = defaultEdgeDeflection,
+    maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
+    includeMeasurements: Bool = false,
+    directMesh useDirectMesh: Bool = false,
+    graph: TopologyGraph? = nil
+) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?)
+```
+
+- **Parameters:** same as `shapeToBodyAndMetadata`, plus `graph`, an optional `TopologyGraph` built from this same `shape`. When supplied, it populates `FaceIdentityTable.uids`, minted via `graph.findNode(for:)` on each ordinal's face so `IsSame` semantics hold. Without a graph, only `FaceIdentityTable.shapes` is populated.
+- **Returns:** a tuple `(ViewportBody?, CADBodyMetadata?, FaceIdentityTable?)`. `shapeToBodyAndMetadata` itself is unchanged; this is a separate, additive overload.
+- **Example:**
+  ```swift
+  let box = Shape.box(width: 10, height: 5, depth: 3)!
+  let graph = TopologyGraph(shape: box)!
+  let (body, meta, faceTable) = CADFileLoader.shapeToBodyMetadataAndIdentity(
+      box, id: "box", color: SIMD4<Float>(0.6, 0.6, 0.65, 1), graph: graph
+  )
+  ```
+
+---
+
+## `CADFileLoader.shapeToBodyMetadataAndIdentities(...)`
+
+Overload of `shapeToBodyAndMetadata` that emits identity tables for all three pickable sub-shape
+kinds: [`FaceIdentityTable`](FaceIdentityTable), [`EdgeIdentityTable`](EdgeIdentityTable),
+[`VertexIdentityTable`](VertexIdentityTable). Each maps the render-path ordinal stored in the
+corresponding `ViewportBody` array (`faceIndices` / `edgeIndices` / `vertexIndices`) back to the
+`Shape` it was extracted from, and, when `graph` is supplied, to the durable `GraphUID` minted from
+that graph.
+
+```swift
+public static func shapeToBodyMetadataAndIdentities(
+    _ shape: Shape,
+    id bodyID: String,
+    color rgba: SIMD4<Float>,
+    stl: Bool = false,
+    deflection customDeflection: Double? = nil,
+    gpuTessellation: Bool = false,
+    edgeDeflection: Double = defaultEdgeDeflection,
+    maxPointsPerEdge: Int = defaultMaxPointsPerEdge,
+    includeMeasurements: Bool = false,
+    directMesh useDirectMesh: Bool = false,
+    graph: TopologyGraph? = nil
+) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?, EdgeIdentityTable?, VertexIdentityTable?)
+```
+
+- **Parameters:** same as `shapeToBodyMetadataAndIdentity`. Pass a `TopologyGraph` built from this same `shape` to populate every table's `uids`; without one, only `shapes` is populated on each table.
+- **Returns:** a five-element tuple. `shapeToBodyAndMetadata` and `shapeToBodyMetadataAndIdentity` are both unchanged; this is a separate, additive overload rather than an extension of either existing return shape.
+- **Example:**
+  ```swift
+  let box = Shape.box(width: 10, height: 5, depth: 3)!
+  let graph = TopologyGraph(shape: box)!
+  let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
+      box, id: "box", color: SIMD4<Float>(0.6, 0.6, 0.65, 1), graph: graph
   )
   ```
 
