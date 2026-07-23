@@ -32,6 +32,10 @@ timestamp: 2026-06-22
   `setOverlay(id:bodies:)` / `clearOverlay(id:)`.
 - **`CADViewportView`** — SwiftUI wrapper around the Metal viewport with a selection-info banner and
   display-mode controls.
+- **`EscalationCardView`** — SwiftUI presentation for an `EscalationRequest` (question, candidates,
+  context), reporting the answer via closures — same explicit-values-plus-callbacks style as
+  `CADViewportView`. One adaptive layout capped to a comfortable phone-width column, usable as a
+  floating panel on a larger surface too.
 - **`PickedEntity`** — `.face(PickedFaceInfo)` / `.edge(PickedEdgeInfo)` / `.vertex(PickedVertexInfo)`,
   plus a `bodyID` accessor common to all three (pass to `entityID(forBodyID:)`).
 - **`PickedFaceInfo`, `PickedEdgeInfo`, `PickedVertexInfo`, `FaceBounds`** — metadata returned by
@@ -60,4 +64,12 @@ timestamp: 2026-06-22
   — real geometry work, not a shader trick, since `OCCTSwiftViewport` has no shader-level capping.
   Multiple planes compose. Picking respects active planes even though the GPU pick pass itself
   doesn't.
+- **`EscalationRequest`, `EscalationCandidate`, `EscalationResponse`** — human-in-the-loop
+  escalation: `pendingEscalation` / `present(_:) async -> EscalationResponse` asks a bounded
+  question grounded in specific geometry (`EscalationRequest.entities`, highlighted automatically
+  when presented) and suspends until answered — `.chose(candidateID:)`, `.picked([PickedEntity])`
+  (the human answered by picking instead), `.deferred`, or `.rejected(reason:)`. `respond(_:)` /
+  `respondWithCurrentSelection()` resolve it. Removing (or reloading) referenced geometry, or a
+  full `removeAll()`, auto-resolves a pending escalation `.rejected` rather than leaving it
+  suspended forever.
 - **`CADViewportError`** — `unsupportedFormat`, `emptyFile`, `loadFailed`.

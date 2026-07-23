@@ -498,10 +498,64 @@ an id that was previously capped (mirrors `setScalarField` not surviving a reloa
 same "caller re-applies" contract). Re-set `clippingPlanes = clippingPlanes` to force a
 refresh without changing anything.
 
+## 12. Escalation: asking a bounded question about geometry (optional)
+
+The runtime half of a human-in-the-loop model — an agent (an MCP-connected reconstruction
+pipeline, say) asks a question grounded in specific geometry and awaits an answer, without
+needing to own the UI itself:
+
+```swift
+let request = EscalationRequest(
+    id: "hole-42",
+    entities: [pickedFace],           // highlighted automatically when presented
+    question: "Through-hole or blind pocket?",
+    candidates: [
+        EscalationCandidate(id: "through", label: "Through-hole"),
+        EscalationCandidate(id: "blind", label: "Blind pocket"),
+    ],
+    context: ["depth": "12.4mm", "diameter": "6.0mm"]
+)
+
+let response = await viewport.present(request)
+```
+
+`present(_:)` highlights `request.entities` the same way a real pick would (replacing the
+current `selection`), shows any candidate's `previewBodyID` if supplied, and suspends until
+answered. Elsewhere in your view hierarchy, observing the same `viewport`:
+
+```swift
+if let request = viewport.pendingEscalation {
+    EscalationCardView(
+        request: request,
+        selection: viewport.selection,
+        onChoose: { viewport.respond(.chose(candidateID: $0)) },
+        onUseSelection: { viewport.respondWithCurrentSelection() },
+        onDefer: { viewport.respond(.deferred) },
+        onReject: { viewport.respond(.rejected(reason: $0)) }
+    )
+}
+```
+
+Two things make this more than a dialog box:
+
+- **The request's entities are highlighted**, so the question is grounded in visible
+  geometry rather than a floating description.
+- **The human can answer by picking geometry instead of choosing a candidate** —
+  `respondWithCurrentSelection()` wraps whatever `selection` currently holds in
+  `.picked(...)`, for "none of those, this one."
+
+`EscalationCardView` is one adaptive layout (capped to a comfortable phone-width column)
+rather than separate macOS/iOS view types — usable as a floating panel on a larger surface
+too. If a previous escalation is still pending when you call `present(_:)` again, it's
+resolved `.deferred` first, so calling it repeatedly is always safe. Removing (or reloading)
+an entity a pending escalation references — or a full `removeAll()` — auto-resolves it
+`.rejected` rather than leaving `present(_:)` suspended over geometry that's gone.
+
 ## Next steps
 
 - See [`docs/reference/CADViewportService.md`](../reference/CADViewportService.md) for the
   full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
   `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionSummary` /
   `ScalarField` / `ColorMap` / `ScalarFieldLegend` / `ComparisonView` / `ComparisonMode` /
-  `Axis` / `ClippingPlane` / `FaceBounds` types, and `CADViewportError`.
+  `Axis` / `ClippingPlane` / `EscalationRequest` / `EscalationCandidate` /
+  `EscalationResponse` / `FaceBounds` types, and `CADViewportError`.

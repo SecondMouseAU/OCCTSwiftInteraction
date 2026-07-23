@@ -13,6 +13,7 @@ Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-
 - `ScalarField` / `ColorMap` / `ScalarFieldLegend` — paint a scalar value (deviation, curvature, wall thickness, confidence...) per face or per triangle via `setScalarField(_:forBody:)`; `.viridis`/`.magma`/`.turbo` sequential ramps, `.diverging(center:)` for signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`. A face pick reports its value (`PickedFaceInfo.scalarValue`); `scalarFieldLegend` reports the range/unit/color stops for rendering a legend.
 - `ComparisonView` / `ComparisonMode` — display two already-loaded entities (typically a source mesh and a reconstructed solid) against each other via `setComparison(_:)`: `.overlay(referenceOpacity:)` ghosts the reference, `.deviation` marks the candidate's already-set scalar field as the comparison (CADKit doesn't compute deviation itself), `.sideBySide` offsets the candidate next to the reference, `.wipe(axis:position:)` spatially splits the two at a plane. Settable/clearable without reloading either entity.
 - `ClippingPlane` — clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides geometry on one side, interactively; `showCapSurface: true` (the default) additionally shows the cut as solid material via a genuine B-Rep split rather than looking hollow — expensive relative to the hollow path, so a smoothly-scrubbed `sectionSweep` on complex geometry should expect that cost. Picking respects active planes even though the GPU pick pass itself doesn't.
+- `EscalationRequest` / `EscalationCandidate` / `EscalationResponse` / `EscalationCardView` — human-in-the-loop escalation: `present(_:) async -> EscalationResponse` asks a bounded question grounded in specific geometry (highlighted automatically) and suspends until it's answered, by choosing a candidate, picking geometry instead (`respondWithCurrentSelection()`), deferring, or rejecting. `EscalationCardView` presents the question/candidates/context and reports the answer via closures, in the same explicit-values-plus-callbacks style as `CADViewportView`.
 - `CADViewportError` — `unsupportedFormat`, `emptyFile`, `loadFailed`.
 
 ## Quick start
@@ -76,6 +77,44 @@ let planeID = viewport.addClippingPlane(origin: .zero, normal: SIMD3(0, 0, 1))  
 viewport.sectionSweep(axis: SIMD3(0, 0, 1), position: sliderValue)
 
 viewport.removeClippingPlane(id: planeID)
+```
+
+### Asking a bounded question about specific geometry
+
+```swift
+let request = EscalationRequest(
+    id: "hole-42",
+    entities: [pickedFace],
+    question: "Through-hole or blind pocket?",
+    candidates: [
+        EscalationCandidate(id: "through", label: "Through-hole"),
+        EscalationCandidate(id: "blind", label: "Blind pocket"),
+    ],
+    context: ["depth": "12.4mm", "diameter": "6.0mm"]
+)
+
+let response = await viewport.present(request)   // highlights pickedFace; suspends until answered
+
+switch response {
+case .chose(let candidateID): print("chose", candidateID)
+case .picked(let entities): print("answered by picking", entities)
+case .deferred: print("deferred")
+case .rejected(let reason): print("rejected", reason ?? "")
+}
+```
+
+```swift
+// Somewhere in the view hierarchy, observing the same viewport:
+if let request = viewport.pendingEscalation {
+    EscalationCardView(
+        request: request,
+        selection: viewport.selection,
+        onChoose: { viewport.respond(.chose(candidateID: $0)) },
+        onUseSelection: { viewport.respondWithCurrentSelection() },
+        onDefer: { viewport.respond(.deferred) },
+        onReject: { viewport.respond(.rejected(reason: $0)) }
+    )
+}
 ```
 
 ## Dependencies

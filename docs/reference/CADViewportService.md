@@ -506,6 +506,69 @@ See [`ClippingPlane`](#clippingplane) for the full type definition, and `CLAUDE.
 narrower interaction with an active `.overlay`/`.sideBySide`/`.wipe` comparison on the same
 entity.
 
+### Escalation
+
+```swift
+public private(set) var pendingEscalation: EscalationRequest?
+public func present(_ request: EscalationRequest) async -> EscalationResponse
+public func respond(_ response: EscalationResponse)
+public func respondWithCurrentSelection()
+```
+
+The runtime half of a human-in-the-loop model: ask a bounded question grounded in specific
+geometry, and await an answer — by candidate choice, by picking geometry instead, by
+deferring, or by rejecting.
+
+```swift
+let request = EscalationRequest(
+    id: "hole-42",
+    entities: [pickedFace],           // highlighted automatically when presented
+    question: "Through-hole or blind pocket?",
+    candidates: [
+        EscalationCandidate(id: "through", label: "Through-hole"),
+        EscalationCandidate(id: "blind", label: "Blind pocket"),
+    ],
+    context: ["depth": "12.4mm", "diameter": "6.0mm"]
+)
+
+let response = await viewport.present(request)
+```
+
+`present(_:)`:
+- Highlights `request.entities` via the same mechanism a real pick uses
+  (`select(_:scheme:)` — `.replace` then `.add` for each), replacing the current `selection`.
+- Shows any supplied `EscalationCandidate.previewBodyID` (searched across `modelBodies` and
+  every overlay layer) — but doesn't hide it again itself once the escalation resolves;
+  that's the caller's responsibility, same as it owns staging the preview body in the first
+  place.
+- Sets `pendingEscalation`, then suspends until answered.
+- If a PREVIOUS escalation is still pending, resolves it `.deferred` first, so calling
+  `present(_:)` again is always safe — no leaked continuation, no silently-abandoned prior
+  question.
+- If the awaiting `Task` is cancelled (a SwiftUI `.task` whose view disappeared, an agent
+  racing this against its own timeout), resolves `.deferred` on its own too, rather than
+  leaving `pendingEscalation` stuck with nothing left to resolve it.
+
+The answer arrives however the caller's UI wires it up — typically a button in
+[`EscalationCardView`](#escalationcardview) calling `respond(_:)` with the appropriate case,
+or `respondWithCurrentSelection()` for "the human picked something instead of choosing a
+candidate":
+
+```swift
+viewport.respond(.chose(candidateID: "through"))
+viewport.respond(.deferred)
+viewport.respond(.rejected(reason: "not enough context"))
+viewport.respondWithCurrentSelection()   // wraps viewport.selection in .picked(...)
+```
+
+Removing (or reloading) an entity any of the pending escalation's `entities` belongs to —
+or a full `removeAll()` — auto-resolves it `.rejected("referenced geometry was removed")`
+rather than leaving `present(_:)` suspended over geometry that no longer exists.
+
+See [`EscalationRequest`](#escalationrequest) / [`EscalationCandidate`](#escalationcandidate) /
+[`EscalationResponse`](#escalationresponse) for the full type definitions, and
+[`EscalationCardView`](#escalationcardview) for the SwiftUI presentation.
+
 ### `CADViewportService.ShapeBounds`
 
 ```swift
@@ -576,6 +639,54 @@ selected:onClearSelection:)` (wraps a single `PickedEntity?` into `selection`) a
 into `.face(_:)`).
 
 <!-- 3D render TODO: CADViewportView with selection banner and display-mode controls -->
+
+---
+
+## `EscalationCardView`
+
+```swift
+public struct EscalationCardView: View
+```
+
+Presents an `EscalationRequest`'s question, candidates, and context, and reports how it was
+answered via closures — same explicit-values-plus-callbacks style as `CADViewportView` (no
+direct binding to `CADViewportService`), so the caller stays in control of how it's
+presented (a sheet, a sidebar inspector, a bottom card). Capped to a comfortable phone-width
+column (`maxWidth: 360`) rather than separate macOS/iOS view types — usable as a floating
+panel on a larger surface too.
+
+### Initializer
+
+```swift
+public init(
+    request: EscalationRequest,
+    selection: [PickedEntity] = [],
+    onChoose: ((String) -> Void)? = nil,
+    onUseSelection: (() -> Void)? = nil,
+    onDefer: (() -> Void)? = nil,
+    onReject: ((String?) -> Void)? = nil
+)
+```
+
+- **`request`** — the escalation to present; pass `service.pendingEscalation` once non-`nil`.
+- **`selection`** — pass `service.selection`; the "Use selection" button is disabled when empty.
+- **`onChoose`** — invoked with a candidate's `id` when tapped.
+- **`onUseSelection`** — invoked when the human answers by picking instead of choosing.
+- **`onDefer`** / **`onReject`** — invoked by their respective buttons (`onReject` always
+  passes `nil` — pass a specific reason yourself if your UI collects one).
+
+```swift
+if let request = viewport.pendingEscalation {
+    EscalationCardView(
+        request: request,
+        selection: viewport.selection,
+        onChoose: { viewport.respond(.chose(candidateID: $0)) },
+        onUseSelection: { viewport.respondWithCurrentSelection() },
+        onDefer: { viewport.respond(.deferred) },
+        onReject: { viewport.respond(.rejected(reason: $0)) }
+    )
+}
+```
 
 ---
 
@@ -863,6 +974,55 @@ A clipping/section plane, set via `CADViewportService.clippingPlanes`/
 `addClippingPlane(origin:normal:showCapSurface:)`. Geometry on the side the normal points
 away from is hidden. See the [Clipping](#clipping) section above for what
 `showCapSurface` does and its cost.
+
+## `EscalationRequest`
+
+```swift
+public struct EscalationRequest: Sendable, Identifiable, Equatable {
+    public let id: String
+    public let entities: [PickedEntity]
+    public let question: String
+    public let candidates: [EscalationCandidate]
+    public let context: [String: String]?
+}
+```
+
+A bounded question about specific geometry, presented via
+`CADViewportService.present(_:)`. `entities` is what the question is about — highlighted
+when presented. `candidates` may be empty when the only sensible answer is "pick the right
+geometry yourself." `context` is free-form supporting data (measurements, gate output) for
+display alongside the question.
+
+## `EscalationCandidate`
+
+```swift
+public struct EscalationCandidate: Sendable, Identifiable, Equatable {
+    public let id: String
+    public let label: String
+    public let detail: String?
+    public let previewBodyID: String?
+}
+```
+
+One candidate answer. `previewBodyID` is the id of an already-loaded/staged `_ViewportBody`
+(a model body, or one staged via `setOverlay(id:bodies:)`) to show while this candidate is
+being considered — `nil` if this candidate has no preview geometry of its own.
+
+## `EscalationResponse`
+
+```swift
+public enum EscalationResponse: Sendable, Equatable {
+    case chose(candidateID: String)
+    case picked([PickedEntity])
+    case deferred
+    case rejected(reason: String?)
+}
+```
+
+How an `EscalationRequest` was answered. `.chose` names one of the request's `candidates`
+by id; `.picked` is the human answering by selecting geometry instead; `.deferred` and
+`.rejected` are distinguishable non-answers — deferring means "ask me again later,"
+rejecting means "the question itself doesn't apply."
 
 ## `FaceBounds`
 

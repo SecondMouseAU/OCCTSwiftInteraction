@@ -2,8 +2,8 @@
 type: repo
 title: OCCTSwiftCADKit
 resource: https://github.com/SecondMouseAU/OCCTSwiftCADKit
-tags: [cad, occt, viewport, metal, swiftui, step, stl, brep, face-picking, edge-picking, vertex-picking, durable-identity, multi-body, assembly, multi-selection, scalar-field, deviation-heatmap, comparison, reconstruction-review, clipping, section-planes, kernel]
-description: Shared SwiftUI Metal CAD viewport plus STEP/STL/BREP import (single-shape or multi-body/assembly), face/edge/vertex picking (single or multi-select), scalar field / deviation heatmap display, mesh/solid comparison, and clipping/section planes for OCCT-based apps.
+tags: [cad, occt, viewport, metal, swiftui, step, stl, brep, face-picking, edge-picking, vertex-picking, durable-identity, multi-body, assembly, multi-selection, scalar-field, deviation-heatmap, comparison, reconstruction-review, clipping, section-planes, escalation, human-in-the-loop, kernel]
+description: Shared SwiftUI Metal CAD viewport plus STEP/STL/BREP import (single-shape or multi-body/assembly), face/edge/vertex picking (single or multi-select), scalar field / deviation heatmap display, mesh/solid comparison, clipping/section planes, and human-in-the-loop escalation for OCCT-based apps.
 timestamp: 2026-07-23
 ---
 
@@ -13,10 +13,12 @@ timestamp: 2026-07-23
 > coexisting, addressable entities for an assembly), face/edge/vertex picking (single- or
 > multi-select, with aggregate summaries), scalar field display (deviation heatmaps and similar,
 > per face or per triangle), mesh/solid comparison display (ghosting, deviation heatmap,
-> side-by-side, spatial wipe) for reconstruction review, and clipping/section planes (hollow or
-> solid-capped, with clip-aware picking) for apps built on OCCTSwift and OCCTSwiftViewport.
-> Extracted from PadCAM's `CADViewportService` / `CADViewportView` so multiple OCCT-based apps can
-> share the same viewport plumbing without forking it.
+> side-by-side, spatial wipe) for reconstruction review, clipping/section planes (hollow or
+> solid-capped, with clip-aware picking), and human-in-the-loop escalation (`present(_:) async ->
+> EscalationResponse`, grounding a bounded question in highlighted geometry) for apps built on
+> OCCTSwift and OCCTSwiftViewport. Extracted from PadCAM's `CADViewportService` /
+> `CADViewportView` so multiple OCCT-based apps can share the same viewport plumbing without
+> forking it.
 
 ## Role in the ecosystem
 

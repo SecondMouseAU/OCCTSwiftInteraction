@@ -1860,4 +1860,262 @@ struct SmokeTests {
 
         #expect(service.scalarField(forBody: "box") == nil, "the field's ordinals no longer correspond to the new (cut) tessellation")
     }
+
+    // MARK: - Escalation (#33)
+
+    private func makeFacePick(bodyID: String, faceIndex: Int = 0) -> PickedEntity? {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else { return nil }
+        let bounds = FaceBounds(minX: 0, maxX: 4, minY: 0, maxY: 4)
+        return .face(PickedFaceInfo(
+            shape: box,
+            uid: nil,
+            faceIndex: faceIndex,
+            bodyID: bodyID,
+            isHorizontal: true,
+            isVertical: false,
+            bounds: bounds,
+            zLevel: 0,
+            area: 16,
+            description: "test face"
+        ))
+    }
+
+    @Test("EscalationRequest/EscalationCandidate/EscalationResponse round-trip through equality")
+    func escalationValueTypesEquality() {
+        guard let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let a = EscalationRequest(id: "req1", entities: [entity], question: "Through-hole or blind pocket?", candidates: [
+            EscalationCandidate(id: "through", label: "Through-hole"),
+            EscalationCandidate(id: "blind", label: "Blind pocket"),
+        ])
+        let b = EscalationRequest(id: "req1", entities: [entity], question: "Through-hole or blind pocket?", candidates: [
+            EscalationCandidate(id: "through", label: "Through-hole"),
+            EscalationCandidate(id: "blind", label: "Blind pocket"),
+        ])
+        let c = EscalationRequest(id: "req2", entities: [entity], question: "Through-hole or blind pocket?")
+        #expect(a == b)
+        #expect(a != c)
+
+        #expect(EscalationResponse.chose(candidateID: "through") == .chose(candidateID: "through"))
+        #expect(EscalationResponse.chose(candidateID: "through") != .chose(candidateID: "blind"))
+        #expect(EscalationResponse.deferred == .deferred)
+        #expect(EscalationResponse.rejected(reason: "no") == .rejected(reason: "no"))
+        #expect(EscalationResponse.rejected(reason: "no") != .rejected(reason: nil))
+    }
+
+    @MainActor
+    @Test("present highlights the request's entities and awaits a response")
+    func presentHighlightsEntitiesAndAwaitsResponse() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let request = EscalationRequest(
+            id: "req1",
+            entities: [entity],
+            question: "Through-hole or blind pocket?",
+            candidates: [
+                EscalationCandidate(id: "through", label: "Through-hole"),
+                EscalationCandidate(id: "blind", label: "Blind pocket"),
+            ]
+        )
+
+        let responseTask = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+
+        #expect(service.pendingEscalation?.id == "req1")
+        #expect(service.selection == [entity])
+
+        service.respond(.chose(candidateID: "through"))
+        let response = await responseTask.value
+
+        #expect(response == .chose(candidateID: "through"))
+        #expect(service.pendingEscalation == nil)
+    }
+
+    @MainActor
+    @Test("present highlights every entity in a multi-entity request, in order")
+    func presentHighlightsMultipleEntities() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4),
+              let entityA = makeFacePick(bodyID: "box", faceIndex: 0),
+              let entityB = makeFacePick(bodyID: "box", faceIndex: 1) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let request = EscalationRequest(id: "req1", entities: [entityA, entityB], question: "Which of these is correct?")
+        let responseTask = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+
+        #expect(service.selection == [entityA, entityB])
+
+        service.respond(.deferred)
+        _ = await responseTask.value
+    }
+
+    @MainActor
+    @Test("respondWithCurrentSelection resolves with whatever is currently selected")
+    func respondWithCurrentSelectionUsesSelection() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4),
+              let requestEntity = makeFacePick(bodyID: "box", faceIndex: 0),
+              let pickedEntity = makeFacePick(bodyID: "box", faceIndex: 1) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let request = EscalationRequest(id: "req1", entities: [requestEntity], question: "Is this right?")
+        let responseTask = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+
+        // The human picks something else instead of answering via a candidate.
+        service.select(pickedEntity, scheme: .replace)
+        service.respondWithCurrentSelection()
+
+        let response = await responseTask.value
+        #expect(response == .picked([pickedEntity]))
+    }
+
+    @MainActor
+    @Test("Presenting a new escalation while one is pending resolves the previous one as deferred")
+    func presentingWhilePendingDefersThePrevious() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let firstRequest = EscalationRequest(id: "first", entities: [entity], question: "First question?")
+        let firstResponseTask = Task { @MainActor in await service.present(firstRequest) }
+        await Task.yield()
+
+        let secondRequest = EscalationRequest(id: "second", entities: [entity], question: "Second question?")
+        let secondResponseTask = Task { @MainActor in await service.present(secondRequest) }
+        await Task.yield()
+
+        let firstResponse = await firstResponseTask.value
+        #expect(firstResponse == .deferred, "the first request must not be left hanging when a second one is presented")
+
+        service.respond(.deferred)
+        let secondResponse = await secondResponseTask.value
+        #expect(secondResponse == .deferred)
+        #expect(service.pendingEscalation == nil)
+    }
+
+    /// Regression for an adversarial-review finding on this PR: `present(_:)` didn't respond
+    /// to the awaiting `Task` being cancelled — the real, common case of a SwiftUI `.task`
+    /// whose view disappears, or an agent racing `present(_:)` against its own timeout. Before
+    /// the fix, cancellation had no effect at all: `pendingEscalation` and the continuation
+    /// stayed stuck forever unless something else (a fresh `present(_:)`, entity removal,
+    /// `removeAll()`) happened to resolve it later.
+    @MainActor
+    @Test("Cancelling the awaiting task resolves the pending escalation rather than leaking it")
+    func cancellingAwaitingTaskResolvesEscalation() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let request = EscalationRequest(id: "req1", entities: [entity], question: "Is this right?")
+        let responseTask = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+        #expect(service.pendingEscalation != nil)
+
+        responseTask.cancel()
+
+        let response = await responseTask.value
+        #expect(response == .deferred)
+        #expect(service.pendingEscalation == nil, "cancellation must not leave the escalation stuck pending forever")
+    }
+
+    @MainActor
+    @Test("Removing an entity referenced by a pending escalation auto-resolves it as rejected")
+    func removingReferencedEntityRejectsPendingEscalation() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let request = EscalationRequest(id: "req1", entities: [entity], question: "Is this right?")
+        let responseTask = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+
+        service.remove(id: "box")
+
+        let response = await responseTask.value
+        #expect(response == .rejected(reason: "referenced geometry was removed"))
+        #expect(service.pendingEscalation == nil)
+    }
+
+    @MainActor
+    @Test("removeAll() auto-resolves a pending escalation as rejected")
+    func removeAllRejectsPendingEscalation() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let request = EscalationRequest(id: "req1", entities: [entity], question: "Is this right?")
+        let responseTask = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+
+        service.removeAll()
+
+        let response = await responseTask.value
+        #expect(response == .rejected(reason: "referenced geometry was removed"))
+    }
+
+    @MainActor
+    @Test("present makes a candidate's preview body visible")
+    func presentShowsCandidatePreviewBody() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let previewBody = _ViewportBody(
+            id: "preview.through",
+            vertexData: [0, 0, 0, 0, 0, 1],
+            indices: [0],
+            edges: [],
+            color: SIMD4<Float>(0.2, 0.8, 0.2, 1.0),
+            isVisible: false
+        )
+        service.setOverlay(id: "candidatePreviews", bodies: [previewBody])
+        // `service.bodies` mirrors `interactiveContext.bodies` asynchronously via a Combine
+        // sink (`.receive(on: RunLoop.main)`); read the latter directly for a synchronous
+        // check, matching this file's other `interactiveContext.bodies` assertions.
+        #expect(service.interactiveContext.bodies.first { $0.id == "preview.through" }?.isVisible == false)
+
+        let request = EscalationRequest(
+            id: "req1",
+            entities: [entity],
+            question: "Through-hole or blind pocket?",
+            candidates: [EscalationCandidate(id: "through", label: "Through-hole", previewBodyID: "preview.through")]
+        )
+        let responseTask = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+
+        #expect(service.interactiveContext.bodies.first { $0.id == "preview.through" }?.isVisible == true)
+
+        service.respond(.deferred)
+        _ = await responseTask.value
+    }
 }
