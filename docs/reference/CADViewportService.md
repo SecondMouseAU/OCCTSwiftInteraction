@@ -253,7 +253,9 @@ CADViewportView(
 
 ```swift
 public struct PickedFaceInfo: Sendable, Equatable {
-    public let faceIndex: Int       // 0-based index into loadedShape.faces()
+    public let shape: OCCTSwift.Shape        // durable: the picked face's own Shape
+    public let uid: BRepGraph.GraphUID?      // durable: minted from the body's BRepGraph, when available
+    public let faceIndex: Int                // ephemeral: render-path ordinal, this body's tessellation only
     public let bodyID: String
     public let isHorizontal: Bool
     public let isVertical: Bool
@@ -264,14 +266,19 @@ public struct PickedFaceInfo: Sendable, Equatable {
 }
 ```
 
-Metadata about a face picked in the viewport. `faceIndex` is the 0-based index into
-`loadedShape.faces()` — use it to look the face back up via OCCTSwift for further
-analysis. No CAM- or unfold-specific dependencies.
+Metadata about a face picked in the viewport. `shape` and `uid` are the durable identity
+of the pick, captured once at pick time from the picked body's `FaceIdentityTable`.
+`faceIndex` is the ephemeral render-path ordinal the pick came from — valid only against
+that body's own tessellation. Don't subscript `loadedShape.faces()[faceIndex]` to
+re-derive the face: once a face is shared between two shells, that non-deduplicating
+traversal counts the shared face once per shell, so the same ordinal can silently name a
+different face than the one actually picked. Construct a `Face` from `shape` instead. No
+CAM- or unfold-specific dependencies.
 
 ```swift
-if let face = viewport.selectedFace, let shape = viewport.loadedShape {
-    let occtFace = shape.faces()[face.faceIndex]
+if let face = viewport.selectedFace, let occtFace = Face(face.shape) {
     print("area:", face.area, "horizontal:", face.isHorizontal)
+    print("durable handle available:", face.uid != nil)
 }
 ```
 

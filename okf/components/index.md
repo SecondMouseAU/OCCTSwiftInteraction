@@ -18,4 +18,6 @@ timestamp: 2026-06-22
 - **`CADViewportView`** — SwiftUI wrapper around the Metal viewport with a selection-info banner and
   display-mode controls.
 - **`PickedFaceInfo`, `FaceBounds`** — face metadata returned by picking (no CAM- or unfold-specific deps).
+  `PickedFaceInfo.shape`/`.uid` are the durable identity of the pick (captured from the body's
+  `FaceIdentityTable`); `.faceIndex` is an ephemeral render-path ordinal only.
 - **`CADViewportError`** — `unsupportedFormat`, `emptyFile`, `loadFailed`.

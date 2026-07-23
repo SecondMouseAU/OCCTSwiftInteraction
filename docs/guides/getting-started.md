@@ -146,14 +146,22 @@ struct CADScreen: View {
 ```
 
 The picked face is highlighted in the viewport automatically. To do further geometric
-analysis, use `face.faceIndex` to look the face up in the loaded shape:
+analysis, construct a `Face` from `face.shape` — the durable identity captured at pick
+time — rather than re-deriving it from `face.faceIndex`:
 
 ```swift
-if let face = viewport.selectedFace, let shape = viewport.loadedShape {
-    let occtFace = shape.faces()[face.faceIndex]
+if let face = viewport.selectedFace, let occtFace = Face(face.shape) {
     // ...analyze occtFace via OCCTSwift...
 }
 ```
+
+`face.faceIndex` is the ephemeral render-path ordinal the pick came from — valid only
+against that body's own tessellation. Don't use it to subscript
+`loadedShape.faces()[face.faceIndex]`: once a face is shared between two shells, that
+enumeration counts the shared face once per shell, so the same ordinal can name a
+different face than the one actually picked. `face.uid` additionally carries a durable
+`BRepGraph.GraphUID` when a graph was available at pick time — the handle that survives
+a later mutation an ordinal alone does not.
 
 <!-- 3D render TODO: viewport with a picked face highlighted and the selection banner -->
 

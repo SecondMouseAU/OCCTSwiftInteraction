@@ -48,11 +48,29 @@ public final class CADViewportService {
     public private(set) var selectedFace: PickedFaceInfo?
 
     private var modelBodies: [_ViewportBody] = []
-    private var metadata: [String: CADBodyMetadata] = [:]
+    /// Internal rather than private so tests can seed it directly when exercising
+    /// `rebuildIdentity`/`resolveFacePick` against a synthetic multi-body scenario without
+    /// a real multi-body file on disk.
+    var metadata: [String: CADBodyMetadata] = [:]
     private var overlays: [String: [_ViewportBody]] = [:]
     private var selectionBody: _ViewportBody?
     private var ownedBodyIDs: Set<String> = []
     private var bodiesSubscription: AnyCancellable?
+
+    // MARK: - Durable identity (per loaded body)
+
+    /// The raw shape each model body was tessellated from, keyed by body id.
+    private var bodyShapes: [String: OCCTSwift.Shape] = [:]
+
+    /// One `BRepGraph` per loaded body, retained for its shape's lifetime — this is what
+    /// makes `PickedFaceInfo.uid` populatable, and what a later absorb-history mechanic
+    /// (mirroring `InteractiveContext.update(_:to:absorbing:operationName:)`) would need.
+    /// Absent for a body whose graph failed to construct (a pathological shape); such a
+    /// body's picks mint `uid == nil`.
+    private var bodyGraphs: [String: BRepGraph] = [:]
+
+    /// Face-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
+    private var faceIdentity: [String: FaceIdentityTable] = [:]
 
     public init(configuration: _ViewportConfiguration = .init(
         rotationStyle: .turntable,
@@ -109,6 +127,7 @@ public final class CADViewportService {
         self.loadedShape = firstShape
         self.modelBodies = result.bodies
         self.metadata = result.metadata
+        rebuildIdentity(bodies: result.bodies, shapes: result.shapes)
         clearSelection()
         rebuildBodies()
         focusOnLoadedShape()
@@ -119,10 +138,12 @@ public final class CADViewportService {
     /// OCCTSwift) without going through the file loader.
     public func loadShape(_ shape: OCCTSwift.Shape, id: String = "model") {
         self.loadedShape = shape
-        let (body, meta) = CADFileLoader.shapeToBodyAndMetadata(
+        let graph = BRepGraph(shape: shape)
+        let (body, meta, faceTable) = CADFileLoader.shapeToBodyMetadataAndIdentity(
             shape,
             id: id,
-            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)
+            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
+            graph: graph
         )
         if let body {
             self.modelBodies = [body]
@@ -130,9 +151,80 @@ public final class CADViewportService {
         if let meta {
             self.metadata[id] = meta
         }
+        self.bodyShapes[id] = shape
+        if let graph {
+            self.bodyGraphs[id] = graph
+        }
+        if let faceTable {
+            self.faceIdentity[id] = faceTable
+        }
         clearSelection()
         rebuildBodies()
         focusOnLoadedShape()
+    }
+
+    /// Builds a `BRepGraph` and `FaceIdentityTable` per body from a multi-body file load's
+    /// raw shapes, keyed by body id. `CADFileLoader.load(from:format:)` has no
+    /// identity-table overload — it owns the STL/IGES robust-reload fallback, which this
+    /// package shouldn't reimplement just to get identity — so the table is built directly
+    /// from `shape.faces()` instead of re-tessellating each body through
+    /// `shapeToBodyMetadataAndIdentity`. `shape.faces()` is the same non-deduplicating
+    /// traversal the mesher used to assign `CADBodyMetadata.faceIndices` in the first place
+    /// (see `FaceIdentityTable`'s own documentation), so ordinals line up without a second
+    /// tessellation pass.
+    ///
+    /// Requires `bodies` and `shapes` to correspond positionally (`shapes[i]` is the shape
+    /// `bodies[i]` was tessellated from) — true for `CADFileLoader.load(from:format:)`'s
+    /// primary bridge, where both arrays are appended together only on tessellation success.
+    /// Its STL/IGES robust-reload fallback (`reloadRobustAndBridge`) can violate this: it
+    /// appends to `shapes` on every input even when that input's body tessellation fails, so
+    /// a body-tessellation failure part-way through a multibody robust reload shifts `shapes`
+    /// out of alignment with `bodies` for every subsequent entry. Detectable from the outside
+    /// only via the count mismatch it produces (`shapes.count > bodies.count`) — when that
+    /// happens, this method skips building identity entirely rather than risk pairing a body
+    /// with the wrong shape, matching this pack's own rule that `uid`/`shape` should be
+    /// absent rather than wrong.
+    func rebuildIdentity(bodies: [_ViewportBody], shapes: [OCCTSwift.Shape]) {
+        guard bodies.count == shapes.count else {
+            self.bodyShapes = [:]
+            self.bodyGraphs = [:]
+            self.faceIdentity = [:]
+            return
+        }
+
+        var newShapes: [String: OCCTSwift.Shape] = [:]
+        var newGraphs: [String: BRepGraph] = [:]
+        var newIdentity: [String: FaceIdentityTable] = [:]
+
+        for (index, body) in bodies.enumerated() {
+            let shape = shapes[index]
+            newShapes[body.id] = shape
+            let graph = BRepGraph(shape: shape)
+            if let graph {
+                newGraphs[body.id] = graph
+            }
+            newIdentity[body.id] = Self.makeFaceIdentityTable(shape: shape, graph: graph)
+        }
+
+        self.bodyShapes = newShapes
+        self.bodyGraphs = newGraphs
+        self.faceIdentity = newIdentity
+    }
+
+    /// Mirrors `OCCTSwiftTools.CADFileLoader`'s own (private) `makeFaceIdentityTable`: map
+    /// every `shape.faces()` ordinal to its `Shape`, and, when a graph is available, to the
+    /// `GraphUID` minted via `graph.findNode(for:)` on that same face `Shape` so `IsSame`
+    /// semantics hold.
+    private static func makeFaceIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?) -> FaceIdentityTable {
+        let faceShapes = shape.faces().compactMap { OCCTSwift.Shape.fromFace($0) }
+        guard let graph else {
+            return FaceIdentityTable(shapes: faceShapes)
+        }
+        let uids: [BRepGraph.GraphUID?] = faceShapes.map { faceShape in
+            guard let node = graph.findNode(for: faceShape) else { return nil }
+            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
+        }
+        return FaceIdentityTable(shapes: faceShapes, uids: uids)
     }
 
     /// Convenience for callers that have file `Data` rather than a URL
@@ -218,28 +310,36 @@ public final class CADViewportService {
     }
 
     private func handlePick(_ result: _PickResult?) {
-        guard let result = result else {
+        guard let result,
+              let info = resolveFacePick(bodyID: result.bodyID, triangleIndex: result.triangleIndex) else {
             clearSelection()
             return
         }
 
-        guard let meta = metadata[result.bodyID] else {
-            clearSelection()
-            return
+        selectedFace = info
+        buildSelectionHighlight(bodyID: result.bodyID, faceIndex: Int32(info.faceIndex))
+    }
+
+    /// Resolves a triangle-level GPU pick to durable face identity via the picked body's
+    /// `FaceIdentityTable`. `internal` rather than `private` so it can be exercised
+    /// directly in tests without round-tripping through the viewport's async pick
+    /// callback — `handlePick` is the only production caller.
+    func resolveFacePick(bodyID: String, triangleIndex: Int) -> PickedFaceInfo? {
+        guard let meta = metadata[bodyID],
+              triangleIndex >= 0, triangleIndex < meta.faceIndices.count else {
+            return nil
         }
 
-        let triIndex = result.triangleIndex
-        guard triIndex >= 0 && triIndex < meta.faceIndices.count else {
-            clearSelection()
-            return
+        let faceIndex = Int(meta.faceIndices[triangleIndex])
+        guard faceIndex >= 0 else { return nil }
+
+        let identity = faceIdentity[bodyID]
+        var faceShape = identity?.shape(forOrdinal: faceIndex)
+        if faceShape == nil, let faces = bodyShapes[bodyID]?.faces(), faceIndex < faces.count {
+            faceShape = OCCTSwift.Shape.fromFace(faces[faceIndex])
         }
-
-        let faceIndex = Int(meta.faceIndices[triIndex])
-
-        guard let shape = loadedShape else { return }
-        let faces = shape.faces()
-        guard faceIndex >= 0 && faceIndex < faces.count else { return }
-        let face = faces[faceIndex]
+        guard let faceShape, let face = Face(faceShape) else { return nil }
+        let uid = identity?.uid(forOrdinal: faceIndex)
 
         let isHoriz = face.isHorizontal()
         let isVert = face.isVertical()
@@ -259,9 +359,11 @@ public final class CADViewportService {
         let zStr = zLevel.map { String(format: " at Z=%.1f", $0) } ?? ""
         let desc = "\(typeStr) face\(zStr), \(sizeStr)mm"
 
-        selectedFace = PickedFaceInfo(
+        return PickedFaceInfo(
+            shape: faceShape,
+            uid: uid,
             faceIndex: faceIndex,
-            bodyID: result.bodyID,
+            bodyID: bodyID,
             isHorizontal: isHoriz,
             isVertical: isVert,
             bounds: bounds,
@@ -269,8 +371,6 @@ public final class CADViewportService {
             area: faceArea,
             description: desc
         )
-
-        buildSelectionHighlight(bodyID: result.bodyID, faceIndex: Int32(faceIndex))
     }
 
     private func buildSelectionHighlight(bodyID: String, faceIndex: Int32) {
