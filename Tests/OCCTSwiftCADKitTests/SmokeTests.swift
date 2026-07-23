@@ -949,4 +949,245 @@ struct SmokeTests {
         #expect(service.loadedShape == nil)
         #expect(service.modelBodies.isEmpty)
     }
+
+    /// Regression for #30: a per-face scalar field must paint the correct triangles —
+    /// every triangle belonging to a given face ordinal gets that face's color — and the
+    /// body's `generation` changes (`applyTriangleStyles` rebuilds the body rather than
+    /// mutating `triangleStyles` in place; see its own doc comment for why an in-place
+    /// mutation was empirically confirmed to not actually update the rendered output on
+    /// an already-rendered body against `OCCTSwiftViewport`'s pinned floor).
+    @MainActor
+    @Test("setScalarField(_:forBody:) paints per-face values onto the correct triangles")
+    func scalarFieldPerFacePaintsCorrectTriangles() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        guard let bodyBefore = service.modelBodies.first(where: { $0.id == "box" }) else {
+            Issue.record("expected a model body for \"box\"")
+            return
+        }
+        let generationBefore = bodyBefore.generation
+        let faceCount = Set(bodyBefore.faceIndices.map { $0 }).count
+        #expect(faceCount == 6, "a box has 6 faces")
+
+        // One distinct value per face ordinal, using custom stops so colors are exact
+        // and easy to assert on rather than sampled from a continuous ramp.
+        let values = (0..<faceCount).map { Double($0) }
+        let field = ScalarField(
+            domain: .perFace,
+            values: values,
+            range: 0...Double(faceCount - 1),
+            colorMap: .custom(values.map { ($0, SIMD4<Float>(Float($0) / Float(faceCount - 1), 0, 0, 1)) }),
+            label: "test field"
+        )
+        service.setScalarField(field, forBody: "box")
+
+        guard let bodyAfter = service.modelBodies.first(where: { $0.id == "box" }) else {
+            Issue.record("expected a model body for \"box\" after setScalarField")
+            return
+        }
+        #expect(bodyAfter.generation != generationBefore, "must mint a fresh generation so the renderer actually rebuilds — see applyTriangleStyles's doc comment")
+        #expect(bodyAfter.triangleStyles.count == bodyAfter.indices.count / 3)
+
+        for tri in 0..<(bodyAfter.indices.count / 3) {
+            let faceIndex = Int(bodyAfter.faceIndices[tri])
+            let expectedRed = Float(faceIndex) / Float(faceCount - 1)
+            #expect(abs(bodyAfter.triangleStyles[tri].color.x - expectedRed) < 0.001)
+            #expect(bodyAfter.triangleStyles[tri].color.w == 1, "fully opaque, per the design")
+        }
+
+        #expect(service.scalarField(forBody: "box") != nil)
+
+        // Clearing removes every style.
+        service.setScalarField(nil, forBody: "box")
+        guard let bodyCleared = service.modelBodies.first(where: { $0.id == "box" }) else {
+            Issue.record("expected a model body for \"box\" after clearing")
+            return
+        }
+        #expect(bodyCleared.triangleStyles.isEmpty)
+        #expect(service.scalarField(forBody: "box") == nil)
+    }
+
+    /// Regression for #30: a per-triangle field paints directly by triangle index, not by
+    /// face — two triangles on the SAME face can carry different values.
+    @MainActor
+    @Test("setScalarField(_:forBody:) paints per-triangle values directly by triangle index")
+    func scalarFieldPerTrianglePaintsDirectly() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        guard let body = service.modelBodies.first(where: { $0.id == "box" }) else {
+            Issue.record("expected a model body for \"box\"")
+            return
+        }
+        let triCount = body.indices.count / 3
+        let values = (0..<triCount).map { Double($0) }
+        let field = ScalarField(
+            domain: .perTriangle,
+            values: values,
+            colorMap: .viridis,
+            label: "per-triangle test"
+        )
+        service.setScalarField(field, forBody: "box")
+
+        guard let bodyAfter = service.modelBodies.first(where: { $0.id == "box" }) else {
+            Issue.record("expected a model body for \"box\" after setScalarField")
+            return
+        }
+        // Two triangles on the same face (ordinal 0 and 1, typically the same face for a
+        // box mesh) must NOT necessarily share a color under a per-triangle field.
+        #expect(bodyAfter.triangleStyles[0].color != bodyAfter.triangleStyles[1].color || triCount < 2)
+    }
+
+    /// Regression for #30: `.diverging(center:)` must distinguish signed values about the
+    /// center — below-center and above-center map to genuinely different colors (not a
+    /// one-ended ramp that treats +2 and -2 the same).
+    @MainActor
+    @Test("Diverging color map distinguishes signed values about a center")
+    func divergingColorMapDistinguishesSignedValues() {
+        let colorMap = ColorMap.diverging(center: 0)
+        let range = -2.0...2.0
+
+        let below = colorMap.color(for: -2, in: range)
+        let center = colorMap.color(for: 0, in: range)
+        let above = colorMap.color(for: 2, in: range)
+
+        #expect(below != above, "opposite-signed extremes must not share a color")
+        #expect(below != center)
+        #expect(above != center)
+        // Below center should be blue-leaning (more blue than red); above should be red-leaning.
+        #expect(below.z > below.x, "below center should lean blue")
+        #expect(above.x > above.z, "above center should lean red")
+    }
+
+    /// Regression for #30: `.threshold(levels:)` assigns discrete bands, not a continuous
+    /// ramp — two values in the same band must share a color; crossing a level boundary
+    /// must change it.
+    @MainActor
+    @Test("Threshold color map assigns discrete pass/warn/fail bands")
+    func thresholdColorMapAssignsDiscreteBands() {
+        let colorMap = ColorMap.threshold(levels: [0.5, 1.0])
+        let range = 0.0...1.5
+
+        let pass1 = colorMap.color(for: 0.1, in: range)
+        let pass2 = colorMap.color(for: 0.4, in: range)
+        let warn = colorMap.color(for: 0.7, in: range)
+        let fail = colorMap.color(for: 1.2, in: range)
+
+        #expect(pass1 == pass2, "same band must share a color")
+        #expect(pass1 != warn)
+        #expect(warn != fail)
+    }
+
+    /// Regression for #30's acceptance criterion: picking a face reports its scalar value.
+    @MainActor
+    @Test("Picking a face reports its scalar value from the body's field")
+    func pickingFaceReportsScalarValue() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        guard let meta = service.metadata["box"] else {
+            Issue.record("expected metadata for \"box\"")
+            return
+        }
+        let faceCount = Set(meta.faceIndices.map { $0 }).count
+        let values = (0..<faceCount).map { Double($0) * 1.5 }
+        service.setScalarField(
+            ScalarField(domain: .perFace, values: values, colorMap: .turbo, label: "deviation", unit: "mm"),
+            forBody: "box"
+        )
+
+        guard let pick = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil")
+            return
+        }
+        guard let scalarValue = pick.scalarValue else {
+            Issue.record("expected a non-nil scalarValue once a field is set")
+            return
+        }
+        #expect(abs(scalarValue - values[pick.faceIndex]) < 0.001)
+
+        // No field set on a different body -> nil.
+        guard let boxB = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        service.load(boxB, id: "boxB")
+        guard let pickB = service.resolveFacePick(bodyID: "boxB", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil for boxB")
+            return
+        }
+        #expect(pickB.scalarValue == nil)
+    }
+
+    /// Regression for #30: `scalarFieldLegend` reports the range, unit, label, and sampled
+    /// color stops for the most recently set field.
+    @MainActor
+    @Test("scalarFieldLegend reports range, unit, and sampled stops")
+    func scalarFieldLegendReportsRangeAndStops() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        #expect(service.scalarFieldLegend == nil, "no field set yet")
+
+        let values = [0.0, 1.0, 2.0, -0.5, 0.3, 1.8]
+        service.setScalarField(
+            ScalarField(domain: .perFace, values: values, colorMap: .magma, label: "deviation", unit: "mm"),
+            forBody: "box"
+        )
+
+        guard let legend = service.scalarFieldLegend else {
+            Issue.record("expected a legend once a field is set")
+            return
+        }
+        #expect(legend.label == "deviation")
+        #expect(legend.unit == "mm")
+        #expect(abs(legend.range.lowerBound - (-0.5)) < 0.001)
+        #expect(abs(legend.range.upperBound - 2.0) < 0.001)
+        #expect(legend.stops.count == 9)
+        #expect(legend.stops.first!.value <= legend.stops.last!.value)
+
+        service.setScalarField(nil, forBody: "box")
+        #expect(service.scalarFieldLegend == nil, "clearing the field clears the legend")
+    }
+
+    /// Regression for #30 review: removing/replacing a body must drop its stale scalar
+    /// field rather than let it silently linger against a body it no longer describes.
+    @MainActor
+    @Test("Removing a body clears its scalar field and legend reference")
+    func removingBodyClearsScalarField() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        service.setScalarField(
+            ScalarField(domain: .perFace, values: [1, 2, 3, 4, 5, 6], colorMap: .viridis, label: "test"),
+            forBody: "box"
+        )
+        #expect(service.scalarField(forBody: "box") != nil)
+        #expect(service.scalarFieldLegend != nil)
+
+        service.remove(id: "box")
+
+        #expect(service.scalarField(forBody: "box") == nil)
+        #expect(service.scalarFieldLegend == nil)
+    }
 }

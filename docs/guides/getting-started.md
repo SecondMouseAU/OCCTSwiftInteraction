@@ -1,8 +1,9 @@
 # Getting started with OCCTSwiftCADKit
 
 This guide walks through embedding the shared CAD viewport in a SwiftUI app, importing
-STEP/STL/BREP files (single-shape or multi-entity/assembly), and handling face/edge/vertex
-pick selections (single or multi-select). Every snippet uses only the real public API of
+STEP/STL/BREP files (single-shape or multi-entity/assembly), handling face/edge/vertex
+pick selections (single or multi-select), and painting scalar fields (deviation heatmaps
+and similar) over a body. Every snippet uses only the real public API of
 `OCCTSwiftCADKit`.
 
 Platforms: iOS 18+ / macOS 15+.
@@ -330,9 +331,75 @@ viewport.clearOverlay(id: "1_toolpath")
 viewport.clearAllOverlays()
 ```
 
+## 9. Scalar field display (optional)
+
+Paint a scalar value over a loaded body — deviation, curvature, wall thickness, confidence,
+anything indexed by face or triangle — with `setScalarField(_:forBody:)`:
+
+```swift
+let deviationField = ScalarField(
+    domain: .perFace,                    // or .perTriangle, for a mesh-domain value
+    values: perFaceDeviationMM,          // [Double], indexed like PickedFaceInfo.faceIndex
+    range: -2.0...2.0,                   // nil auto-ranges to values' own min/max
+    colorMap: .diverging(center: 0),     // signed deviation: inside vs outside are different failures
+    label: "deviation",
+    unit: "mm"
+)
+viewport.setScalarField(deviationField, forBody: "candidate")
+```
+
+Updating or clearing a field (`setScalarField(nil, forBody:)`) rebuilds that body — its
+geometry is unchanged, but currently this does re-upload the whole body, not just the
+style buffer. That's a deliberate workaround, not the design: `OCCTSwiftViewport`'s own
+`ViewportBody.triangleStyles` is documented to support a cheap in-place mutation instead,
+but this was empirically confirmed (rendering before/after and comparing pixels) to
+silently not update an already-rendered body against its currently-pinned floor — the
+renderer only rebuilds GPU buffers when a body's `generation` changes, and an in-place
+mutation never changes it. Once that's fixed upstream, this can switch back to the cheap
+path with no change to `setScalarField`'s own signature.
+
+`ColorMap` covers the common cases:
+
+```swift
+.viridis, .magma, .turbo              // sequential ramps for an unsigned magnitude
+.diverging(center: 0)                 // two-sided ramp — use for signed deviation
+.threshold(levels: [0.5, 1.0])        // discrete pass/warn/fail bands
+.custom([(0.0, blue), (2.0, red)])    // explicit (value, color) stops, linearly interpolated
+```
+
+A face pick reports its scalar value directly — no separate lookup needed:
+
+```swift
+if case .face(let face)? = viewport.selection.first, viewport.selection.count == 1 {
+    if let value = face.scalarValue {
+        print("\(face.description): \(value) mm")
+    }
+}
+```
+
+The legend is part of the feature, not a nicety — read it to render a color bar with real
+tick labels rather than a decorative gradient:
+
+```swift
+if let legend = viewport.scalarFieldLegend {
+    Text("\(legend.label) (\(legend.unit ?? ""))")
+    // legend.stops: [(value, color)], evenly spaced across legend.range
+}
+```
+
+`scalarFieldLegend` reports the most recently set field (across whichever body it's on);
+`scalarField(forBody:)` reads any particular body's field directly.
+
+**Performance:** rebuilding a body's triangle styles scales linearly with triangle count.
+Measured on this machine: a single body with 25,132 triangles took ~4.3ms per
+`setScalarField` call (~0.17µs/triangle) — a synthetic proxy (a finely-tessellated
+cylinder), not the actual reference corpus's own geometry, but representative of the cost
+shape for a body at that scale.
+
 ## Next steps
 
 - See [`docs/reference/CADViewportService.md`](../reference/CADViewportService.md) for the
   full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
   `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionSummary` /
-  `FaceBounds` types, and `CADViewportError`.
+  `ScalarField` / `ColorMap` / `ScalarFieldLegend` / `FaceBounds` types, and
+  `CADViewportError`.

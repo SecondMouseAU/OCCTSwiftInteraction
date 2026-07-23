@@ -23,8 +23,12 @@ timestamp: 2026-06-22
   (`loadedShapes`, `shape(id:)`, `entityID(forBodyID:)`, `visibility`, `remove(id:)`, `removeAll()`,
   `focus(on:)`); the single-shape `loadFile(from:)`/`loadShape(_:id:)`/`loadFromData(_:filename:)`
   still work as a deprecated convenience, and are safe to mix with the new API — both register in
-  the same internal entity registry. Caller geometry (stock boxes, toolpaths, flat-pattern outlines,
-  annotations) is staged via
+  the same internal entity registry. `setScalarField(_:forBody:)` paints a `ScalarField` (deviation,
+  curvature, wall thickness, confidence — anything per-face or per-triangle) onto a body by
+  rebuilding it (currently a full re-upload, not just the GPU style buffer — see the method's own
+  doc comment for a confirmed upstream `OCCTSwiftViewport` caching limitation this works around);
+  `scalarFieldLegend` reports the range/unit/color stops for the most-recently-set field. Caller
+  geometry (stock boxes, toolpaths, flat-pattern outlines, annotations) is staged via
   `setOverlay(id:bodies:)` / `clearOverlay(id:)`.
 - **`CADViewportView`** — SwiftUI wrapper around the Metal viewport with a selection-info banner and
   display-mode controls.
@@ -34,6 +38,11 @@ timestamp: 2026-06-22
   picking (no CAM- or unfold-specific deps). Each info type's `.shape`/`.uid` are the durable identity
   of the pick (captured from the body's `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable`);
   `.faceIndex`/`.edgeIndex`/`.vertexIndex` are ephemeral render-path ordinals only.
+  `PickedFaceInfo.scalarValue` is the picked face's value from the body's `ScalarField`, if any.
 - **`SelectionSummary`** — count by kind, total face area, total edge length, and combined bounds
   over `CADViewportService.selection`.
+- **`ScalarField`, `ColorMap`, `ScalarFieldLegend`, `LegendStop`** — a per-face/per-triangle scalar
+  value plus how it maps to color (`.viridis`/`.magma`/`.turbo` sequential, `.diverging(center:)` for
+  signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`), and the legend a UI
+  renders alongside it.
 - **`CADViewportError`** — `unsupportedFormat`, `emptyFile`, `loadFailed`.

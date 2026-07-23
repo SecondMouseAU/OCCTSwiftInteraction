@@ -1,6 +1,6 @@
 # OCCTSwiftCADKit
 
-SwiftUI Metal viewport + CAD file import (STEP/STL/BREP) + face/edge/vertex picking, for apps built on [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) and [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport).
+SwiftUI Metal viewport + CAD file import (STEP/STL/BREP) + face/edge/vertex picking + scalar field (deviation heatmap) display, for apps built on [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) and [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport).
 
 Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-based apps (PadCAM, an UnfoldEngine test app, etc.) can share the same viewport plumbing without forking it.
 
@@ -10,6 +10,7 @@ Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-
 - `CADViewportView` — SwiftUI wrapper around the Metal viewport with selection-info banner and display-mode controls.
 - `PickedEntity` — `.face(PickedFaceInfo)` / `.edge(PickedEdgeInfo)` / `.vertex(PickedVertexInfo)`, each carrying durable identity (a `Shape` + optional `BRepGraph.GraphUID`) alongside an ephemeral render-path ordinal. No CAM- or unfold-specific dependencies.
 - `SelectionSummary` — aggregate count by kind, total face area, total edge length, and combined bounds over the current selection.
+- `ScalarField` / `ColorMap` / `ScalarFieldLegend` — paint a scalar value (deviation, curvature, wall thickness, confidence...) per face or per triangle via `setScalarField(_:forBody:)`; `.viridis`/`.magma`/`.turbo` sequential ramps, `.diverging(center:)` for signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`. A face pick reports its value (`PickedFaceInfo.scalarValue`); `scalarFieldLegend` reports the range/unit/color stops for rendering a legend.
 - `CADViewportError` — `unsupportedFormat`, `emptyFile`, `loadFailed`.
 
 ## Quick start

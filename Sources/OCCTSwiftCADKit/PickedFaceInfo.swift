@@ -36,6 +36,11 @@ public struct PickedFaceInfo: Sendable {
     public let area: Double
     public let description: String
 
+    /// This face's value from the `ScalarField` set on its body (`setScalarField(_:forBody:)`),
+    /// if any — resolved at pick time from the field's own domain (`.perFace` by `faceIndex`,
+    /// `.perTriangle` by the picked triangle). `nil` when no field is set on this body.
+    public let scalarValue: Double?
+
     public init(
         shape: OCCTSwift.Shape,
         uid: BRepGraph.GraphUID? = nil,
@@ -46,7 +51,8 @@ public struct PickedFaceInfo: Sendable {
         bounds: FaceBounds,
         zLevel: Float?,
         area: Double,
-        description: String
+        description: String,
+        scalarValue: Double? = nil
     ) {
         self.shape = shape
         self.uid = uid
@@ -58,6 +64,7 @@ public struct PickedFaceInfo: Sendable {
         self.zLevel = zLevel
         self.area = area
         self.description = description
+        self.scalarValue = scalarValue
     }
 }
 

@@ -1,11 +1,12 @@
 # CADViewportService — API reference
 
 `OCCTSwiftCADKit` provides a shared SwiftUI Metal CAD viewport: import STEP/STL/BREP
-geometry, render it, and route face/edge/vertex-picking results — single or multi-select
-— back to your app. The public surface is `CADViewportService` (the controller/state
-owner), `CADViewportView` (the SwiftUI view), the `PickedEntity`/`PickedFaceInfo`/
-`PickedEdgeInfo`/`PickedVertexInfo`/`SelectionSummary`/`FaceBounds` result types, and
-`CADViewportError`.
+geometry, render it, route face/edge/vertex-picking results — single or multi-select —
+back to your app, and paint scalar fields (deviation heatmaps and similar) over a body.
+The public surface is `CADViewportService` (the controller/state owner), `CADViewportView`
+(the SwiftUI view), the `PickedEntity`/`PickedFaceInfo`/`PickedEdgeInfo`/`PickedVertexInfo`/
+`SelectionSummary`/`ScalarField`/`ColorMap`/`ScalarFieldLegend`/`LegendStop`/`FaceBounds`
+result types, and `CADViewportError`.
 
 ```swift
 import OCCTSwiftCADKit
@@ -80,6 +81,7 @@ let custom = CADViewportService(configuration: .init(
 | `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of the single loaded shape, or `nil` (see `loadedShape`'s single-entity caveat). |
 | `overlayIDs` | `[String]` | Sorted ids of overlay layers currently staged. |
 | `visibility` | `[String: Bool]` | Per-entity visibility, keyed by entity id. |
+| `scalarFieldLegend` | `ScalarFieldLegend?` | Legend for the most recently set scalar field (see [Scalar fields](#scalar-fields)). `nil` if none is set. |
 
 ### File import (single-shape, deprecated)
 
@@ -344,6 +346,60 @@ if let summary = viewport.selectionSummary {
 }
 ```
 
+### Scalar fields
+
+```swift
+public func setScalarField(_ field: ScalarField?, forBody id: String)
+public func scalarField(forBody id: String) -> ScalarField?
+public var scalarFieldLegend: ScalarFieldLegend? { get }
+```
+
+`setScalarField` paints (or, with `nil`, clears) a scalar value per face or per triangle
+over a loaded body — deviation, curvature, wall thickness, confidence: anything indexed by
+face ordinal or triangle.
+
+**Current cost:** this rebuilds the whole body (a fresh `generation`), not just its GPU
+`TriangleStyle` buffer. `OCCTSwiftViewport`'s own `ViewportBody.triangleStyles` is
+documented to support a cheap in-place mutation instead (`generation` unchanged, only the
+style buffer re-uploads) — but that was empirically confirmed to silently not update an
+already-rendered body against `OCCTSwiftViewport`'s currently-pinned floor: its renderer
+only rebuilds a body's GPU buffers when `generation` changes, and an in-place
+`triangleStyles` mutation never changes it. This is a workaround for what looks like an
+upstream caching bug, tracked as a known limitation — `setScalarField`'s own signature
+won't need to change if/when it's fixed upstream.
+
+```swift
+let field = ScalarField(
+    domain: .perFace,
+    values: perFaceDeviationMM,           // [Double], indexed like PickedFaceInfo.faceIndex
+    range: -2.0...2.0,                    // nil auto-ranges to values' own min/max
+    colorMap: .diverging(center: 0),
+    label: "deviation",
+    unit: "mm"
+)
+viewport.setScalarField(field, forBody: "candidate")
+viewport.scalarField(forBody: "candidate")   // ScalarField? — round-trips what was set
+viewport.setScalarField(nil, forBody: "candidate")   // clears it
+```
+
+`scalarFieldLegend` reports the most recently set (still-active) field's label, unit,
+range, and evenly-spaced color stops — read it to render a color bar with real tick
+labels; an unlabelled heatmap is decorative. Removing/replacing a body clears its field
+(and the legend, if it was that body's field being reported).
+
+```swift
+if let legend = viewport.scalarFieldLegend {
+    print(legend.label, legend.unit ?? "", legend.range)
+    for stop in legend.stops { print(stop.value, stop.color) }
+}
+```
+
+A face pick reports its scalar value directly (`PickedFaceInfo.scalarValue: Double?`) —
+see [`PickedFaceInfo`](#pickedfaceinfo). `nil` when no field is set on that body.
+
+See [`ScalarField`](#scalarfield) / [`ColorMap`](#colormap) / [`ScalarFieldLegend`](#scalarfieldlegend)
+for the full type definitions.
+
 ### `CADViewportService.ShapeBounds`
 
 ```swift
@@ -449,6 +505,7 @@ public struct PickedFaceInfo: Sendable, Equatable {
     public let zLevel: Float?
     public let area: Double
     public let description: String  // e.g. "Horizontal face at Z=20.0, 50.0x30.0mm"
+    public let scalarValue: Double? // this face's value from the body's ScalarField, if any
 }
 ```
 
@@ -458,8 +515,9 @@ of the pick, captured once at pick time from the picked body's `FaceIdentityTabl
 that body's own tessellation. Don't subscript `loadedShape.faces()[faceIndex]` to
 re-derive the face: once a face is shared between two shells, that non-deduplicating
 traversal counts the shared face once per shell, so the same ordinal can silently name a
-different face than the one actually picked. Construct a `Face` from `shape` instead. No
-CAM- or unfold-specific dependencies.
+different face than the one actually picked. Construct a `Face` from `shape` instead.
+`scalarValue` is resolved from `setScalarField(_:forBody:)`'s field at pick time — `nil`
+unless a field is set on this body. No CAM- or unfold-specific dependencies.
 
 ```swift
 if case .face(let face)? = viewport.selection.first, viewport.selection.count == 1, let occtFace = Face(face.shape) {
@@ -546,6 +604,105 @@ if let summary = viewport.selectionSummary {
     if let b = summary.bounds { print("size:", b.sizeX, b.sizeY, b.sizeZ) }
 }
 ```
+
+## `ScalarField`
+
+```swift
+public struct ScalarField: Sendable {
+    public enum Domain: Sendable, Equatable { case perFace, perTriangle }
+    public let domain: Domain
+    public let values: [Double]              // indexed by face ordinal (.perFace) or triangle (.perTriangle)
+    public let range: ClosedRange<Double>?   // nil auto-ranges to values' own min/max
+    public let colorMap: ColorMap
+    public let label: String
+    public let unit: String?
+
+    public var effectiveRange: ClosedRange<Double>? { get }  // range, or the auto-ranged min/max
+}
+```
+
+A scalar value per face or per triangle, set via `CADViewportService.setScalarField(_:forBody:)`.
+`.perFace` indexes `values` the same way `PickedFaceInfo.faceIndex` does; `.perTriangle`
+indexes directly by triangle, for a value that varies within a face. A `.nan` entry (or a
+missing index) leaves that triangle unpainted rather than a wrong color.
+
+```swift
+let field = ScalarField(
+    domain: .perFace,
+    values: perFaceDeviationMM,
+    range: -2.0...2.0,
+    colorMap: .diverging(center: 0),
+    label: "deviation",
+    unit: "mm"
+)
+```
+
+## `ColorMap`
+
+```swift
+public enum ColorMap: Sendable, Equatable {
+    case viridis, magma, turbo
+    case diverging(center: Double)
+    case threshold(levels: [Double])
+    case custom([(Double, SIMD4<Float>)])
+
+    public func color(for value: Double, in range: ClosedRange<Double>) -> SIMD4<Float>
+}
+```
+
+- **`.viridis`/`.magma`/`.turbo`** — sequential ramps (dark→light), for an unsigned
+  magnitude (curvature, thickness, confidence). Approximate reproductions of the published
+  matplotlib/Google colormaps of the same name (anchor-color interpolation for
+  viridis/magma; Google's published polynomial fit for turbo) — close enough for review
+  purposes, not colorimetrically exact.
+- **`.diverging(center:)`** — a two-sided blue→white→red ramp about `center`, scaled by the
+  larger of `range`'s distance to `center` on either side. Use for signed deviation:
+  material outside the source and material missing from it are different failures, and a
+  one-ended ramp hides which is which.
+- **`.threshold(levels:)`** — discrete bands: `levels` are the ascending boundaries between
+  them (e.g. `[0.5, 1.0]` → 3 bands). Colors cycle through a small built-in
+  pass(green)/warn(yellow)/caution(orange)/fail(red)/purple palette, repeating if there are
+  more bands than colors.
+- **`.custom(stops:)`** — explicit `(value, color)` stops (raw values, not normalized 0–1),
+  linearly interpolated between the two bracketing stops; clamped to the nearest stop's
+  color outside their span.
+
+`color(for:in:)` is what `setScalarField`/`scalarFieldLegend` call internally — call it
+yourself to preview a color map without setting a field.
+
+## `ScalarFieldLegend`
+
+```swift
+public struct ScalarFieldLegend: Sendable, Equatable {
+    public let label: String
+    public let unit: String?
+    public let range: ClosedRange<Double>
+    public let stops: [LegendStop]  // 9 evenly-spaced (value, color) samples across range
+}
+```
+
+Everything a UI needs to render a scalar field's legend — a color bar with real tick
+labels, not a decorative gradient. Returned by `CADViewportService.scalarFieldLegend`.
+
+```swift
+if let legend = viewport.scalarFieldLegend {
+    Text("\(legend.label)\(legend.unit.map { " (\($0))" } ?? "")")
+    ForEach(legend.stops, id: \.value) { stop in
+        // render a swatch for stop.color, labeled stop.value
+    }
+}
+```
+
+## `LegendStop`
+
+```swift
+public struct LegendStop: Sendable, Equatable {
+    public let value: Double
+    public let color: SIMD4<Float>
+}
+```
+
+One labeled point on a `ScalarFieldLegend`.
 
 ## `FaceBounds`
 
