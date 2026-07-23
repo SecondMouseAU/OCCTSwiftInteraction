@@ -396,10 +396,62 @@ Measured on this machine: a single body with 25,132 triangles took ~4.3ms per
 cylinder), not the actual reference corpus's own geometry, but representative of the cost
 shape for a body at that scale.
 
+## 10. Mesh/solid comparison (optional)
+
+Reconstruction review means seeing a source mesh and a candidate solid together and
+understanding where they differ. Load both as separate entities, then drive
+`setComparison(_:)`:
+
+```swift
+viewport.load(sourceMesh, id: "reference")
+viewport.load(reconstructedSolid, id: "candidate")
+
+viewport.setComparison(ComparisonView(
+    referenceID: "reference",
+    candidateID: "candidate",
+    mode: .overlay(referenceOpacity: 0.3)   // ghost the reference behind the candidate
+))
+```
+
+Four modes:
+
+```swift
+.overlay(referenceOpacity: 0.3)      // reference ghosted behind the candidate
+.deviation                            // candidate painted via the scalar field path (see below)
+.sideBySide                           // candidate offset next to the reference, one shared camera
+.wipe(axis: .x, position: 0)          // spatially split: reference below `position`, candidate above
+```
+
+`.deviation` doesn't compute anything itself — CADKit stays free of measurement
+responsibility, matching the same trade-off `setScalarField` makes elsewhere. Compute the
+per-face/per-triangle distance from candidate to reference yourself and set it first:
+
+```swift
+viewport.setScalarField(deviationField, forBody: "candidate")
+viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .deviation))
+```
+
+Calling `setComparison` again — with a different mode, or updated `position`/
+`referenceOpacity` for the same mode, e.g. while the user drags a wipe slider — first
+undoes whatever the previous comparison did before applying the new one, so calls don't
+compound. `setComparison(nil)` restores both entities to their plain display without
+reloading either one.
+
+`.wipe` is a plain CPU-side triangle filter (each body keeps only the triangles on its
+side of the plane), not `ViewportController.clipPlanes` — that mechanism clips the whole
+scene uniformly, so it can't show the reference and candidate differently. A side effect:
+a wiped body's wireframe edges and vertex-picking aren't preserved, only its shaded
+triangles — the split is a review affordance, not a full re-tessellation.
+
+`.overlay`/`.sideBySide` mutate a body's color/transform in place — cheap, since the
+renderer reads both fresh every frame rather than caching them (unlike the scalar-field
+style buffer above). `.wipe` rebuilds each side's body (a fresh `generation`, like
+`setScalarField` does), scaled to that body's triangle count.
+
 ## Next steps
 
 - See [`docs/reference/CADViewportService.md`](../reference/CADViewportService.md) for the
   full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
   `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionSummary` /
-  `ScalarField` / `ColorMap` / `ScalarFieldLegend` / `FaceBounds` types, and
-  `CADViewportError`.
+  `ScalarField` / `ColorMap` / `ScalarFieldLegend` / `ComparisonView` / `ComparisonMode` /
+  `Axis` / `FaceBounds` types, and `CADViewportError`.

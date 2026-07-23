@@ -400,6 +400,57 @@ see [`PickedFaceInfo`](#pickedfaceinfo). `nil` when no field is set on that body
 See [`ScalarField`](#scalarfield) / [`ColorMap`](#colormap) / [`ScalarFieldLegend`](#scalarfieldlegend)
 for the full type definitions.
 
+### Comparison
+
+```swift
+public private(set) var comparison: ComparisonView?
+public func setComparison(_ comparison: ComparisonView?)
+```
+
+Displays two already-loaded entities against each other — typically a source mesh
+(`referenceID`) and a reconstructed solid (`candidateID`) — for reconstruction review.
+Settable and clearable repeatedly (including switching to a different mode, or a different
+`position`/`referenceOpacity` for the same mode) without reloading either entity: each call
+first undoes whatever the previous comparison did before applying the new one.
+
+```swift
+viewport.load(sourceMesh, id: "reference")
+viewport.load(reconstructedSolid, id: "candidate")
+
+viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.3)))
+viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .wipe(axis: .x, position: 0)))
+viewport.setComparison(nil)   // restores both entities' plain display
+```
+
+- **`.overlay(referenceOpacity:)`** ghosts the reference by lowering its bodies' alpha
+  (clamped to `0...1`). An in-place mutation of `_ViewportBody.color` — safe, since the
+  renderer reads `color` fresh into its per-frame uniforms rather than caching it behind
+  `generation` the way `triangleStyles` is (see the [scalar fields](#scalar-fields)
+  section above for that distinction).
+- **`.deviation`** is a marker only — CADKit doesn't compute the reference-to-candidate
+  distance itself. Call `setScalarField(_:forBody:)` on the candidate with the
+  precomputed values first; this mode just records that deviation display is active, so
+  clearing it (`setComparison(nil)`, or switching to a different mode) also clears the
+  candidate's scalar field.
+- **`.sideBySide`** offsets the candidate's bodies along X so it sits beside the reference
+  rather than overlapping it, via `_ViewportBody.transform` (also read live per frame, so
+  no re-tessellation). Since there's only ever one camera/viewport, "linked cameras" is
+  automatic.
+- **`.wipe(axis:position:)`** spatially splits the two at a plane perpendicular to `axis`
+  at world coordinate `position`: the reference is visible where its geometry's
+  coordinate along `axis` is less than `position`, the candidate where it's greater or
+  equal. Implemented by filtering each body's own triangles (not
+  `ViewportController.clipPlanes`, which clips the whole scene uniformly and can't show
+  the two sides differently) — see `CLAUDE.md`'s "Things to be careful about" for why, and
+  what a wiped body loses (wireframe edges, vertex-picking) as a result.
+
+`comparison` reports the currently active `ComparisonView`, or `nil`. Removing (or
+reloading, which removes then re-adds) either the reference or candidate entity clears the
+comparison rather than leaving it referencing stale geometry.
+
+See [`ComparisonView`](#comparisonview) / [`ComparisonMode`](#comparisonmode) /
+[`Axis`](#axis) for the full type definitions.
+
 ### `CADViewportService.ShapeBounds`
 
 ```swift
@@ -703,6 +754,43 @@ public struct LegendStop: Sendable, Equatable {
 ```
 
 One labeled point on a `ScalarFieldLegend`.
+
+## `ComparisonView`
+
+```swift
+public struct ComparisonView: Sendable, Equatable {
+    public let referenceID: String        // typically the source mesh
+    public let candidateID: String        // typically the reconstructed solid
+    public let mode: ComparisonMode
+}
+```
+
+A comparison between two already-loaded entities, set via `CADViewportService.setComparison(_:)`.
+
+## `ComparisonMode`
+
+```swift
+public enum ComparisonMode: Sendable, Equatable {
+    case overlay(referenceOpacity: Double)
+    case deviation
+    case sideBySide
+    case wipe(axis: Axis, position: Double)
+}
+```
+
+See the [Comparison](#comparison) section above for what each case does.
+
+## `Axis`
+
+```swift
+public enum Axis: Sendable, Equatable, CaseIterable {
+    case x, y, z
+}
+```
+
+Axis a `.wipe` comparison splits along. A local mirror of the same concept elsewhere in the
+ecosystem (e.g. `OCCTSwiftAIS.ManipulatorWidget.Axis`), kept separate so this package's
+public surface doesn't couple to a widget-specific type for an unrelated concept.
 
 ## `FaceBounds`
 

@@ -149,12 +149,27 @@ public final class CADViewportService {
     /// itself is removed/reloaded.
     private var lastScalarFieldBodyID: String?
 
+    // MARK: - Comparison
+
+    /// The comparison most recently set via `setComparison(_:)`, or `nil`.
+    public private(set) var comparison: ComparisonView?
+
+    /// Bodies as they were immediately before the active comparison's `.overlay`/`.sideBySide`/
+    /// `.wipe` mutated them, keyed by body id — lets `setComparison` restore geometry exactly on
+    /// clear or mode switch without reloading. `.deviation` doesn't use this; it's undone via
+    /// `setScalarField`'s own clear path instead.
+    private var comparisonBackup: [String: _ViewportBody] = [:]
+
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
 
     /// A distinct, addressable entity loaded via the multi-entity API — the model-body
     /// ids it owns (more than one for a multi-body file loaded under one entity id) and
     /// its own visibility flag.
-    private struct Entity {
+    ///
+    /// Internal rather than private, like `modelBodies`/`metadata`, so tests can seed a
+    /// synthetic multi-body entity directly — this package's tests don't ship a multi-body
+    /// file on disk, and `load(_:id:transform:)` only ever produces a single-body entity.
+    struct Entity {
         var bodyIDs: [String]
         var isVisible: Bool = true
     }
@@ -168,7 +183,10 @@ public final class CADViewportService {
     /// which loading API was used is what makes mixing the two APIs in one session safe
     /// (e.g. `loadShape(_:id:"model")` then `load(_:id:"model")` correctly replaces the
     /// first load rather than leaving a stray duplicate body).
-    private var entities: [String: Entity] = [:]
+    ///
+    /// Internal rather than private so tests can seed a multi-body entity directly (see
+    /// `Entity`'s own doc comment).
+    var entities: [String: Entity] = [:]
 
     public init(configuration: _ViewportConfiguration = .init(
         rotationStyle: .turntable,
@@ -307,6 +325,8 @@ public final class CADViewportService {
         lastScalarFieldBodyID = nil
         legacyLoadedShape = nil
         legacyLoadedShapeEntityID = nil
+        comparison = nil
+        comparisonBackup.removeAll()
     }
 
     /// Builds a `BRepGraph` and `FaceIdentityTable` per body from a multi-body file load's
@@ -601,6 +621,7 @@ public final class CADViewportService {
         }
         removeBodies(entity.bodyIDs)
         pruneSelection(removingBodyIDs: entity.bodyIDs)
+        pruneComparison(removingEntityIDs: [id])
     }
 
     /// Removes every currently loaded entity — whichever API loaded it (see `entities`'
@@ -643,6 +664,26 @@ public final class CADViewportService {
         }
         selection.removeAll { removed.contains($0.bodyID) }
         rebuildSelectionHighlights() // also calls rebuildBodies()
+    }
+
+    /// Clears the active comparison if it referenced one of the just-removed entities —
+    /// keeps `comparison` from silently going stale when either side of a comparison is
+    /// removed or reloaded (`load`/`loadFile(from:id:)` both call `remove(id:)` before
+    /// re-adding, so reloading either entity also goes through here).
+    ///
+    /// Routes through `undoComparison` rather than just dropping `comparisonBackup`: only
+    /// the JUST-REMOVED entity's bodies are actually gone from `modelBodies` by the time this
+    /// runs — the OTHER (surviving) side of a `.overlay`/`.sideBySide`/`.wipe` comparison was
+    /// independently mutated (ghosted opacity, offset transform, or wipe-filtered triangles)
+    /// and would otherwise stay that way forever with no active `comparison` to explain it.
+    /// `undoComparison`'s restore loop already no-ops gracefully for the removed side (its
+    /// body ids no longer match anything in `modelBodies`), so this is safe either way.
+    private func pruneComparison(removingEntityIDs ids: [String]) {
+        guard let current = comparison,
+              ids.contains(current.referenceID) || ids.contains(current.candidateID) else { return }
+        undoComparison(current)
+        comparison = nil
+        rebuildBodies()
     }
 
     /// Currently loaded entities' shapes, keyed by entity id — see `entities`' own
@@ -847,6 +888,220 @@ public final class CADViewportService {
         case .perTriangle:
             return triangleIndex >= 0 && triangleIndex < field.values.count ? field.values[triangleIndex] : nil
         }
+    }
+
+    // MARK: - Comparison
+
+    /// Sets (or, with `nil`, clears) a comparison view between two already-loaded entities.
+    /// Safe to call repeatedly — including with a different mode, or different `position`/
+    /// `referenceOpacity` for the same mode — without reloading either entity; each call
+    /// first undoes whatever the previous comparison did before applying the new one (or
+    /// nothing, if clearing). No-op for an entity id that isn't currently loaded.
+    public func setComparison(_ comparison: ComparisonView?) {
+        if let previous = self.comparison {
+            undoComparison(previous)
+        }
+        self.comparison = comparison
+        guard let comparison else {
+            rebuildBodies()
+            return
+        }
+        switch comparison.mode {
+        case .overlay, .sideBySide, .wipe:
+            backUpComparisonBodies(comparison)
+        case .deviation:
+            break
+        }
+        applyComparison(comparison)
+        rebuildBodies()
+    }
+
+    private func entityBodyIDs(_ entityID: String) -> [String] {
+        entities[entityID]?.bodyIDs ?? []
+    }
+
+    private func backUpComparisonBodies(_ comparison: ComparisonView) {
+        let ids = entityBodyIDs(comparison.referenceID) + entityBodyIDs(comparison.candidateID)
+        for bodyID in ids {
+            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
+            comparisonBackup[bodyID] = modelBodies[index]
+        }
+    }
+
+    private func undoComparison(_ previous: ComparisonView) {
+        switch previous.mode {
+        case .deviation:
+            setScalarField(nil, forBody: previous.candidateID) // rebuilds bodies itself
+        case .overlay, .sideBySide, .wipe:
+            for (bodyID, original) in comparisonBackup {
+                if let index = modelBodies.firstIndex(where: { $0.id == bodyID }) {
+                    modelBodies[index] = original
+                }
+            }
+        }
+        comparisonBackup.removeAll()
+    }
+
+    private func applyComparison(_ comparison: ComparisonView) {
+        switch comparison.mode {
+        case .overlay(let opacity):
+            applyOverlay(referenceID: comparison.referenceID, opacity: opacity)
+        case .deviation:
+            break // caller drives this via setScalarField(_:forBody:) on the candidate
+        case .sideBySide:
+            applySideBySide(referenceID: comparison.referenceID, candidateID: comparison.candidateID)
+        case .wipe(let axis, let position):
+            applyWipe(referenceID: comparison.referenceID, candidateID: comparison.candidateID, axis: axis, position: position)
+        }
+    }
+
+    /// Ghosts the reference entity by lowering its bodies' alpha. Safe as an in-place mutation
+    /// (unlike `triangleStyles`, `ViewportBody.color` is read fresh into `BodyUniforms` every
+    /// frame rather than baked into a cached buffer — confirmed via `ViewportRenderer`'s
+    /// `BodyUniforms(body:)`, which always reads `body.effectiveMaterial` live), and bodies
+    /// below full opacity are already routed through the renderer's sorted transparent pass.
+    private func applyOverlay(referenceID: String, opacity: Double) {
+        let alpha = Float(max(0, min(1, opacity)))
+        for bodyID in entityBodyIDs(referenceID) {
+            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
+            modelBodies[index].color.w = alpha
+        }
+    }
+
+    /// Union of bounds across every body of an entity. Unlike `shape(id:)` (which
+    /// deliberately returns only the entity's first body's shape — fine for `focus(on:)`'s
+    /// "roughly frame the camera" use), `applySideBySide` needs the offset to actually clear
+    /// every body of a multi-body entity, not just whichever one happens to be first.
+    private func entityBounds(_ entityID: String) -> (min: SIMD3<Double>, max: SIMD3<Double>)? {
+        let shapes = entityBodyIDs(entityID).compactMap { bodyShapes[$0] }
+        guard !shapes.isEmpty else { return nil }
+        var minPt = SIMD3<Double>(repeating: .infinity)
+        var maxPt = SIMD3<Double>(repeating: -.infinity)
+        for s in shapes {
+            let b = s.bounds
+            minPt = SIMD3(min(minPt.x, b.min.x), min(minPt.y, b.min.y), min(minPt.z, b.min.z))
+            maxPt = SIMD3(max(maxPt.x, b.max.x), max(maxPt.y, b.max.y), max(maxPt.z, b.max.z))
+        }
+        return (minPt, maxPt)
+    }
+
+    /// Offsets the candidate's bodies along X so it sits beside the reference rather than
+    /// overlapping it. A single shared camera/viewport means "linked cameras" is automatic.
+    /// Via `ViewportBody.transform`, also read live per frame (not cache-gated), so this is a
+    /// cheap in-place update — no re-tessellation.
+    private func applySideBySide(referenceID: String, candidateID: String) {
+        guard let referenceBounds = entityBounds(referenceID), let candidateBounds = entityBounds(candidateID) else { return }
+        let referenceSizeX = referenceBounds.max.x - referenceBounds.min.x
+        let candidateSizeX = candidateBounds.max.x - candidateBounds.min.x
+        let gap = max(referenceSizeX, candidateSizeX) * 0.15
+        let deltaX = Float((referenceBounds.max.x + gap) - candidateBounds.min.x)
+        var translation = matrix_identity_float4x4
+        translation.columns.3 = SIMD4<Float>(deltaX, 0, 0, 1)
+        for bodyID in entityBodyIDs(candidateID) {
+            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
+            modelBodies[index].transform = translation * modelBodies[index].transform
+        }
+    }
+
+    /// Splits reference and candidate at a shared world-space plane (`axis`/`position`),
+    /// keeping the reference's bodies on the lower side and the candidate's on the higher
+    /// side. `OCCTSwiftViewport`'s `ViewportController.clipPlanes` clips the whole scene
+    /// uniformly (confirmed via `ViewportRenderer` — there's no per-body clip-plane field on
+    /// `ViewportBody`), so it can't show reference and candidate on opposite sides of the same
+    /// plane; this filters each body's own triangles instead. See `wipeFiltered` for what that
+    /// drops.
+    private func applyWipe(referenceID: String, candidateID: String, axis: Axis, position: Double) {
+        let axisVector = axis.unitVector
+        let planePosition = Float(position)
+        for bodyID in entityBodyIDs(referenceID) {
+            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
+            modelBodies[index] = wipeFiltered(modelBodies[index], axisVector: axisVector, position: planePosition, keepBelow: true)
+        }
+        for bodyID in entityBodyIDs(candidateID) {
+            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
+            modelBodies[index] = wipeFiltered(modelBodies[index], axisVector: axisVector, position: planePosition, keepBelow: false)
+        }
+    }
+
+    /// Rebuilds `body` keeping only the triangles whose centroid falls on one side of a
+    /// world-space plane (unit `axisVector`, offset `position` along it) — the mechanism
+    /// behind `.wipe`. Filters `indices`/`faceIndices`/`triangleStyles` in lockstep by
+    /// triangle; `vertexData` (or `meshPositions`/`meshNormals` for a direct-mesh body) is
+    /// passed through unfiltered since the filtered `indices` simply reference fewer of its
+    /// entries — no vertex remapping needed. Drops `edges`/`arcs`/`vertices`/`vertexIndices`/
+    /// `vertexColors`: wireframe overlay and vertex-picking aren't preserved on a wiped body,
+    /// only the shaded triangle mesh — filtering polylines/points against the same cut is
+    /// unneeded complexity for a review affordance whose point is the shaded-surface split.
+    /// A body with no triangles (e.g. `.point` primitive) passes through unchanged.
+    private func wipeFiltered(_ body: _ViewportBody, axisVector: SIMD3<Float>, position: Float, keepBelow: Bool) -> _ViewportBody {
+        let triangleCount = body.indices.count / 3
+        guard triangleCount > 0 else { return body }
+        let direct = body.usesDirectMesh
+        guard direct ? body.meshPositions.count >= 3 : body.vertexData.count >= 6 else { return body }
+
+        func vertexPosition(_ vertexIndex: Int) -> SIMD3<Float> {
+            if direct {
+                return SIMD3<Float>(
+                    body.meshPositions[vertexIndex * 3],
+                    body.meshPositions[vertexIndex * 3 + 1],
+                    body.meshPositions[vertexIndex * 3 + 2]
+                )
+            } else {
+                return SIMD3<Float>(
+                    body.vertexData[vertexIndex * 6],
+                    body.vertexData[vertexIndex * 6 + 1],
+                    body.vertexData[vertexIndex * 6 + 2]
+                )
+            }
+        }
+
+        let hasFaceIndices = body.faceIndices.count == triangleCount
+        let hasStyles = body.triangleStyles.count == triangleCount
+        var newIndices: [UInt32] = []
+        newIndices.reserveCapacity(body.indices.count)
+        var newFaceIndices: [Int32] = []
+        var newStyles: [TriangleStyle] = []
+
+        for triangle in 0..<triangleCount {
+            let i0 = Int(body.indices[triangle * 3])
+            let i1 = Int(body.indices[triangle * 3 + 1])
+            let i2 = Int(body.indices[triangle * 3 + 2])
+            let centroid = (vertexPosition(i0) + vertexPosition(i1) + vertexPosition(i2)) / 3
+            let signedDistance = simd_dot(centroid, axisVector) - position
+            guard (signedDistance < 0) == keepBelow else { continue }
+            newIndices.append(body.indices[triangle * 3])
+            newIndices.append(body.indices[triangle * 3 + 1])
+            newIndices.append(body.indices[triangle * 3 + 2])
+            if hasFaceIndices { newFaceIndices.append(body.faceIndices[triangle]) }
+            if hasStyles { newStyles.append(body.triangleStyles[triangle]) }
+        }
+
+        return _ViewportBody(
+            id: body.id,
+            vertexData: body.vertexData,
+            indices: newIndices,
+            edges: [],
+            arcs: [],
+            faceIndices: newFaceIndices,
+            edgeIndices: [],
+            vertices: [],
+            vertexIndices: [],
+            vertexColors: [],
+            triangleStyles: newStyles,
+            color: body.color,
+            roughness: body.roughness,
+            metallic: body.metallic,
+            material: body.material,
+            pointRadius: body.pointRadius,
+            primitiveKind: body.primitiveKind,
+            isVisible: body.isVisible,
+            isPickable: body.isPickable,
+            renderLayer: body.renderLayer,
+            pickLayer: body.pickLayer,
+            transform: body.transform,
+            meshPositions: body.meshPositions,
+            meshNormals: body.meshNormals
+        )
     }
 
     private func focusOnLoadedShape() {

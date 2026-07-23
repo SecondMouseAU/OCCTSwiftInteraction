@@ -11,6 +11,7 @@ Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-
 - `PickedEntity` — `.face(PickedFaceInfo)` / `.edge(PickedEdgeInfo)` / `.vertex(PickedVertexInfo)`, each carrying durable identity (a `Shape` + optional `BRepGraph.GraphUID`) alongside an ephemeral render-path ordinal. No CAM- or unfold-specific dependencies.
 - `SelectionSummary` — aggregate count by kind, total face area, total edge length, and combined bounds over the current selection.
 - `ScalarField` / `ColorMap` / `ScalarFieldLegend` — paint a scalar value (deviation, curvature, wall thickness, confidence...) per face or per triangle via `setScalarField(_:forBody:)`; `.viridis`/`.magma`/`.turbo` sequential ramps, `.diverging(center:)` for signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`. A face pick reports its value (`PickedFaceInfo.scalarValue`); `scalarFieldLegend` reports the range/unit/color stops for rendering a legend.
+- `ComparisonView` / `ComparisonMode` — display two already-loaded entities (typically a source mesh and a reconstructed solid) against each other via `setComparison(_:)`: `.overlay(referenceOpacity:)` ghosts the reference, `.deviation` marks the candidate's already-set scalar field as the comparison (CADKit doesn't compute deviation itself), `.sideBySide` offsets the candidate next to the reference, `.wipe(axis:position:)` spatially splits the two at a plane. Settable/clearable without reloading either entity.
 - `CADViewportError` — `unsupportedFormat`, `emptyFile`, `loadFailed`.
 
 ## Quick start
@@ -47,6 +48,23 @@ viewport.clearOverlay(id: "toolpath")
 ```
 
 Overlays composite in alphabetical order of their `id` (so use `0_stock`, `1_toolpath` if z-order matters).
+
+### Comparing a mesh against a reconstructed solid
+
+```swift
+viewport.load(sourceMesh, id: "reference")
+viewport.load(reconstructedSolid, id: "candidate")
+
+viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.3)))
+viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .wipe(axis: .x, position: 0)))
+
+// Deviation mode paints the candidate via the existing scalar field path — compute the
+// per-face/per-triangle distance yourself and set it first:
+viewport.setScalarField(deviationField, forBody: "candidate")
+viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .deviation))
+
+viewport.setComparison(nil) // restores both entities' plain display
+```
 
 ## Dependencies
 

@@ -45,4 +45,12 @@ timestamp: 2026-06-22
   value plus how it maps to color (`.viridis`/`.magma`/`.turbo` sequential, `.diverging(center:)` for
   signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`), and the legend a UI
   renders alongside it.
+- **`ComparisonView`, `ComparisonMode`, `Axis`** — display two already-loaded entities (typically a
+  source mesh and a reconstructed solid) against each other via `setComparison(_:)`:
+  `.overlay(referenceOpacity:)` ghosts the reference, `.deviation` marks the candidate's
+  already-set `ScalarField` as the comparison (CADKit doesn't compute deviation itself),
+  `.sideBySide` offsets the candidate next to the reference (one shared camera), `.wipe(axis:
+  position:)` spatially splits the two at a plane by filtering each side's triangles (not
+  `OCCTSwiftViewport`'s `clipPlanes`, which is viewport-global). Settable/clearable repeatedly
+  without reloading either entity.
 - **`CADViewportError`** — `unsupportedFormat`, `emptyFile`, `loadFailed`.

@@ -1190,4 +1190,322 @@ struct SmokeTests {
         #expect(service.scalarField(forBody: "box") == nil)
         #expect(service.scalarFieldLegend == nil)
     }
+
+    // MARK: - Comparison (#31)
+
+    @Test("ComparisonView and ComparisonMode round-trip through equality")
+    func comparisonViewEquality() {
+        let a = ComparisonView(referenceID: "ref", candidateID: "cand", mode: .wipe(axis: .z, position: 1.5))
+        let b = ComparisonView(referenceID: "ref", candidateID: "cand", mode: .wipe(axis: .z, position: 1.5))
+        let c = ComparisonView(referenceID: "ref", candidateID: "cand", mode: .wipe(axis: .z, position: 2.0))
+        #expect(a == b)
+        #expect(a != c)
+    }
+
+    @MainActor
+    @Test("setComparison(.overlay) ghosts the reference and restores full opacity on clear")
+    func comparisonOverlayGhostsReferenceAndRestores() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 1.0)
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.3)))
+        #expect(service.comparison?.mode == .overlay(referenceOpacity: 0.3))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 0.3)
+        #expect(service.modelBodies.first { $0.id == "candidate" }?.color.w == 1.0, "candidate is untouched by overlay")
+
+        service.setComparison(nil)
+        #expect(service.comparison == nil)
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 1.0)
+    }
+
+    @MainActor
+    @Test("overlay referenceOpacity is clamped to 0...1")
+    func comparisonOverlayClampsOpacity() {
+        guard let mesh = Shape.box(width: 2, height: 2, depth: 2),
+              let solid = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 5)))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 1.0)
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: -3)))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 0.0)
+    }
+
+    @MainActor
+    @Test("setComparison(.sideBySide) offsets the candidate away from the reference along X")
+    func comparisonSideBySideOffsetsCandidate() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .sideBySide))
+
+        guard let candidateBody = service.modelBodies.first(where: { $0.id == "candidate" }) else {
+            Issue.record("expected candidate body")
+            return
+        }
+        // Shape.box centers its box at the origin: reference (width 4) bounds -2...2,
+        // candidate (width 2) bounds -1...1. Gap is 15% of the larger size (4 * 0.15 = 0.6),
+        // so candidate should be pushed so its min.x lands at reference's max.x + gap = 2.6,
+        // i.e. translated by 2.6 - (-1) = 3.6.
+        #expect(abs(candidateBody.transform.columns.3.x - 3.6) < 0.01)
+        #expect(service.modelBodies.first { $0.id == "reference" }?.transform == matrix_identity_float4x4, "reference itself is untouched")
+
+        service.setComparison(nil)
+        #expect(service.modelBodies.first { $0.id == "candidate" }?.transform == matrix_identity_float4x4)
+    }
+
+    @MainActor
+    @Test("setComparison(.wipe) keeps reference triangles below the plane and candidate triangles above it")
+    func comparisonWipeSplitsTrianglesByPlane() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        guard let originalReference = service.modelBodies.first(where: { $0.id == "reference" }) else {
+            Issue.record("expected reference body")
+            return
+        }
+        let originalTriangleCount = originalReference.indices.count / 3
+        #expect(originalTriangleCount > 0)
+
+        // Shape.box centers its box at the origin, so position: 0 splits it through the middle.
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .wipe(axis: .x, position: 0)))
+
+        guard let wipedReference = service.modelBodies.first(where: { $0.id == "reference" }),
+              let wipedCandidate = service.modelBodies.first(where: { $0.id == "candidate" }) else {
+            Issue.record("expected both bodies after wipe")
+            return
+        }
+
+        func triangleCentroidXs(of body: _ViewportBody) -> [Float] {
+            let triCount = body.indices.count / 3
+            return (0..<triCount).map { tri -> Float in
+                let i0 = Int(body.indices[tri * 3]), i1 = Int(body.indices[tri * 3 + 1]), i2 = Int(body.indices[tri * 3 + 2])
+                let x0 = body.vertexData[i0 * 6], x1 = body.vertexData[i1 * 6], x2 = body.vertexData[i2 * 6]
+                return (x0 + x1 + x2) / 3
+            }
+        }
+
+        let referenceXs = triangleCentroidXs(of: wipedReference)
+        let candidateXs = triangleCentroidXs(of: wipedCandidate)
+        #expect(!referenceXs.isEmpty)
+        #expect(!candidateXs.isEmpty)
+        #expect(referenceXs.allSatisfy { $0 < 0 }, "reference keeps only triangles below the wipe plane")
+        #expect(candidateXs.allSatisfy { $0 >= 0 }, "candidate keeps only triangles at/above the wipe plane")
+        #expect(referenceXs.count < originalTriangleCount, "some triangles were filtered out")
+        #expect(candidateXs.count < originalTriangleCount, "some triangles were filtered out")
+        #expect(wipedReference.triangleStyles.isEmpty, "neither box had a scalar field set")
+
+        service.setComparison(nil)
+        #expect(service.modelBodies.first { $0.id == "reference" }?.indices.count == originalReference.indices.count, "clearing restores the original, unfiltered geometry")
+    }
+
+    @MainActor
+    @Test("setComparison(.deviation) is a marker only; clearing it clears the candidate's scalar field")
+    func comparisonDeviationClearsScalarFieldOnUndo() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        service.setScalarField(
+            ScalarField(domain: .perFace, values: [1, 2, 3, 4, 5, 6], colorMap: .viridis, label: "deviation"),
+            forBody: "candidate"
+        )
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .deviation))
+        #expect(service.comparison?.mode == .deviation)
+        #expect(service.scalarField(forBody: "candidate") != nil, "deviation doesn't touch the field the caller already set")
+
+        service.setComparison(nil)
+        #expect(service.scalarField(forBody: "candidate") == nil, "clearing a deviation comparison clears the candidate's field")
+    }
+
+    @MainActor
+    @Test("Switching comparison modes undoes the previous mode before applying the new one")
+    func comparisonSwitchingModesUndoesPrevious() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.2)))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 0.2)
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .sideBySide))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 1.0, "overlay's opacity change must be undone before sideBySide applies")
+        #expect((service.modelBodies.first { $0.id == "candidate" }?.transform.columns.3.x ?? 0) > 0, "sideBySide should have offset the candidate")
+    }
+
+    @MainActor
+    @Test("Removing an entity referenced by the active comparison clears it")
+    func comparisonClearedWhenReferencedEntityRemoved() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.5)))
+        #expect(service.comparison != nil)
+
+        service.remove(id: "candidate")
+        #expect(service.comparison == nil)
+    }
+
+    /// Regression for an adversarial-review finding on this PR: removing (or reloading,
+    /// which internally removes-then-re-adds) one side of an active comparison must restore
+    /// the OTHER, surviving side's mutated body — not just clear `comparison` and leave that
+    /// body permanently ghosted. An earlier version of `pruneComparison` dropped
+    /// `comparisonBackup` outright instead of restoring from it first.
+    @MainActor
+    @Test("Removing one side of an active overlay comparison restores the surviving side's opacity")
+    func comparisonRemovingOneSideRestoresSurvivingOverlay() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        // .overlay only mutates the reference — removing the untouched candidate must still
+        // restore the reference, not just clear `comparison`.
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.3)))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 0.3)
+
+        service.remove(id: "candidate")
+
+        #expect(service.comparison == nil)
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 1.0, "the surviving reference must be un-ghosted, not stuck at the comparison's opacity")
+    }
+
+    @MainActor
+    @Test("Removing one side of an active wipe restores the surviving side's full, unfiltered geometry")
+    func comparisonRemovingOneSideRestoresSurvivingWipeGeometry() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        guard let originalCandidateTriangleCount = service.modelBodies.first(where: { $0.id == "candidate" })?.indices.count else {
+            Issue.record("expected candidate body")
+            return
+        }
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .wipe(axis: .x, position: 0)))
+        let candidateAfterWipe = service.modelBodies.first { $0.id == "candidate" }?.indices.count
+        #expect(candidateAfterWipe != nil && candidateAfterWipe! < originalCandidateTriangleCount, "sanity check: wipe actually filtered the candidate")
+
+        service.remove(id: "reference")
+
+        #expect(service.comparison == nil)
+        #expect(
+            service.modelBodies.first { $0.id == "candidate" }?.indices.count == originalCandidateTriangleCount,
+            "the surviving candidate must have its full, unfiltered geometry back, not stay wipe-filtered forever"
+        )
+    }
+
+    /// Regression for an adversarial-review finding on this PR: `applySideBySide` used to
+    /// compute its offset from `shape(id:)`, which deliberately returns only an entity's
+    /// FIRST body's shape — fine for `focus(on:)`'s "roughly frame the camera" use, but wrong
+    /// for an offset that has to clear every body of a multi-body entity. Constructs a
+    /// synthetic two-body "candidate" entity (this package's tests don't ship a multi-body
+    /// file on disk) via the internal `entities`/`Entity`/`rebuildIdentity` test seams.
+    @MainActor
+    @Test("applySideBySide accounts for every body of a multi-body entity, not just the first")
+    func comparisonSideBySideAccountsForMultiBodyEntity() {
+        guard let referenceBox = Shape.box(width: 2, height: 2, depth: 2),
+              let candidateNear = Shape.box(width: 2, height: 2, depth: 2),
+              let candidateFarUnplaced = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        guard let candidateFar = candidateFarUnplaced.transformed(matrix: [
+            1, 0, 0,
+            0, 1, 0,
+            0, 0, 1,
+            20, 0, 0,
+        ]) else {
+            Issue.record("Shape.transformed returned nil")
+            return
+        }
+
+        let service = CADViewportService()
+        service.load(referenceBox, id: "reference")
+
+        let candidateNearBody = _ViewportBody(
+            id: "candidate-0", vertexData: [0, 0, 0, 0, 0, 1], indices: [0], edges: [],
+            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)
+        )
+        let candidateFarBody = _ViewportBody(
+            id: "candidate-1", vertexData: [20, 0, 0, 0, 0, 1], indices: [0], edges: [],
+            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)
+        )
+        service.modelBodies.append(candidateNearBody)
+        service.modelBodies.append(candidateFarBody)
+        service.entities["candidate"] = CADViewportService.Entity(bodyIDs: ["candidate-0", "candidate-1"])
+
+        guard let referenceBody = service.modelBodies.first(where: { $0.id == "reference" }) else {
+            Issue.record("expected reference body to already be loaded")
+            return
+        }
+        service.rebuildIdentity(
+            bodies: [referenceBody, candidateNearBody, candidateFarBody],
+            shapes: [referenceBox, candidateNear, candidateFar]
+        )
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .sideBySide))
+
+        let nearTransform = service.modelBodies.first { $0.id == "candidate-0" }?.transform
+        let farTransform = service.modelBodies.first { $0.id == "candidate-1" }?.transform
+        #expect(nearTransform != nil)
+        #expect(nearTransform?.columns.3.x == farTransform?.columns.3.x, "every body of the entity gets the same offset")
+
+        // reference bounds -1...1 (width 2, centered). candidate entity bounds -1...21 (near
+        // body -1...1, far body translated to 19...21) — union size 22. gap = max(2, 22) * 0.15
+        // = 3.3. delta = (referenceMax(1) + gap(3.3)) - candidateMin(-1) = 5.3. If the offset
+        // were computed from candidateNear's bounds alone (the bug), it would come out much
+        // smaller and candidateFar would stay exactly where it already was, still overlapping
+        // nothing useful to compare against.
+        #expect(abs((nearTransform?.columns.3.x ?? 0) - 5.3) < 0.01)
+    }
 }
