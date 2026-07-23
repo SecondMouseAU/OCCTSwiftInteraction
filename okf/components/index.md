@@ -12,9 +12,12 @@ timestamp: 2026-06-22
 `OCCTSwiftCADKit` ships a single public library/target, **`OCCTSwiftCADKit`**. Its API surface:
 
 - **`CADViewportService`** — `@Observable @MainActor` service that owns the loaded geometry, drives the
-  Metal viewport, and routes picking results via `selected: PickedEntity?`, gated by
-  `selectionModes: Set<SelectionMode>` (default `[.face]`; add `.edge`/`.vertex` to opt in).
-  `selectedFace: PickedFaceInfo?` still works as a deprecated face-only convenience.
+  Metal viewport, and routes picking results via `selection: [PickedEntity]`, gated by
+  `selectionModes: Set<SelectionMode>` (default `[.face]`; add `.edge`/`.vertex` to opt in). A real
+  pick replaces `selection` wholesale; build a multi-selection with `select(_:scheme:)`
+  (`SelectionScheme`: `.replace`/`.add`/`.remove`/`.xor`, mirroring `OCCTSwiftAIS`'s type of the same
+  name). `selectionSummary` reports aggregate count/area/length/bounds. `selectedFace: PickedFaceInfo?`
+  and `selected: PickedEntity?` still work as deprecated single-selection conveniences.
   `load(_:id:transform:)` / `loadFile(from:id:progress:)` / `loadFromData(_:filename:id:progress:)`
   display several parts or assembly occurrences as distinct, addressable **entities**
   (`loadedShapes`, `shape(id:)`, `entityID(forBodyID:)`, `visibility`, `remove(id:)`, `removeAll()`,
@@ -31,4 +34,6 @@ timestamp: 2026-06-22
   picking (no CAM- or unfold-specific deps). Each info type's `.shape`/`.uid` are the durable identity
   of the pick (captured from the body's `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable`);
   `.faceIndex`/`.edgeIndex`/`.vertexIndex` are ephemeral render-path ordinals only.
+- **`SelectionSummary`** — count by kind, total face area, total edge length, and combined bounds
+  over `CADViewportService.selection`.
 - **`CADViewportError`** — `unsupportedFormat`, `emptyFile`, `loadFailed`.

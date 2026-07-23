@@ -15,7 +15,7 @@ import OCCTSwift
 ///     CADViewportView(
 ///         bodies: viewport.bodies,
 ///         controller: viewport.controller,
-///         selected: viewport.selected,
+///         selection: viewport.selection,
 ///         onClearSelection: { viewport.clearSelection() }
 ///     )
 /// }
@@ -23,23 +23,39 @@ import OCCTSwift
 public struct CADViewportView: View {
     public let bodies: [_ViewportBody]
     @ObservedObject public var controller: _ViewportController
-    public var selected: PickedEntity?
+    public var selection: [PickedEntity]
     public var onClearSelection: (() -> Void)?
 
     public init(
         bodies: [_ViewportBody],
         controller: _ViewportController,
-        selected: PickedEntity? = nil,
+        selection: [PickedEntity] = [],
         onClearSelection: (() -> Void)? = nil
     ) {
         self.bodies = bodies
         self.controller = controller
-        self.selected = selected
+        self.selection = selection
         self.onClearSelection = onClearSelection
     }
 
+    /// Single-entity convenience for callers not yet using multi-selection.
+    @available(*, deprecated, message: "Use the `selection:` initializer parameter instead.")
+    public init(
+        bodies: [_ViewportBody],
+        controller: _ViewportController,
+        selected: PickedEntity?,
+        onClearSelection: (() -> Void)? = nil
+    ) {
+        self.init(
+            bodies: bodies,
+            controller: controller,
+            selection: selected.map { [$0] } ?? [],
+            onClearSelection: onClearSelection
+        )
+    }
+
     /// Face-only convenience for callers not yet using edge/vertex picking.
-    @available(*, deprecated, message: "Use the `selected:` initializer parameter instead.")
+    @available(*, deprecated, message: "Use the `selection:` initializer parameter instead.")
     public init(
         bodies: [_ViewportBody],
         controller: _ViewportController,
@@ -49,7 +65,7 @@ public struct CADViewportView: View {
         self.init(
             bodies: bodies,
             controller: controller,
-            selected: selectedFace.map(PickedEntity.face),
+            selection: selectedFace.map { [.face($0)] } ?? [],
             onClearSelection: onClearSelection
         )
     }
@@ -61,8 +77,11 @@ public struct CADViewportView: View {
         }
         .clipped()
         .overlay(alignment: .top) {
-            if let selected {
-                selectionLabel(selected)
+            if selection.count == 1, let entity = selection.first {
+                selectionLabel(entity)
+                    .padding(8)
+            } else if selection.count > 1 {
+                selectionSummaryLabel(count: selection.count)
                     .padding(8)
             }
         }
@@ -70,6 +89,24 @@ public struct CADViewportView: View {
             viewportControls
                 .padding(8)
         }
+    }
+
+    private func selectionSummaryLabel(count: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checklist")
+            Text("\(count) selected")
+                .font(.caption)
+            Button {
+                onClearSelection?()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func selectionLabel(_ entity: PickedEntity) -> some View {

@@ -2,7 +2,8 @@
 
 This guide walks through embedding the shared CAD viewport in a SwiftUI app, importing
 STEP/STL/BREP files (single-shape or multi-entity/assembly), and handling face/edge/vertex
-pick selections. Every snippet uses only the real public API of `OCCTSwiftCADKit`.
+pick selections (single or multi-select). Every snippet uses only the real public API of
+`OCCTSwiftCADKit`.
 
 Platforms: iOS 18+ / macOS 15+.
 
@@ -29,7 +30,7 @@ import SwiftUI
 ## 2. Embed the viewport
 
 Create a `CADViewportService` as `@State` and bind its `bodies`, `controller`,
-`selected`, and `clearSelection()` into a `CADViewportView`.
+`selection`, and `clearSelection()` into a `CADViewportView`.
 
 ```swift
 import OCCTSwiftCADKit
@@ -42,7 +43,7 @@ struct CADScreen: View {
         CADViewportView(
             bodies: viewport.bodies,
             controller: viewport.controller,
-            selected: viewport.selected,
+            selection: viewport.selection,
             onClearSelection: { viewport.clearSelection() }
         )
     }
@@ -72,7 +73,7 @@ struct CADScreen: View {
         CADViewportView(
             bodies: viewport.bodies,
             controller: viewport.controller,
-            selected: viewport.selected,
+            selection: viewport.selection,
             onClearSelection: { viewport.clearSelection() }
         )
         .task {
@@ -152,12 +153,14 @@ viewport.remove(id: "cover")                // drop one entity
 viewport.removeAll()                        // drop every multi-entity load
 ```
 
-A pick's `selected` reports the **body** hit (`PickedEntity.bodyID`); map it back to the
-entity that owns it with `entityID(forBodyID:)`:
+A pick reports the **body** hit (`PickedEntity.bodyID`); map it back to the entity that
+owns it with `entityID(forBodyID:)`:
 
 ```swift
-if let hitBodyID = viewport.selected?.bodyID, let entityID = viewport.entityID(forBodyID: hitBodyID) {
-    print("hit entity:", entityID)
+for hit in viewport.selection {
+    if let entityID = viewport.entityID(forBodyID: hit.bodyID) {
+        print("hit entity:", entityID)
+    }
 }
 ```
 
@@ -185,8 +188,10 @@ per-occurrence memory becomes a real constraint at your assembly's scale.
 ## 5. Handle a pick
 
 Face picking is enabled by default. When the user taps a face, the service updates its
-`selected` property (a `PickedEntity`, `.face(PickedFaceInfo)` for a face pick). Because
-`CADViewportService` is `@Observable`, read `selected` directly in your view to react.
+`selection` property (`[PickedEntity]`) — a real viewport pick always replaces the whole
+selection with the one entity hit, so `selection` is `[.face(PickedFaceInfo)]` for a
+single face pick. Because `CADViewportService` is `@Observable`, read `selection` directly
+in your view to react.
 
 ```swift
 struct CADScreen: View {
@@ -194,7 +199,7 @@ struct CADScreen: View {
 
     var body: some View {
         VStack {
-            if case .face(let face)? = viewport.selected {
+            if case .face(let face)? = viewport.selection.first, viewport.selection.count == 1 {
                 Text(face.description)                 // "Horizontal face at Z=20.0, 50.0x30.0mm"
                 Text("Face #\(face.faceIndex) · area \(face.area, format: .number) mm²")
                 Button("Clear") { viewport.clearSelection() }
@@ -203,7 +208,7 @@ struct CADScreen: View {
             CADViewportView(
                 bodies: viewport.bodies,
                 controller: viewport.controller,
-                selected: viewport.selected,
+                selection: viewport.selection,
                 onClearSelection: { viewport.clearSelection() }
             )
         }
@@ -219,7 +224,7 @@ analysis, construct a `Face` from `face.shape` — the durable identity captured
 time — rather than re-deriving it from `face.faceIndex`:
 
 ```swift
-if case .face(let face)? = viewport.selected, let occtFace = Face(face.shape) {
+if case .face(let face)? = viewport.selection.first, let occtFace = Face(face.shape) {
     // ...analyze occtFace via OCCTSwift...
 }
 ```
@@ -234,9 +239,10 @@ a later mutation an ordinal alone does not.
 
 <!-- 3D render TODO: viewport with a picked face highlighted and the selection banner -->
 
-`selectedFace: PickedFaceInfo?` still works as a deprecated convenience — non-nil only
-for face picks, `nil` for everything else including edge/vertex picks — for callers not
-yet migrated off it.
+`selectedFace: PickedFaceInfo?` and `selected: PickedEntity?` still work as deprecated
+conveniences — each non-nil only when the selection is exactly one entity (and, for
+`selectedFace`, only when that entity is a face) — for callers not yet migrated to
+`selection`.
 
 ## 6. Edge and vertex picking (optional)
 
@@ -246,21 +252,21 @@ Opt a body into edge and/or vertex picking via `selectionModes` (default `[.face
 viewport.selectionModes = [.face, .edge, .vertex]
 ```
 
-`selected` now resolves to `.edge(PickedEdgeInfo)` or `.vertex(PickedVertexInfo)` too,
-each carrying the same durable-identity shape as `PickedFaceInfo` (`shape`/`uid`, plus an
-ephemeral ordinal):
+`selection`'s entries now include `.edge(PickedEdgeInfo)` or `.vertex(PickedVertexInfo)`
+too, each carrying the same durable-identity shape as `PickedFaceInfo` (`shape`/`uid`,
+plus an ephemeral ordinal):
 
 ```swift
-switch viewport.selected {
-case .face(let face):
-    print(face.description)
-case .edge(let edge):
-    print(edge.description)             // "Line edge, 25.0mm"
-    print(edge.startPoint, edge.endPoint)
-case .vertex(let vertex):
-    print(vertex.description)           // "Vertex at (10.0, 5.0, 0.0)mm"
-case nil:
-    break
+for entity in viewport.selection {
+    switch entity {
+    case .face(let face):
+        print(face.description)
+    case .edge(let edge):
+        print(edge.description)             // "Line edge, 25.0mm"
+        print(edge.startPoint, edge.endPoint)
+    case .vertex(let vertex):
+        print(vertex.description)           // "Vertex at (10.0, 5.0, 0.0)mm"
+    }
 }
 ```
 
@@ -274,7 +280,44 @@ gates face picking itself; remove `.face` to disable it.
 entirely separate, independent selection system: the two don't share state, and
 `SelectionMode.body` has no effect here (there's no whole-body `PickedEntity` case).
 
-## 7. Overlays (optional)
+## 7. Multi-selection (optional)
+
+A real viewport pick always replaces the whole `selection` (see [§5](#5-handle-a-pick)).
+Build a multi-selection programmatically with `select(_:scheme:)`:
+
+```swift
+viewport.select(faceA)                       // .replace (default) — selection = [faceA]
+viewport.select(faceB, scheme: .add)         // selection = [faceA, faceB]
+viewport.select(faceA, scheme: .remove)      // selection = [faceB]
+viewport.select(faceB, scheme: .xor)         // toggles faceB off — selection = []
+```
+
+`SelectionScheme` is `OCCTSwiftAIS.SelectionScheme` (`.replace`/`.add`/`.remove`/`.xor`) —
+the same combination semantics `selectRectangle`/`selectPolygon` area selection uses on
+the AIS side. Membership follows `PickedEntity`'s own durable-identity `Equatable` (`uid`
+when both sides have one), so the same face/edge/vertex is recognized as already-selected
+even if it was picked at a different ephemeral ordinal.
+
+Every selected entity is highlighted — a translucent yellow triangle patch aggregating
+every selected face, a bright cyan polyline aggregating every selected edge's segments, a
+bright magenta point sprite per selected vertex.
+
+```swift
+if let summary = viewport.selectionSummary {
+    print(summary.faceCount, summary.edgeCount, summary.vertexCount)
+    print(summary.totalArea, summary.totalLength)   // sums over selected faces/edges
+    print(summary.bounds)                            // combined ShapeBounds, or nil if empty
+}
+```
+
+The selection survives operations unrelated to it: removing an entity
+(`remove(id:)`/`removeAll()`) drops only the selection entries that referenced *that*
+entity's bodies, leaving everything else selected.
+
+`selectedFace`/`selected` (both deprecated, see [§5](#5-handle-a-pick)) still work as
+single-selection conveniences.
+
+## 8. Overlays (optional)
 
 Anything that isn't part of the imported model — stock boxes, toolpaths, flat-pattern
 outlines, annotations — goes through named overlay layers. They composite with the model
@@ -291,5 +334,5 @@ viewport.clearAllOverlays()
 
 - See [`docs/reference/CADViewportService.md`](../reference/CADViewportService.md) for the
   full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
-  `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `FaceBounds` types, and
-  `CADViewportError`.
+  `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionSummary` /
+  `FaceBounds` types, and `CADViewportError`.

@@ -73,9 +73,19 @@ public final class CADViewportService {
         return shape(id: onlyID)
     }
 
-    /// Currently picked sub-shape (face, edge, or vertex), gated by `selectionModes`.
-    /// `nil` if nothing is picked.
-    public private(set) var selected: PickedEntity?
+    /// Every currently selected sub-shape (face, edge, or vertex), gated by
+    /// `selectionModes`. Empty if nothing is selected. A real viewport pick always
+    /// replaces the whole selection (matching `OCCTSwiftAIS`'s own point-pick behavior —
+    /// scheme-based combination is for programmatic `select(_:scheme:)` calls, e.g. area
+    /// selection); build multi-selection by calling `select(_:scheme:)` yourself.
+    public private(set) var selection: [PickedEntity] = []
+
+    /// The single selected entity, when the selection is exactly one. `nil` if nothing is
+    /// selected, or more than one entity is selected.
+    @available(*, deprecated, message: "Use `selection` instead — returns non-nil only when exactly one entity is selected.")
+    public var selected: PickedEntity? {
+        selection.count == 1 ? selection.first : nil
+    }
 
     /// Which sub-shape kinds picking resolves. Defaults to `[.face]`, matching this
     /// service's behavior before edge/vertex picking existed — add `.edge`/`.vertex` to
@@ -86,7 +96,7 @@ public final class CADViewportService {
 
     /// Currently selected face, or `nil` if nothing is picked or the current pick is an
     /// edge or vertex.
-    @available(*, deprecated, message: "Use `selected` instead — returns non-nil only for face picks.")
+    @available(*, deprecated, message: "Use `selection` instead — returns non-nil only when the selection is exactly one face.")
     public var selectedFace: PickedFaceInfo? {
         if case .face(let info)? = selected { return info }
         return nil
@@ -101,7 +111,10 @@ public final class CADViewportService {
     /// a real multi-body file on disk.
     var metadata: [String: CADBodyMetadata] = [:]
     private var overlays: [String: [_ViewportBody]] = [:]
-    private var selectionBody: _ViewportBody?
+    /// Up to three highlight bodies — one per kind present in `selection` — since each
+    /// kind renders with a different primitive (translucent triangle patch / polyline /
+    /// point sprite) that can't share one `_ViewportBody`.
+    private var selectionBodies: [_ViewportBody] = []
     private var ownedBodyIDs: Set<String> = []
     private var bodiesSubscription: AnyCancellable?
 
@@ -575,14 +588,14 @@ public final class CADViewportService {
             legacyLoadedShapeEntityID = nil
         }
         removeBodies(entity.bodyIDs)
-        clearSelectionIfNeeded(afterRemoving: entity.bodyIDs)
+        pruneSelection(removingBodyIDs: entity.bodyIDs)
     }
 
     /// Removes every currently loaded entity — whichever API loaded it (see `entities`'
     /// own documentation) — and clears the deprecated single-shape `loadedShape`'s legacy
     /// backing too. A full clean slate, equivalent to a fresh `CADViewportService`.
     public func removeAll() {
-        let hadSelection = selected != nil
+        let hadSelection = !selection.isEmpty
         resetAllModelState()
         if hadSelection {
             clearSelection() // also calls rebuildBodies()
@@ -603,16 +616,21 @@ public final class CADViewportService {
         }
     }
 
-    private func clearSelectionIfNeeded(afterRemoving removedBodyIDs: [String]) {
-        if let selectedBodyID = selected?.bodyID, removedBodyIDs.contains(selectedBodyID) {
-            clearSelection() // also calls rebuildBodies()
-        } else {
+    /// Drops only the selection entries that referenced a removed body, leaving everything
+    /// else selected — the selection survives operations unrelated to it, and honestly
+    /// reports (by no longer containing them) the entries that didn't.
+    private func pruneSelection(removingBodyIDs bodyIDs: [String]) {
+        let removed = Set(bodyIDs)
+        guard selection.contains(where: { removed.contains($0.bodyID) }) else {
             rebuildBodies()
+            return
         }
+        selection.removeAll { removed.contains($0.bodyID) }
+        rebuildSelectionHighlights() // also calls rebuildBodies()
     }
 
-    /// Currently loaded entities' shapes, keyed by entity id. Only reflects entities
-    /// loaded via the multi-entity API — see `entities`' own documentation.
+    /// Currently loaded entities' shapes, keyed by entity id — see `entities`' own
+    /// documentation for why this reflects every loading API, not just the multi-entity one.
     public var loadedShapes: [String: OCCTSwift.Shape] {
         entities.keys.reduce(into: [:]) { result, id in
             result[id] = shape(id: id)
@@ -736,11 +754,93 @@ public final class CADViewportService {
 
     // MARK: - Selection
 
-    /// Clear the current selection (and any highlight body).
+    /// Clear the current selection (and any highlight bodies).
     public func clearSelection() {
-        selected = nil
-        selectionBody = nil
+        selection = []
+        selectionBodies = []
         rebuildBodies()
+    }
+
+    /// Adds, removes, or replaces `entity` in `selection` per `scheme` — mirrors
+    /// `OCCTSwiftAIS.SelectionScheme`'s exact combination semantics (`.replace` assigns,
+    /// `.add`/`.remove`/`.xor` combine against the current selection), just applied to one
+    /// entity here rather than a batch region match. Membership uses `PickedEntity`'s own
+    /// `Equatable` (`uid`-preferring, so the same durable face/edge/vertex is recognized as
+    /// already-selected regardless of which ephemeral ordinal it was picked at).
+    public func select(_ entity: PickedEntity, scheme: SelectionScheme = .replace) {
+        switch scheme {
+        case .replace:
+            selection = [entity]
+        case .add:
+            if !selection.contains(entity) {
+                selection.append(entity)
+            }
+        case .remove:
+            selection.removeAll { $0 == entity }
+        case .xor:
+            if let index = selection.firstIndex(of: entity) {
+                selection.remove(at: index)
+            } else {
+                selection.append(entity)
+            }
+        }
+        rebuildSelectionHighlights()
+    }
+
+    /// Aggregate measures over `selection` — count by kind, total face area, total edge
+    /// length, and combined bounds. `nil` when nothing is selected.
+    public var selectionSummary: SelectionSummary? {
+        guard !selection.isEmpty else { return nil }
+
+        var faceCount = 0, edgeCount = 0, vertexCount = 0
+        var totalArea = 0.0, totalLength = 0.0
+        var minPt = SIMD3<Double>(repeating: .infinity)
+        var maxPt = SIMD3<Double>(repeating: -.infinity)
+
+        func absorb(_ bounds: (min: SIMD3<Double>, max: SIMD3<Double>)) {
+            minPt = SIMD3(min(minPt.x, bounds.min.x), min(minPt.y, bounds.min.y), min(minPt.z, bounds.min.z))
+            maxPt = SIMD3(max(maxPt.x, bounds.max.x), max(maxPt.y, bounds.max.y), max(maxPt.z, bounds.max.z))
+        }
+
+        for entity in selection {
+            switch entity {
+            case .face(let info):
+                faceCount += 1
+                totalArea += info.area
+                if let face = Face(info.shape) {
+                    absorb(face.bounds)
+                }
+            case .edge(let info):
+                edgeCount += 1
+                totalLength += info.length
+                // Uses the endpoints already captured on PickedEdgeInfo at pick time,
+                // rather than re-deriving via Edge(info.shape) — cheaper, and immune to
+                // that conversion failing for a straight line (bounds is exact either way;
+                // a curved edge's true bounds can bow slightly outside its endpoints, but
+                // this is a selection-level aggregate, not a precision measurement).
+                absorb((
+                    min: SIMD3(min(info.startPoint.x, info.endPoint.x), min(info.startPoint.y, info.endPoint.y), min(info.startPoint.z, info.endPoint.z)),
+                    max: SIMD3(max(info.startPoint.x, info.endPoint.x), max(info.startPoint.y, info.endPoint.y), max(info.startPoint.z, info.endPoint.z))
+                ))
+            case .vertex(let info):
+                vertexCount += 1
+                absorb((min: info.position, max: info.position))
+            }
+        }
+
+        let bounds: ShapeBounds? = minPt.x.isFinite ? ShapeBounds(
+            minX: minPt.x, minY: minPt.y, minZ: minPt.z,
+            maxX: maxPt.x, maxY: maxPt.y, maxZ: maxPt.z
+        ) : nil
+
+        return SelectionSummary(
+            faceCount: faceCount,
+            edgeCount: edgeCount,
+            vertexCount: vertexCount,
+            totalArea: totalArea,
+            totalLength: totalLength,
+            bounds: bounds
+        )
     }
 
     private func handlePick(_ result: _PickResult?) {
@@ -749,8 +849,11 @@ public final class CADViewportService {
             return
         }
 
-        selected = entity
-        buildSelectionHighlight(for: entity)
+        // A real viewport pick always replaces — matches OCCTSwiftAIS's own point-pick
+        // behavior. `select(_:scheme:)` is how a caller builds a multi-selection
+        // programmatically (there's no modifier-key state in a GPU pick result to infer a
+        // scheme from).
+        select(entity, scheme: .replace)
     }
 
     /// Dispatches a GPU pick to the resolver for its kind, gated by `selectionModes`.
@@ -916,116 +1019,99 @@ public final class CADViewportService {
         )
     }
 
-    private func buildSelectionHighlight(for entity: PickedEntity) {
-        switch entity {
-        case .face(let info):
-            buildFaceHighlight(bodyID: info.bodyID, faceIndex: Int32(info.faceIndex))
-        case .edge(let info):
-            buildEdgeHighlight(bodyID: info.bodyID, edgeIndex: Int32(info.edgeIndex))
-        case .vertex(let info):
-            buildVertexHighlight(position: info.position)
-        }
-    }
-
-    private func buildFaceHighlight(bodyID: String, faceIndex: Int32) {
-        guard let body = modelBodies.first(where: { $0.id == bodyID }),
-              let meta = metadata[bodyID] else {
-            selectionBody = nil
-            rebuildBodies()
-            return
-        }
-
+    /// Rebuilds the highlight bodies from the whole `selection` (not just the latest
+    /// pick), grouped by kind — up to three bodies: a translucent yellow triangle patch
+    /// aggregating every selected face's own triangles, a bright cyan polyline aggregating
+    /// every selected edge's own segments, and a bright magenta point sprite body for every
+    /// selected vertex's own position. Bodies loaded via `load(_:id:transform:)` are always
+    /// in world-space already (the transform is baked into the shape before tessellation,
+    /// not applied as a separate `_ViewportBody.transform`), so combining geometry gathered
+    /// from different source bodies into one aggregate highlight body is safe.
+    private func rebuildSelectionHighlights() {
         let stride = 6 // interleaved [px,py,pz,nx,ny,nz]
-        var highlightVerts: [Float] = []
-        var highlightIndices: [UInt32] = []
-        var vertCount: UInt32 = 0
+        var faceVerts: [Float] = []
+        var faceIndices: [UInt32] = []
+        var faceVertCount: UInt32 = 0
+        var edgeSegments: [[SIMD3<Float>]] = []
+        var vertexPoints: [SIMD3<Float>] = []
 
-        let triCount = body.indices.count / 3
-        for tri in 0..<triCount {
-            guard tri < meta.faceIndices.count && meta.faceIndices[tri] == faceIndex else { continue }
+        for entity in selection {
+            switch entity {
+            case .face(let info):
+                guard let body = modelBodies.first(where: { $0.id == info.bodyID }),
+                      let meta = metadata[info.bodyID] else { continue }
+                let faceIndex = Int32(info.faceIndex)
+                let triCount = body.indices.count / 3
+                for tri in 0..<triCount {
+                    guard tri < meta.faceIndices.count, meta.faceIndices[tri] == faceIndex else { continue }
+                    let i0 = Int(body.indices[tri * 3])
+                    let i1 = Int(body.indices[tri * 3 + 1])
+                    let i2 = Int(body.indices[tri * 3 + 2])
+                    for idx in [i0, i1, i2] {
+                        let base = idx * stride
+                        guard base + stride <= body.vertexData.count else { continue }
+                        faceVerts.append(contentsOf: body.vertexData[base..<(base + stride)])
+                        faceIndices.append(faceVertCount)
+                        faceVertCount += 1
+                    }
+                }
 
-            let i0 = Int(body.indices[tri * 3])
-            let i1 = Int(body.indices[tri * 3 + 1])
-            let i2 = Int(body.indices[tri * 3 + 2])
+            case .edge(let info):
+                guard let body = modelBodies.first(where: { $0.id == info.bodyID }) else { continue }
+                let edgeIndex = Int32(info.edgeIndex)
+                var segmentCursor = 0
+                for polyline in body.edges {
+                    let segmentCount = max(polyline.count - 1, 0)
+                    guard segmentCount > 0 else { continue }
+                    for s in 0..<segmentCount {
+                        defer { segmentCursor += 1 }
+                        guard segmentCursor < body.edgeIndices.count,
+                              body.edgeIndices[segmentCursor] == edgeIndex else { continue }
+                        edgeSegments.append([polyline[s], polyline[s + 1]])
+                    }
+                }
 
-            for idx in [i0, i1, i2] {
-                let base = idx * stride
-                guard base + stride <= body.vertexData.count else { continue }
-                highlightVerts.append(contentsOf: body.vertexData[base..<(base + stride)])
-                highlightIndices.append(vertCount)
-                vertCount += 1
+            case .vertex(let info):
+                vertexPoints.append(SIMD3<Float>(
+                    Float(info.position.x), Float(info.position.y), Float(info.position.z)
+                ))
             }
         }
 
-        guard !highlightIndices.isEmpty else {
-            selectionBody = nil
-            rebuildBodies()
-            return
+        var bodies: [_ViewportBody] = []
+        if !faceIndices.isEmpty {
+            bodies.append(_ViewportBody(
+                id: "selection_highlight_face",
+                vertexData: faceVerts,
+                indices: faceIndices,
+                edges: [],
+                color: SIMD4<Float>(1.0, 0.9, 0.0, 0.5)
+            ))
+        }
+        if !edgeSegments.isEmpty {
+            bodies.append(_ViewportBody(
+                id: "selection_highlight_edge",
+                vertexData: [],
+                indices: [],
+                edges: edgeSegments,
+                color: SIMD4<Float>(0.1, 0.9, 1.0, 1.0)
+            ))
+        }
+        if !vertexPoints.isEmpty {
+            bodies.append(_ViewportBody(
+                id: "selection_highlight_vertex",
+                vertexData: [],
+                indices: [],
+                edges: [],
+                vertices: vertexPoints,
+                vertexIndices: (0..<vertexPoints.count).map(Int32.init),
+                color: SIMD4<Float>(1.0, 0.15, 0.9, 1.0),
+                pointRadius: 6,
+                primitiveKind: .point
+            ))
         }
 
-        selectionBody = _ViewportBody(
-            id: "selection_highlight",
-            vertexData: highlightVerts,
-            indices: highlightIndices,
-            edges: [],
-            color: SIMD4<Float>(1.0, 0.9, 0.0, 0.5)
-        )
-        rebuildBodies()
-    }
-
-    /// Distinguishable from the face highlight: a bright cyan polyline built from just the
-    /// picked edge's own segments (gathered from `body.edges` via `edgeIndices`), rather
-    /// than a translucent triangle patch.
-    private func buildEdgeHighlight(bodyID: String, edgeIndex: Int32) {
-        guard let body = modelBodies.first(where: { $0.id == bodyID }) else {
-            selectionBody = nil
-            rebuildBodies()
-            return
-        }
-
-        var segments: [[SIMD3<Float>]] = []
-        var segmentCursor = 0
-        for polyline in body.edges {
-            let segmentCount = max(polyline.count - 1, 0)
-            guard segmentCount > 0 else { continue }
-            for s in 0..<segmentCount {
-                defer { segmentCursor += 1 }
-                guard segmentCursor < body.edgeIndices.count,
-                      body.edgeIndices[segmentCursor] == edgeIndex else { continue }
-                segments.append([polyline[s], polyline[s + 1]])
-            }
-        }
-
-        guard !segments.isEmpty else {
-            selectionBody = nil
-            rebuildBodies()
-            return
-        }
-
-        selectionBody = _ViewportBody(
-            id: "selection_highlight",
-            vertexData: [],
-            indices: [],
-            edges: segments,
-            color: SIMD4<Float>(0.1, 0.9, 1.0, 1.0)
-        )
-        rebuildBodies()
-    }
-
-    /// Distinguishable from face/edge highlights: a bright magenta point sprite at the
-    /// picked vertex's own durable position.
-    private func buildVertexHighlight(position: SIMD3<Double>) {
-        selectionBody = _ViewportBody(
-            id: "selection_highlight",
-            vertexData: [],
-            indices: [],
-            edges: [],
-            vertices: [SIMD3<Float>(Float(position.x), Float(position.y), Float(position.z))],
-            vertexIndices: [0],
-            color: SIMD4<Float>(1.0, 0.15, 0.9, 1.0),
-            pointRadius: 6,
-            primitiveKind: .point
-        )
+        selectionBodies = bodies
         rebuildBodies()
     }
 
@@ -1037,7 +1123,7 @@ public final class CADViewportService {
         for key in overlays.keys.sorted() {
             fresh.append(contentsOf: overlays[key] ?? [])
         }
-        if let sel = selectionBody { fresh.append(sel) }
+        fresh.append(contentsOf: selectionBodies)
 
         let newIDs = Set(fresh.map { $0.id })
         let toRemove = ownedBodyIDs.union(newIDs)

@@ -6,9 +6,10 @@ Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-
 
 ## What's in the box
 
-- `CADViewportService` — `@Observable` `@MainActor` service that owns the loaded geometry, drives the Metal viewport, and routes picking results back via `selected: PickedEntity?`, gated by `selectionModes` (default face-only; opt into edge/vertex picking by adding `.edge`/`.vertex`). `load(_:id:transform:)`/`loadFile(from:id:progress:)` display several parts or assembly occurrences side by side as distinct, addressable entities (`loadedShapes`, `visibility`, `remove(id:)`, `focus(on:)`); the single-shape `loadFile(from:progress:)`/`loadShape(_:id:)` still work as a deprecated convenience. Caller-supplied geometry (stock boxes, toolpaths, flat-pattern outlines, custom annotations) is staged via `setOverlay(id:bodies:)`/`clearOverlay(id:)`.
+- `CADViewportService` — `@Observable` `@MainActor` service that owns the loaded geometry, drives the Metal viewport, and routes picking results back via `selection: [PickedEntity]`, gated by `selectionModes` (default face-only; opt into edge/vertex picking by adding `.edge`/`.vertex`). Build a multi-selection with `select(_:scheme:)` (`.replace`/`.add`/`.remove`/`.xor`, mirroring `OCCTSwiftAIS.SelectionScheme`); `selectionSummary` reports aggregate count/area/length/bounds. `load(_:id:transform:)`/`loadFile(from:id:progress:)` display several parts or assembly occurrences side by side as distinct, addressable entities (`loadedShapes`, `visibility`, `remove(id:)`, `focus(on:)`); the single-shape `loadFile(from:progress:)`/`loadShape(_:id:)` still work as a deprecated convenience. Caller-supplied geometry (stock boxes, toolpaths, flat-pattern outlines, custom annotations) is staged via `setOverlay(id:bodies:)`/`clearOverlay(id:)`.
 - `CADViewportView` — SwiftUI wrapper around the Metal viewport with selection-info banner and display-mode controls.
 - `PickedEntity` — `.face(PickedFaceInfo)` / `.edge(PickedEdgeInfo)` / `.vertex(PickedVertexInfo)`, each carrying durable identity (a `Shape` + optional `BRepGraph.GraphUID`) alongside an ephemeral render-path ordinal. No CAM- or unfold-specific dependencies.
+- `SelectionSummary` — aggregate count by kind, total face area, total edge length, and combined bounds over the current selection.
 - `CADViewportError` — `unsupportedFormat`, `emptyFile`, `loadFailed`.
 
 ## Quick start
@@ -24,7 +25,7 @@ struct MyView: View {
         CADViewportView(
             bodies: viewport.bodies,
             controller: viewport.controller,
-            selected: viewport.selected,
+            selection: viewport.selection,
             onClearSelection: { viewport.clearSelection() }
         )
         .task {

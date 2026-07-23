@@ -608,6 +608,272 @@ struct SmokeTests {
         #expect(service.entityID(forBodyID: "no-such-body") == nil)
     }
 
+    /// Regression for #29: `select(_:scheme:)` must mirror `OCCTSwiftAIS.SelectionScheme`'s
+    /// exact combination semantics (`.replace` assigns, `.add`/`.remove`/`.xor` combine
+    /// against the current selection) — just applied one entity at a time rather than to a
+    /// batch region match.
+    @MainActor
+    @Test("select(_:scheme:) implements replace/add/remove/xor correctly")
+    func selectSchemeSemantics() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        guard let meta = service.metadata["box"], meta.faceIndices.count >= 2 else {
+            Issue.record("expected at least two triangles for a box")
+            return
+        }
+        // Find two triangles landing on different face ordinals.
+        let firstFaceIndex = meta.faceIndices[0]
+        guard let secondTri = meta.faceIndices.firstIndex(where: { $0 != firstFaceIndex }) else {
+            Issue.record("expected a box to have more than one face ordinal")
+            return
+        }
+        guard let pickA = service.resolveFacePick(bodyID: "box", triangleIndex: 0),
+              let pickB = service.resolveFacePick(bodyID: "box", triangleIndex: secondTri) else {
+            Issue.record("resolveFacePick returned nil for a valid triangle")
+            return
+        }
+        let entityA = PickedEntity.face(pickA)
+        let entityB = PickedEntity.face(pickB)
+        #expect(entityA != entityB, "the two picks must be genuinely different faces")
+
+        // .replace (default)
+        service.select(entityA)
+        #expect(service.selection == [entityA])
+
+        // .add
+        service.select(entityB, scheme: .add)
+        #expect(service.selection.count == 2)
+        #expect(service.selection.contains(entityA))
+        #expect(service.selection.contains(entityB))
+
+        // .add again with an already-selected entity is idempotent
+        service.select(entityA, scheme: .add)
+        #expect(service.selection.count == 2)
+
+        // .remove
+        service.select(entityA, scheme: .remove)
+        #expect(service.selection == [entityB])
+
+        // .xor: not present -> added
+        service.select(entityA, scheme: .xor)
+        #expect(service.selection.count == 2)
+        // .xor: present -> removed
+        service.select(entityA, scheme: .xor)
+        #expect(service.selection == [entityB])
+
+        // .replace always collapses to just the given entity
+        service.select(entityA) // back to .replace
+        #expect(service.selection == [entityA])
+    }
+
+    /// Regression for #29: `selected` (deprecated) is a single-selection convenience —
+    /// non-nil only when the selection is exactly one entity.
+    @MainActor
+    @Test("Deprecated selected reflects the single-selection case only")
+    func deprecatedSelectedReflectsSingleSelectionCase() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        #expect(service.selected == nil)
+
+        guard let pickA = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil")
+            return
+        }
+        service.select(.face(pickA))
+        #expect(service.selected == .face(pickA))
+
+        guard let meta = service.metadata["box"],
+              let secondTri = meta.faceIndices.firstIndex(where: { $0 != meta.faceIndices[0] }),
+              let pickB = service.resolveFacePick(bodyID: "box", triangleIndex: secondTri) else {
+            Issue.record("expected a second distinct face pick")
+            return
+        }
+        service.select(.face(pickB), scheme: .add)
+        #expect(service.selected == nil, "more than one entity is selected")
+    }
+
+    /// Regression for #29: `selectionSummary` reports sensible aggregates — count by kind,
+    /// total face area, total edge length, and combined bounds.
+    @MainActor
+    @Test("selectionSummary reports sensible aggregates")
+    func selectionSummaryReportsAggregates() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.selectionModes = [.face, .edge, .vertex]
+        service.load(box, id: "box")
+
+        #expect(service.selectionSummary == nil, "empty selection has no summary")
+
+        guard let facePick = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil")
+            return
+        }
+        service.select(.face(facePick))
+
+        guard let summary1 = service.selectionSummary else {
+            Issue.record("expected a summary for a non-empty selection")
+            return
+        }
+        #expect(summary1.faceCount == 1)
+        #expect(summary1.edgeCount == 0)
+        #expect(summary1.vertexCount == 0)
+        #expect(abs(summary1.totalArea - facePick.area) < 0.01)
+        #expect(summary1.bounds != nil)
+
+        guard let edgePick = service.resolveEdgePick(bodyID: "box", segmentIndex: 0) else {
+            Issue.record("resolveEdgePick returned nil")
+            return
+        }
+        service.select(.edge(edgePick), scheme: .add)
+
+        guard let summary2 = service.selectionSummary else {
+            Issue.record("expected a summary after adding an edge")
+            return
+        }
+        #expect(summary2.faceCount == 1)
+        #expect(summary2.edgeCount == 1)
+        #expect(abs(summary2.totalLength - edgePick.length) < 0.01)
+        // Combined bounds must be at least as large as the face-only bounds.
+        guard let b1 = summary1.bounds, let b2 = summary2.bounds else {
+            Issue.record("expected bounds on both summaries")
+            return
+        }
+        #expect(b2.sizeX >= b1.sizeX - 0.01)
+    }
+
+    /// Regression for #29 review: a vertex-only selection must produce a zero-size (but
+    /// non-nil) bounds — the "point" case `selectionSummary`'s bounds math has to handle
+    /// alongside faces/edges, which contribute a real extent.
+    @MainActor
+    @Test("selectionSummary reports a zero-size bounds for a vertex-only selection")
+    func selectionSummaryVertexOnlyBounds() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.selectionModes = [.vertex]
+        service.load(box, id: "box")
+
+        guard let vertexPick = service.resolveVertexPick(bodyID: "box", pointIndex: 0) else {
+            Issue.record("resolveVertexPick returned nil")
+            return
+        }
+        service.select(.vertex(vertexPick))
+
+        guard let summary = service.selectionSummary, let bounds = summary.bounds else {
+            Issue.record("expected a summary with bounds for a vertex-only selection")
+            return
+        }
+        #expect(summary.vertexCount == 1)
+        #expect(summary.faceCount == 0)
+        #expect(bounds.sizeX == 0 && bounds.sizeY == 0 && bounds.sizeZ == 0)
+        #expect(abs(bounds.minX - vertexPick.position.x) < 0.01)
+    }
+
+    /// Regression for #29 review: the deprecated single-shape `loadShape`/
+    /// `loadFile(from:progress:)` call `resetAllModelState()` directly rather than going
+    /// through `remove(id:)`/`pruneSelection` — confirm they still explicitly clear
+    /// `selection` too, rather than leaving it dangling on bodies `resetAllModelState()`
+    /// just wiped. (This is exactly the class of bug #28's review caught twice: state
+    /// cleared on one code path but not a sibling one.)
+    @MainActor
+    @Test("The deprecated single-shape API clears the selection, not just the model bodies")
+    func deprecatedSingleShapeAPIClearsSelection() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4),
+              let otherBox = Shape.box(width: 6, height: 6, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        guard let pick = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil")
+            return
+        }
+        service.select(.face(pick))
+        #expect(!service.selection.isEmpty)
+
+        service.loadShape(otherBox, id: "model") // deprecated — different id than "box"
+
+        #expect(service.selection.isEmpty, "loadShape wipes every model body, including \"box\" — selection must not dangle")
+    }
+
+    /// Regression for #29's acceptance criterion: the selection survives operations
+    /// unrelated to it, and drops only the entries that reference a removed entity —
+    /// "reporting deletions honestly" rather than silently keeping a dangling pick or
+    /// wiping the whole selection for an unrelated change.
+    @MainActor
+    @Test("Selection survives removal of unrelated entities, drops only the affected ones")
+    func selectionSurvivesUnrelatedRemovalDropsAffectedEntries() {
+        guard let boxA = Shape.box(width: 4, height: 4, depth: 4),
+              let boxB = Shape.box(width: 6, height: 6, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(boxA, id: "partA")
+        service.load(boxB, id: "partB")
+
+        guard let pickA = service.resolveFacePick(bodyID: "partA", triangleIndex: 0),
+              let pickB = service.resolveFacePick(bodyID: "partB", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil")
+            return
+        }
+        service.select(.face(pickA))
+        service.select(.face(pickB), scheme: .add)
+        #expect(service.selection.count == 2)
+
+        service.remove(id: "partA")
+
+        #expect(service.selection == [.face(pickB)], "partA's pick must be dropped, partB's must survive")
+
+        service.remove(id: "partB")
+        #expect(service.selection.isEmpty)
+    }
+
+    /// Regression for #29: multi-selection highlights render as separate per-kind bodies
+    /// (face/edge/vertex) covering the WHOLE selection, not just the latest pick.
+    @MainActor
+    @Test("Selection highlights cover every selected kind, not just the latest pick")
+    func selectionHighlightsCoverWholeSelection() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.selectionModes = [.face, .edge, .vertex]
+        service.load(box, id: "box")
+
+        guard let facePick = service.resolveFacePick(bodyID: "box", triangleIndex: 0),
+              let edgePick = service.resolveEdgePick(bodyID: "box", segmentIndex: 0),
+              let vertexPick = service.resolveVertexPick(bodyID: "box", pointIndex: 0) else {
+            Issue.record("resolve*Pick returned nil for a valid index")
+            return
+        }
+        service.select(.face(facePick))
+        service.select(.edge(edgePick), scheme: .add)
+        service.select(.vertex(vertexPick), scheme: .add)
+
+        let ids = Set(service.interactiveContext.bodies.map(\.id))
+        #expect(ids.contains("selection_highlight_face"))
+        #expect(ids.contains("selection_highlight_edge"))
+        #expect(ids.contains("selection_highlight_vertex"))
+    }
+
     /// Regression for #28 review: the deprecated `loadShape`/`loadFile` and the new
     /// `load`/`loadFile(from:id:)` share one `entities` registry precisely so this doesn't
     /// happen — mixing the two APIs under the same id must replace, not duplicate. Before
