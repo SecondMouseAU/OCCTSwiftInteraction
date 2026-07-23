@@ -1,14 +1,14 @@
 # OCCTSwiftCADKit
 
-SwiftUI Metal viewport + CAD file import (STEP/STL/BREP) + face picking, for apps built on [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) and [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport).
+SwiftUI Metal viewport + CAD file import (STEP/STL/BREP) + face/edge/vertex picking, for apps built on [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) and [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport).
 
 Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-based apps (PadCAM, an UnfoldEngine test app, etc.) can share the same viewport plumbing without forking it.
 
 ## What's in the box
 
-- `CADViewportService` — `@Observable` `@MainActor` service that owns the loaded `Shape`, drives the Metal viewport, and routes face-picking results back via `selectedFace: PickedFaceInfo?`. Caller-supplied geometry (stock boxes, toolpaths, flat-pattern outlines, custom annotations) is staged via `setOverlay(id:bodies:)`/`clearOverlay(id:)`.
+- `CADViewportService` — `@Observable` `@MainActor` service that owns the loaded `Shape`, drives the Metal viewport, and routes picking results back via `selected: PickedEntity?`, gated by `selectionModes` (default face-only; opt into edge/vertex picking by adding `.edge`/`.vertex`). Caller-supplied geometry (stock boxes, toolpaths, flat-pattern outlines, custom annotations) is staged via `setOverlay(id:bodies:)`/`clearOverlay(id:)`.
 - `CADViewportView` — SwiftUI wrapper around the Metal viewport with selection-info banner and display-mode controls.
-- `PickedFaceInfo`, `FaceBounds` — face metadata returned by picking (no CAM- or unfold-specific dependencies).
+- `PickedEntity` — `.face(PickedFaceInfo)` / `.edge(PickedEdgeInfo)` / `.vertex(PickedVertexInfo)`, each carrying durable identity (a `Shape` + optional `BRepGraph.GraphUID`) alongside an ephemeral render-path ordinal. No CAM- or unfold-specific dependencies.
 - `CADViewportError` — `unsupportedFormat`, `emptyFile`, `loadFailed`.
 
 ## Quick start
@@ -24,7 +24,7 @@ struct MyView: View {
         CADViewportView(
             bodies: viewport.bodies,
             controller: viewport.controller,
-            selectedFace: viewport.selectedFace,
+            selected: viewport.selected,
             onClearSelection: { viewport.clearSelection() }
         )
         .task {

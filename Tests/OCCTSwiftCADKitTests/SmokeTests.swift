@@ -242,6 +242,208 @@ struct SmokeTests {
         #expect(service.resolveFacePick(bodyID: "mismatch-0", triangleIndex: 0) == nil)
     }
 
+    /// Regression for #27 review: like `rebuildIdentityMultiBodyResolvesDurableIdentity`
+    /// above, but for edges and vertices — `makeEdgeIdentityTable`/`makeVertexIdentityTable`
+    /// (the multi-body `loadFile` path's hand-rolled builders) had zero coverage; every
+    /// other edge/vertex test only drove `loadShape`'s single-body path through the
+    /// library's own `shapeToBodyMetadataAndIdentities`.
+    @MainActor
+    @Test("rebuildIdentity resolves edge and vertex durable identity across multiple bodies")
+    func rebuildIdentityMultiBodyResolvesEdgeAndVertexIdentity() {
+        guard let smallBox = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+
+        let (body0, meta0) = CADFileLoader.shapeToBodyAndMetadata(
+            smallBox, id: "multi-0", color: SIMD4<Float>(1, 1, 1, 1)
+        )
+        let (body1, meta1) = CADFileLoader.shapeToBodyAndMetadata(
+            box, id: "multi-1", color: SIMD4<Float>(1, 1, 1, 1)
+        )
+        guard let body0, let meta0, let body1, let meta1 else {
+            Issue.record("shapeToBodyAndMetadata returned nil building the multi-body fixture")
+            return
+        }
+
+        let service = CADViewportService()
+        service.selectionModes = [.face, .edge, .vertex]
+        service.metadata = ["multi-0": meta0, "multi-1": meta1]
+        service.modelBodies = [body0, body1]
+        service.rebuildIdentity(bodies: [body0, body1], shapes: [smallBox, box])
+
+        guard let edgePick = service.resolveEdgePick(bodyID: "multi-1", segmentIndex: 0) else {
+            Issue.record("resolveEdgePick failed against rebuildIdentity's output")
+            return
+        }
+        #expect(edgePick.bodyID == "multi-1")
+        #expect(edgePick.uid != nil)
+
+        guard let vertexPick = service.resolveVertexPick(bodyID: "multi-1", pointIndex: 0) else {
+            Issue.record("resolveVertexPick failed against rebuildIdentity's output")
+            return
+        }
+        #expect(vertexPick.bodyID == "multi-1")
+        #expect(vertexPick.uid != nil)
+
+        // The other body must resolve independently and not collide.
+        guard let otherEdgePick = service.resolveEdgePick(bodyID: "multi-0", segmentIndex: 0) else {
+            Issue.record("resolveEdgePick failed for the second body")
+            return
+        }
+        #expect(otherEdgePick.bodyID == "multi-0")
+        if let otherUID = otherEdgePick.uid {
+            #expect(otherUID != edgePick.uid)
+        }
+    }
+
+    /// Regression for #27 review: `resolveVertexPick` deliberately implements
+    /// `ViewportBody.vertexIndices`' documented "empty means identity mapping" fallback in
+    /// full (unlike `OCCTSwiftAIS.InteractiveContext.resolveVertexSubShape`, which
+    /// bounds-checks against `vertexIndices.count` directly and so never resolves when it's
+    /// empty). Prove the fallback actually works: a body with `vertices` populated but
+    /// `vertexIndices` empty must still resolve, using `pointIndex` as the ordinal itself.
+    @MainActor
+    @Test("resolveVertexPick falls back to identity mapping when vertexIndices is empty")
+    func resolveVertexPickFallsBackToIdentityMappingWhenVertexIndicesEmpty() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.selectionModes = [.vertex]
+        service.loadShape(box, id: "box")
+
+        guard let realBody = service.modelBodies.first(where: { $0.id == "box" }), !realBody.vertices.isEmpty else {
+            Issue.record("expected a vertex-pickable model body for \"box\"")
+            return
+        }
+
+        // Same vertices, but with vertexIndices cleared — forcing the identity-mapping path.
+        let noIndicesBody = _ViewportBody(
+            id: "box",
+            vertexData: realBody.vertexData,
+            indices: realBody.indices,
+            edges: realBody.edges,
+            faceIndices: realBody.faceIndices,
+            edgeIndices: realBody.edgeIndices,
+            vertices: realBody.vertices,
+            vertexIndices: [],
+            color: realBody.color
+        )
+        service.modelBodies = [noIndicesBody]
+
+        guard let pick = service.resolveVertexPick(bodyID: "box", pointIndex: 0) else {
+            Issue.record("resolveVertexPick returned nil with vertexIndices empty")
+            return
+        }
+        #expect(pick.vertexIndex == 0, "with vertexIndices empty, pointIndex is the ordinal itself")
+    }
+
+    /// Regression for #27: edge and vertex picks must carry the same durable-identity shape
+    /// (`shape`/`uid`) established for faces in #25.
+    @MainActor
+    @Test("Edge and vertex picks resolve with durable identity")
+    func edgeAndVertexPicksResolveWithDurableIdentity() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.selectionModes = [.face, .edge, .vertex]
+        service.loadShape(box, id: "box")
+
+        guard let body = service.modelBodies.first(where: { $0.id == "box" }) else {
+            Issue.record("expected a model body for \"box\"")
+            return
+        }
+        #expect(!body.edgeIndices.isEmpty, "a box should be edge-pickable")
+        #expect(!body.vertices.isEmpty, "a box should be vertex-pickable")
+
+        guard let edgePick = service.resolveEdgePick(bodyID: "box", segmentIndex: 0) else {
+            Issue.record("resolveEdgePick returned nil for a valid segment")
+            return
+        }
+        #expect(edgePick.bodyID == "box")
+        #expect(edgePick.length > 0)
+        #expect(edgePick.uid != nil, "loadShape always builds a graph for a valid box")
+
+        guard let vertexPick = service.resolveVertexPick(bodyID: "box", pointIndex: 0) else {
+            Issue.record("resolveVertexPick returned nil for a valid point")
+            return
+        }
+        #expect(vertexPick.bodyID == "box")
+        #expect(vertexPick.uid != nil)
+
+        // Vertex enumeration order isn't part of the contract, so just check the resolved
+        // position is within the box's own bounds rather than asserting an exact corner.
+        let bounds = box.bounds
+        #expect(vertexPick.position.x >= bounds.min.x - 0.01 && vertexPick.position.x <= bounds.max.x + 0.01)
+        #expect(vertexPick.position.y >= bounds.min.y - 0.01 && vertexPick.position.y <= bounds.max.y + 0.01)
+        #expect(vertexPick.position.z >= bounds.min.z - 0.01 && vertexPick.position.z <= bounds.max.z + 0.01)
+    }
+
+    /// Regression for #27: `selectionModes` defaults to `[.face]` (preserving pre-#27
+    /// behavior) and gates every kind, including turning face picking itself off.
+    @MainActor
+    @Test("selectionModes gates which kinds resolve, defaulting to face-only")
+    func selectionModesGatesEdgeAndVertexPicking() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        #expect(service.selectionModes == [.face])
+        service.loadShape(box, id: "box")
+
+        #expect(service.resolveEdgePick(bodyID: "box", segmentIndex: 0) == nil)
+        #expect(service.resolveVertexPick(bodyID: "box", pointIndex: 0) == nil)
+
+        service.selectionModes = [.face, .edge, .vertex]
+        #expect(service.resolveEdgePick(bodyID: "box", segmentIndex: 0) != nil)
+        #expect(service.resolveVertexPick(bodyID: "box", pointIndex: 0) != nil)
+
+        service.selectionModes = [.edge, .vertex]
+        #expect(service.resolveFacePick(bodyID: "box", triangleIndex: 0) == nil)
+    }
+
+    /// Regression for #27's acceptance criterion: a body with no `edgeIndices`/`vertices`
+    /// populated (e.g. a loose-mesh body, per `ViewportBody`'s own "not edge/vertex-pickable"
+    /// documentation) must degrade to `nil` rather than mis-pick — face picking on the same
+    /// body is unaffected.
+    @MainActor
+    @Test("Bodies without edgeIndices/vertices degrade gracefully rather than mis-pick")
+    func bodiesWithoutEdgeOrVertexDataDegradeGracefully() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.selectionModes = [.face, .edge, .vertex]
+        service.loadShape(box, id: "meshOnly")
+
+        // Simulate a body whose render data carries no edge/vertex info (e.g. a
+        // loose-mesh STL body) by swapping in a synthetic body with empty edges/vertices.
+        // metadata/bodyShapes/identity tables are unaffected by this and still reflect the
+        // real box loadShape just tessellated, so face picking should still work.
+        let meshOnlyBody = _ViewportBody(
+            id: "meshOnly",
+            vertexData: [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1],
+            indices: [0, 1, 2],
+            edges: [],
+            color: SIMD4<Float>(1, 1, 1, 1)
+        )
+        service.modelBodies = [meshOnlyBody]
+
+        #expect(service.resolveFacePick(bodyID: "meshOnly", triangleIndex: 0) != nil, "face picking is unaffected")
+        #expect(service.resolveEdgePick(bodyID: "meshOnly", segmentIndex: 0) == nil)
+        #expect(service.resolveVertexPick(bodyID: "meshOnly", pointIndex: 0) == nil)
+    }
+
     @Test("CADViewportError messages format correctly")
     func errorMessages() {
         #expect(CADViewportError.unsupportedFormat("xyz").errorDescription == "Unsupported file format: .xyz")

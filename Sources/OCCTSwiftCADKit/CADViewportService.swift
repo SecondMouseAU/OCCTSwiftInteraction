@@ -44,10 +44,29 @@ public final class CADViewportService {
     /// The loaded OCCTSwift shape. `nil` until something is loaded.
     public private(set) var loadedShape: OCCTSwift.Shape?
 
-    /// Currently selected face. `nil` if nothing is picked.
-    public private(set) var selectedFace: PickedFaceInfo?
+    /// Currently picked sub-shape (face, edge, or vertex), gated by `selectionModes`.
+    /// `nil` if nothing is picked.
+    public private(set) var selected: PickedEntity?
 
-    private var modelBodies: [_ViewportBody] = []
+    /// Which sub-shape kinds picking resolves. Defaults to `[.face]`, matching this
+    /// service's behavior before edge/vertex picking existed — add `.edge`/`.vertex` to
+    /// opt in. `.body` has no effect here (there is no whole-body `PickedEntity` case);
+    /// it exists on `SelectionMode` for `OCCTSwiftAIS.InteractiveContext.selectionMode`,
+    /// a separate, independent selection system this service does not share state with.
+    public var selectionModes: Set<SelectionMode> = [.face]
+
+    /// Currently selected face, or `nil` if nothing is picked or the current pick is an
+    /// edge or vertex.
+    @available(*, deprecated, message: "Use `selected` instead — returns non-nil only for face picks.")
+    public var selectedFace: PickedFaceInfo? {
+        if case .face(let info)? = selected { return info }
+        return nil
+    }
+
+    /// Internal rather than private so tests can seed it directly — e.g. a synthetic body
+    /// with empty `edgeIndices`/`vertices` to exercise the "not edge/vertex-pickable"
+    /// degrade-gracefully path without a real non-pickable file on disk.
+    var modelBodies: [_ViewportBody] = []
     /// Internal rather than private so tests can seed it directly when exercising
     /// `rebuildIdentity`/`resolveFacePick` against a synthetic multi-body scenario without
     /// a real multi-body file on disk.
@@ -71,6 +90,12 @@ public final class CADViewportService {
 
     /// Face-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
     private var faceIdentity: [String: FaceIdentityTable] = [:]
+
+    /// Edge-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
+    private var edgeIdentity: [String: EdgeIdentityTable] = [:]
+
+    /// Vertex-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
+    private var vertexIdentity: [String: VertexIdentityTable] = [:]
 
     public init(configuration: _ViewportConfiguration = .init(
         rotationStyle: .turntable,
@@ -139,7 +164,7 @@ public final class CADViewportService {
     public func loadShape(_ shape: OCCTSwift.Shape, id: String = "model") {
         self.loadedShape = shape
         let graph = BRepGraph(shape: shape)
-        let (body, meta, faceTable) = CADFileLoader.shapeToBodyMetadataAndIdentity(
+        let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
             shape,
             id: id,
             color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
@@ -157,6 +182,12 @@ public final class CADViewportService {
         }
         if let faceTable {
             self.faceIdentity[id] = faceTable
+        }
+        if let edgeTable {
+            self.edgeIdentity[id] = edgeTable
+        }
+        if let vertexTable {
+            self.vertexIdentity[id] = vertexTable
         }
         clearSelection()
         rebuildBodies()
@@ -189,12 +220,16 @@ public final class CADViewportService {
             self.bodyShapes = [:]
             self.bodyGraphs = [:]
             self.faceIdentity = [:]
+            self.edgeIdentity = [:]
+            self.vertexIdentity = [:]
             return
         }
 
         var newShapes: [String: OCCTSwift.Shape] = [:]
         var newGraphs: [String: BRepGraph] = [:]
-        var newIdentity: [String: FaceIdentityTable] = [:]
+        var newFaceIdentity: [String: FaceIdentityTable] = [:]
+        var newEdgeIdentity: [String: EdgeIdentityTable] = [:]
+        var newVertexIdentity: [String: VertexIdentityTable] = [:]
 
         for (index, body) in bodies.enumerated() {
             let shape = shapes[index]
@@ -203,12 +238,16 @@ public final class CADViewportService {
             if let graph {
                 newGraphs[body.id] = graph
             }
-            newIdentity[body.id] = Self.makeFaceIdentityTable(shape: shape, graph: graph)
+            newFaceIdentity[body.id] = Self.makeFaceIdentityTable(shape: shape, graph: graph)
+            newEdgeIdentity[body.id] = Self.makeEdgeIdentityTable(shape: shape, graph: graph)
+            newVertexIdentity[body.id] = Self.makeVertexIdentityTable(shape: shape, graph: graph)
         }
 
         self.bodyShapes = newShapes
         self.bodyGraphs = newGraphs
-        self.faceIdentity = newIdentity
+        self.faceIdentity = newFaceIdentity
+        self.edgeIdentity = newEdgeIdentity
+        self.vertexIdentity = newVertexIdentity
     }
 
     /// Mirrors `OCCTSwiftTools.CADFileLoader`'s own (private) `makeFaceIdentityTable`: map
@@ -225,6 +264,36 @@ public final class CADViewportService {
             return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
         }
         return FaceIdentityTable(shapes: faceShapes, uids: uids)
+    }
+
+    /// Mirrors `OCCTSwiftTools.CADFileLoader`'s own (private) `makeEdgeIdentityTable`: map
+    /// every `shape.edges()` ordinal (the same `TopTools_IndexedMapOfShape` traversal
+    /// `edgeIndices` is built from) to its `Shape` and, when available, `GraphUID`.
+    private static func makeEdgeIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?) -> EdgeIdentityTable {
+        let edgeShapes = shape.edges().compactMap { OCCTSwift.Shape.fromEdge($0) }
+        guard let graph else {
+            return EdgeIdentityTable(shapes: edgeShapes)
+        }
+        let uids: [BRepGraph.GraphUID?] = edgeShapes.map { edgeShape in
+            guard let node = graph.findNode(for: edgeShape) else { return nil }
+            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
+        }
+        return EdgeIdentityTable(shapes: edgeShapes, uids: uids)
+    }
+
+    /// Mirrors `OCCTSwiftTools.CADFileLoader`'s own (private) `makeVertexIdentityTable`: map
+    /// every `shape.subShapes(ofType: .vertex)` ordinal (the same `TopTools_IndexedMapOfShape`
+    /// traversal `vertexIndices` is built from) to its `Shape` and, when available, `GraphUID`.
+    private static func makeVertexIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?) -> VertexIdentityTable {
+        let vertexShapes = shape.subShapes(ofType: .vertex)
+        guard let graph else {
+            return VertexIdentityTable(shapes: vertexShapes)
+        }
+        let uids: [BRepGraph.GraphUID?] = vertexShapes.map { vertexShape in
+            guard let node = graph.findNode(for: vertexShape) else { return nil }
+            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
+        }
+        return VertexIdentityTable(shapes: vertexShapes, uids: uids)
     }
 
     /// Convenience for callers that have file `Data` rather than a URL
@@ -300,24 +369,35 @@ public final class CADViewportService {
     /// Sorted list of overlay layer ids currently in the viewport.
     public var overlayIDs: [String] { overlays.keys.sorted() }
 
-    // MARK: - Face Selection
+    // MARK: - Selection
 
-    /// Clear the current face selection (and any highlight body).
+    /// Clear the current selection (and any highlight body).
     public func clearSelection() {
-        selectedFace = nil
+        selected = nil
         selectionBody = nil
         rebuildBodies()
     }
 
     private func handlePick(_ result: _PickResult?) {
-        guard let result,
-              let info = resolveFacePick(bodyID: result.bodyID, triangleIndex: result.triangleIndex) else {
+        guard let result, let entity = resolveEntityPick(result) else {
             clearSelection()
             return
         }
 
-        selectedFace = info
-        buildSelectionHighlight(bodyID: result.bodyID, faceIndex: Int32(info.faceIndex))
+        selected = entity
+        buildSelectionHighlight(for: entity)
+    }
+
+    /// Dispatches a GPU pick to the resolver for its kind, gated by `selectionModes`.
+    private func resolveEntityPick(_ result: _PickResult) -> PickedEntity? {
+        switch result.kind {
+        case .face:
+            return resolveFacePick(bodyID: result.bodyID, triangleIndex: result.triangleIndex).map(PickedEntity.face)
+        case .edge:
+            return resolveEdgePick(bodyID: result.bodyID, segmentIndex: result.triangleIndex).map(PickedEntity.edge)
+        case .vertex:
+            return resolveVertexPick(bodyID: result.bodyID, pointIndex: result.triangleIndex).map(PickedEntity.vertex)
+        }
     }
 
     /// Resolves a triangle-level GPU pick to durable face identity via the picked body's
@@ -325,6 +405,7 @@ public final class CADViewportService {
     /// directly in tests without round-tripping through the viewport's async pick
     /// callback — `handlePick` is the only production caller.
     func resolveFacePick(bodyID: String, triangleIndex: Int) -> PickedFaceInfo? {
+        guard selectionModes.contains(.face) else { return nil }
         guard let meta = metadata[bodyID],
               triangleIndex >= 0, triangleIndex < meta.faceIndices.count else {
             return nil
@@ -373,7 +454,115 @@ public final class CADViewportService {
         )
     }
 
-    private func buildSelectionHighlight(bodyID: String, faceIndex: Int32) {
+    /// Resolves a line-segment-level GPU pick to durable edge identity via the picked
+    /// body's `EdgeIdentityTable`. Reads `edgeIndices` off the `_ViewportBody` itself
+    /// (unlike faces, `CADBodyMetadata` carries edge data as per-polyline groups, not a
+    /// flat per-segment array) — a body with no `edgeIndices` populated (not edge-pickable,
+    /// per `ViewportBody`'s own documentation) degrades to `nil` here rather than
+    /// mis-picking. `internal` for the same testability reason as `resolveFacePick`.
+    func resolveEdgePick(bodyID: String, segmentIndex: Int) -> PickedEdgeInfo? {
+        guard selectionModes.contains(.edge) else { return nil }
+        guard let body = modelBodies.first(where: { $0.id == bodyID }),
+              segmentIndex >= 0, segmentIndex < body.edgeIndices.count else {
+            return nil
+        }
+
+        let edgeIndex = Int(body.edgeIndices[segmentIndex])
+        guard edgeIndex >= 0 else { return nil }
+
+        let identity = edgeIdentity[bodyID]
+        var edgeShape = identity?.shape(forOrdinal: edgeIndex)
+        if edgeShape == nil, let edges = bodyShapes[bodyID]?.edges(), edgeIndex < edges.count {
+            edgeShape = OCCTSwift.Shape.fromEdge(edges[edgeIndex])
+        }
+        guard let edgeShape, let edge = Edge(edgeShape) else { return nil }
+        let uid = identity?.uid(forOrdinal: edgeIndex)
+
+        let endpoints = edge.endpoints
+        let typeStr: String
+        switch edge.curveType {
+        case .line: typeStr = "Line"
+        case .circle: typeStr = "Circle"
+        case .ellipse: typeStr = "Ellipse"
+        case .hyperbola: typeStr = "Hyperbola"
+        case .parabola: typeStr = "Parabola"
+        case .bezierCurve: typeStr = "Bezier"
+        case .bsplineCurve: typeStr = "B-spline"
+        case .offsetCurve: typeStr = "Offset curve"
+        case .other: typeStr = "Curve"
+        }
+        let desc = "\(typeStr) edge, \(String(format: "%.1f", edge.length))mm"
+
+        return PickedEdgeInfo(
+            shape: edgeShape,
+            uid: uid,
+            edgeIndex: edgeIndex,
+            bodyID: bodyID,
+            curveType: edge.curveType,
+            length: edge.length,
+            startPoint: endpoints.start,
+            endPoint: endpoints.end,
+            description: desc
+        )
+    }
+
+    /// Resolves a point-sprite-level GPU pick to durable vertex identity via the picked
+    /// body's `VertexIdentityTable`. A body with no `vertices` populated (not
+    /// vertex-pickable) degrades to `nil` here rather than mis-picking. `internal` for the
+    /// same testability reason as `resolveFacePick`.
+    func resolveVertexPick(bodyID: String, pointIndex: Int) -> PickedVertexInfo? {
+        guard selectionModes.contains(.vertex) else { return nil }
+        guard let body = modelBodies.first(where: { $0.id == bodyID }),
+              pointIndex >= 0, pointIndex < body.vertices.count else {
+            return nil
+        }
+
+        // `vertexIndices` empty means identity mapping (pointIndex is the ordinal itself),
+        // per ViewportBody's own documentation. Deliberately more complete here than
+        // OCCTSwiftAIS's own resolveVertexSubShape, which bounds-checks against
+        // `vertexIndices.count` directly and so never resolves a pick when it's empty —
+        // unreached in practice since CADFileLoader always populates both arrays in
+        // lockstep for a real body, but this implements the documented fallback in full.
+        let vertexIndex = pointIndex < body.vertexIndices.count ? Int(body.vertexIndices[pointIndex]) : pointIndex
+        guard vertexIndex >= 0 else { return nil }
+
+        let identity = vertexIdentity[bodyID]
+        var vertexShape = identity?.shape(forOrdinal: vertexIndex)
+        if vertexShape == nil, let vertices = bodyShapes[bodyID]?.subShapes(ofType: .vertex),
+           vertexIndex < vertices.count {
+            vertexShape = vertices[vertexIndex]
+        }
+        guard let vertexShape else { return nil }
+        let uid = identity?.uid(forOrdinal: vertexIndex)
+
+        let renderPosition = body.vertices[pointIndex]
+        let position = vertexShape.vertices().first ?? SIMD3<Double>(
+            Double(renderPosition.x), Double(renderPosition.y), Double(renderPosition.z)
+        )
+        let desc = String(format: "Vertex at (%.1f, %.1f, %.1f)mm", position.x, position.y, position.z)
+
+        return PickedVertexInfo(
+            shape: vertexShape,
+            uid: uid,
+            vertexIndex: vertexIndex,
+            bodyID: bodyID,
+            position: position,
+            description: desc
+        )
+    }
+
+    private func buildSelectionHighlight(for entity: PickedEntity) {
+        switch entity {
+        case .face(let info):
+            buildFaceHighlight(bodyID: info.bodyID, faceIndex: Int32(info.faceIndex))
+        case .edge(let info):
+            buildEdgeHighlight(bodyID: info.bodyID, edgeIndex: Int32(info.edgeIndex))
+        case .vertex(let info):
+            buildVertexHighlight(position: info.position)
+        }
+    }
+
+    private func buildFaceHighlight(bodyID: String, faceIndex: Int32) {
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
               let meta = metadata[bodyID] else {
             selectionBody = nil
@@ -415,6 +604,62 @@ public final class CADViewportService {
             indices: highlightIndices,
             edges: [],
             color: SIMD4<Float>(1.0, 0.9, 0.0, 0.5)
+        )
+        rebuildBodies()
+    }
+
+    /// Distinguishable from the face highlight: a bright cyan polyline built from just the
+    /// picked edge's own segments (gathered from `body.edges` via `edgeIndices`), rather
+    /// than a translucent triangle patch.
+    private func buildEdgeHighlight(bodyID: String, edgeIndex: Int32) {
+        guard let body = modelBodies.first(where: { $0.id == bodyID }) else {
+            selectionBody = nil
+            rebuildBodies()
+            return
+        }
+
+        var segments: [[SIMD3<Float>]] = []
+        var segmentCursor = 0
+        for polyline in body.edges {
+            let segmentCount = max(polyline.count - 1, 0)
+            guard segmentCount > 0 else { continue }
+            for s in 0..<segmentCount {
+                defer { segmentCursor += 1 }
+                guard segmentCursor < body.edgeIndices.count,
+                      body.edgeIndices[segmentCursor] == edgeIndex else { continue }
+                segments.append([polyline[s], polyline[s + 1]])
+            }
+        }
+
+        guard !segments.isEmpty else {
+            selectionBody = nil
+            rebuildBodies()
+            return
+        }
+
+        selectionBody = _ViewportBody(
+            id: "selection_highlight",
+            vertexData: [],
+            indices: [],
+            edges: segments,
+            color: SIMD4<Float>(0.1, 0.9, 1.0, 1.0)
+        )
+        rebuildBodies()
+    }
+
+    /// Distinguishable from face/edge highlights: a bright magenta point sprite at the
+    /// picked vertex's own durable position.
+    private func buildVertexHighlight(position: SIMD3<Double>) {
+        selectionBody = _ViewportBody(
+            id: "selection_highlight",
+            vertexData: [],
+            indices: [],
+            edges: [],
+            vertices: [SIMD3<Float>(Float(position.x), Float(position.y), Float(position.z))],
+            vertexIndices: [0],
+            color: SIMD4<Float>(1.0, 0.15, 0.9, 1.0),
+            pointRadius: 6,
+            primitiveKind: .point
         )
         rebuildBodies()
     }

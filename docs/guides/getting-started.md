@@ -1,8 +1,8 @@
 # Getting started with OCCTSwiftCADKit
 
 This guide walks through embedding the shared CAD viewport in a SwiftUI app, importing a
-STEP/STL/BREP file, and handling face-pick selections. Every snippet uses only the real
-public API of `OCCTSwiftCADKit`.
+STEP/STL/BREP file, and handling face/edge/vertex pick selections. Every snippet uses
+only the real public API of `OCCTSwiftCADKit`.
 
 Platforms: iOS 18+ / macOS 15+.
 
@@ -29,7 +29,7 @@ import SwiftUI
 ## 2. Embed the viewport
 
 Create a `CADViewportService` as `@State` and bind its `bodies`, `controller`,
-`selectedFace`, and `clearSelection()` into a `CADViewportView`.
+`selected`, and `clearSelection()` into a `CADViewportView`.
 
 ```swift
 import OCCTSwiftCADKit
@@ -42,7 +42,7 @@ struct CADScreen: View {
         CADViewportView(
             bodies: viewport.bodies,
             controller: viewport.controller,
-            selectedFace: viewport.selectedFace,
+            selected: viewport.selected,
             onClearSelection: { viewport.clearSelection() }
         )
     }
@@ -68,7 +68,7 @@ struct CADScreen: View {
         CADViewportView(
             bodies: viewport.bodies,
             controller: viewport.controller,
-            selectedFace: viewport.selectedFace,
+            selected: viewport.selected,
             onClearSelection: { viewport.clearSelection() }
         )
         .task {
@@ -113,11 +113,11 @@ let box = Shape.box(width: 50, height: 30, depth: 20)
 viewport.loadShape(box, id: "model")
 ```
 
-## 4. Handle a face-pick callback
+## 4. Handle a pick
 
 Face picking is enabled by default. When the user taps a face, the service updates its
-`selectedFace` property (a `PickedFaceInfo`). Because `CADViewportService` is
-`@Observable`, read `selectedFace` directly in your view to react.
+`selected` property (a `PickedEntity`, `.face(PickedFaceInfo)` for a face pick). Because
+`CADViewportService` is `@Observable`, read `selected` directly in your view to react.
 
 ```swift
 struct CADScreen: View {
@@ -125,7 +125,7 @@ struct CADScreen: View {
 
     var body: some View {
         VStack {
-            if let face = viewport.selectedFace {
+            if case .face(let face)? = viewport.selected {
                 Text(face.description)                 // "Horizontal face at Z=20.0, 50.0x30.0mm"
                 Text("Face #\(face.faceIndex) · area \(face.area, format: .number) mm²")
                 Button("Clear") { viewport.clearSelection() }
@@ -134,7 +134,7 @@ struct CADScreen: View {
             CADViewportView(
                 bodies: viewport.bodies,
                 controller: viewport.controller,
-                selectedFace: viewport.selectedFace,
+                selected: viewport.selected,
                 onClearSelection: { viewport.clearSelection() }
             )
         }
@@ -145,12 +145,12 @@ struct CADScreen: View {
 }
 ```
 
-The picked face is highlighted in the viewport automatically. To do further geometric
+The picked entity is highlighted in the viewport automatically. To do further geometric
 analysis, construct a `Face` from `face.shape` — the durable identity captured at pick
 time — rather than re-deriving it from `face.faceIndex`:
 
 ```swift
-if let face = viewport.selectedFace, let occtFace = Face(face.shape) {
+if case .face(let face)? = viewport.selected, let occtFace = Face(face.shape) {
     // ...analyze occtFace via OCCTSwift...
 }
 ```
@@ -165,7 +165,47 @@ a later mutation an ordinal alone does not.
 
 <!-- 3D render TODO: viewport with a picked face highlighted and the selection banner -->
 
-## 5. Overlays (optional)
+`selectedFace: PickedFaceInfo?` still works as a deprecated convenience — non-nil only
+for face picks, `nil` for everything else including edge/vertex picks — for callers not
+yet migrated off it.
+
+## 5. Edge and vertex picking (optional)
+
+Opt a body into edge and/or vertex picking via `selectionModes` (default `[.face]`):
+
+```swift
+viewport.selectionModes = [.face, .edge, .vertex]
+```
+
+`selected` now resolves to `.edge(PickedEdgeInfo)` or `.vertex(PickedVertexInfo)` too,
+each carrying the same durable-identity shape as `PickedFaceInfo` (`shape`/`uid`, plus an
+ephemeral ordinal):
+
+```swift
+switch viewport.selected {
+case .face(let face):
+    print(face.description)
+case .edge(let edge):
+    print(edge.description)             // "Line edge, 25.0mm"
+    print(edge.startPoint, edge.endPoint)
+case .vertex(let vertex):
+    print(vertex.description)           // "Vertex at (10.0, 5.0, 0.0)mm"
+case nil:
+    break
+}
+```
+
+A body whose `ViewportBody` has no `edgeIndices`/`vertices` populated (not edge/vertex
+pickable, e.g. a loose mesh with no recovered solid) simply never produces an edge/vertex
+pick on that body — face picking on the same body is unaffected. `selectionModes` also
+gates face picking itself; remove `.face` to disable it.
+
+`SelectionMode` is `OCCTSwiftAIS.SelectionMode` — the same type
+`InteractiveContext.selectionMode` uses — but `CADViewportService.selectionModes` is an
+entirely separate, independent selection system: the two don't share state, and
+`SelectionMode.body` has no effect here (there's no whole-body `PickedEntity` case).
+
+## 6. Overlays (optional)
 
 Anything that isn't part of the imported model — stock boxes, toolpaths, flat-pattern
 outlines, annotations — goes through named overlay layers. They composite with the model
@@ -181,5 +221,6 @@ viewport.clearAllOverlays()
 ## Next steps
 
 - See [`docs/reference/CADViewportService.md`](../reference/CADViewportService.md) for the
-  full public API: every method signature, the `ShapeBounds` / `PickedFaceInfo` /
-  `FaceBounds` types, and `CADViewportError`.
+  full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
+  `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `FaceBounds` types, and
+  `CADViewportError`.

@@ -12,12 +12,16 @@ timestamp: 2026-06-22
 `OCCTSwiftCADKit` ships a single public library/target, **`OCCTSwiftCADKit`**. Its API surface:
 
 - **`CADViewportService`** — `@Observable @MainActor` service that owns the loaded `Shape`, drives the
-  Metal viewport, and routes face-picking results via `selectedFace: PickedFaceInfo?`. Caller geometry
+  Metal viewport, and routes picking results via `selected: PickedEntity?`, gated by
+  `selectionModes: Set<SelectionMode>` (default `[.face]`; add `.edge`/`.vertex` to opt in).
+  `selectedFace: PickedFaceInfo?` still works as a deprecated face-only convenience. Caller geometry
   (stock boxes, toolpaths, flat-pattern outlines, annotations) is staged via
   `setOverlay(id:bodies:)` / `clearOverlay(id:)`; files load through `loadFile(from:)`.
 - **`CADViewportView`** — SwiftUI wrapper around the Metal viewport with a selection-info banner and
   display-mode controls.
-- **`PickedFaceInfo`, `FaceBounds`** — face metadata returned by picking (no CAM- or unfold-specific deps).
-  `PickedFaceInfo.shape`/`.uid` are the durable identity of the pick (captured from the body's
-  `FaceIdentityTable`); `.faceIndex` is an ephemeral render-path ordinal only.
+- **`PickedEntity`** — `.face(PickedFaceInfo)` / `.edge(PickedEdgeInfo)` / `.vertex(PickedVertexInfo)`.
+- **`PickedFaceInfo`, `PickedEdgeInfo`, `PickedVertexInfo`, `FaceBounds`** — metadata returned by
+  picking (no CAM- or unfold-specific deps). Each info type's `.shape`/`.uid` are the durable identity
+  of the pick (captured from the body's `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable`);
+  `.faceIndex`/`.edgeIndex`/`.vertexIndex` are ephemeral render-path ordinals only.
 - **`CADViewportError`** — `unsupportedFormat`, `emptyFile`, `loadFailed`.

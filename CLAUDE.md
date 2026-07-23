@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Swift Package extracted from PadCAM's CAD viewport plumbing. It owns: a Metal 3D viewport, file import (STEP/STL/BREP via `OCCTSwiftTools.CADFileLoader`), face picking, and a generic overlay-layers API for caller-supplied bodies (stock boxes, toolpaths, flat patterns, etc.). Designed to be shared by PadCAM and a forthcoming UnfoldEngine test app.
 
-Tiny by design: 4 files in `Sources/OCCTSwiftCADKit/`. If a piece of code starts to know about CAM, sheet metal, or any specific application domain, it doesn't belong here.
+Tiny by design: 5 files in `Sources/OCCTSwiftCADKit/`. If a piece of code starts to know about CAM, sheet metal, or any specific application domain, it doesn't belong here.
 
 ## Build & test
 
@@ -30,10 +30,10 @@ Targets: macOS 15+ / iOS 18+ (set by `OCCTSwiftViewport`'s Metal requirements, n
 
 - `OCCTSwift` (geometry kernel; ships a binary `OCCT.xcframework` via its own release artefact — fetched transparently)
 - `OCCTSwiftViewport` (Metal renderer)
-- `OCCTSwiftTools` (`CADFileLoader`, `CADBodyMetadata`, `BodyUtilities`, `CADFileFormat`)
-- `OCCTSwiftAIS` (`InteractiveContext`, `ManipulatorWidget`, `Dimension`, sub-shape selection — exposed via `service.interactiveContext`)
+- `OCCTSwiftTools` (`CADFileLoader`, `CADBodyMetadata`, `BodyUtilities`, `CADFileFormat`, `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable`)
+- `OCCTSwiftAIS` (`InteractiveContext`, `ManipulatorWidget`, `Dimension`, sub-shape selection — exposed via `service.interactiveContext`; `SelectionMode` also backs `CADViewportService.selectionModes`)
 
-`OCCTSwiftTools` used to live as a target inside `OCCTSwiftViewport`. It was split into its own repo (https://github.com/gsdali/OCCTSwiftTools) as of `OCCTSwiftViewport 0.51.0` and must now be sourced from its own package — don't try to pull the `OCCTSwiftTools` product from the Viewport package, it's no longer there.
+`OCCTSwiftTools` used to live as a target inside `OCCTSwiftViewport`. It was split into its own repo (https://github.com/SecondMouseAU/OCCTSwiftTools) as of `OCCTSwiftViewport 0.51.0` and must now be sourced from its own package — don't try to pull the `OCCTSwiftTools` product from the Viewport package, it's no longer there.
 
 URL-based deps are the preferred form. If you hit a version-resolution problem you need to debug locally, you can temporarily point `Package.swift` at sibling working trees (`.package(path: "../OCCTSwiftTools")` etc.) — but commits should always land with URL-based deps.
 
@@ -45,7 +45,7 @@ URL-based deps are the preferred form. If you hit a version-resolution problem y
 
 ## Architecture in one paragraph
 
-`CADViewportService` is `@MainActor @Observable`. It owns a `_ViewportController` and an `InteractiveContext` (shared viewport — `interactiveContext.viewport === controller`). Bodies live in `interactiveContext.bodies` (single source of truth, the array that `_MetalViewportView` actually renders); the service mirrors them into its own `bodies` for `@Observable` consumers via a Combine `$bodies` sink. The service composes four kinds of body into that single array: (1) **model bodies** from the most recent `loadFile`/`loadShape`/`loadFromData`, (2) **overlay layers** added by callers via `setOverlay`, sorted alphabetically by id, (3) the **selection highlight** built from triangle-level metadata when picking succeeds, (4) **AIS-owned bodies** appended by `interactiveContext.display(_:)` / `appendInternalBody(_:)` (manipulator handles, dimensions). On rebuild, the service tracks the set of CADKit-owned ids and only replaces those — AIS-owned bodies are left untouched. The controller's `onPick` callback resolves a `_PickResult` back to a face index using `CADBodyMetadata.faceIndices`, looks the OCCTSwift `Face` up, and emits a `PickedFaceInfo`; `InteractiveContext` separately observes `viewport.$pickResult` for AIS-side selection.
+`CADViewportService` is `@MainActor @Observable`. It owns a `_ViewportController` and an `InteractiveContext` (shared viewport — `interactiveContext.viewport === controller`). Bodies live in `interactiveContext.bodies` (single source of truth, the array that `_MetalViewportView` actually renders); the service mirrors them into its own `bodies` for `@Observable` consumers via a Combine `$bodies` sink. The service composes four kinds of body into that single array: (1) **model bodies** from the most recent `loadFile`/`loadShape`/`loadFromData`, (2) **overlay layers** added by callers via `setOverlay`, sorted alphabetically by id, (3) the **selection highlight** built when picking succeeds — a translucent triangle patch for a face pick, a bright polyline for an edge pick, a point sprite for a vertex pick, (4) **AIS-owned bodies** appended by `interactiveContext.display(_:)` / `appendInternalBody(_:)` (manipulator handles, dimensions). On rebuild, the service tracks the set of CADKit-owned ids and only replaces those — AIS-owned bodies are left untouched. The controller's `onPick` callback dispatches a `_PickResult` on its `kind` (face/edge/vertex, gated by `selectionModes`) to a per-kind resolver, which maps the render-path ordinal to durable identity (a `Shape` + optional `BRepGraph.GraphUID`) via the picked body's `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable` — one graph + table set per loaded body, retained for the body's lifetime — and emits a `PickedEntity`; `InteractiveContext` separately observes `viewport.$pickResult` for AIS-side selection (a distinct, independent selection system CADKit does not share state with).
 
 ## Things to be careful about
 
@@ -56,8 +56,9 @@ URL-based deps are the preferred form. If you hit a version-resolution problem y
 
 ## Files
 
-- `Sources/OCCTSwiftCADKit/CADViewportService.swift` — the service (one file, ~300 lines)
+- `Sources/OCCTSwiftCADKit/CADViewportService.swift` — the service
 - `Sources/OCCTSwiftCADKit/CADViewportView.swift` — SwiftUI wrapper
 - `Sources/OCCTSwiftCADKit/PickedFaceInfo.swift` — `PickedFaceInfo` and `FaceBounds` (the local face-bounds type that replaced PadCAM's `DetectedSurface.SurfaceBounds` — keep it here)
+- `Sources/OCCTSwiftCADKit/PickedEntity.swift` — `PickedEntity` (the face/edge/vertex pick union), `PickedEdgeInfo`, `PickedVertexInfo`
 - `Sources/OCCTSwiftCADKit/CADViewportError.swift` — error type
 - `Tests/OCCTSwiftCADKitTests/SmokeTests.swift` — value-type smoke tests (no viewport I/O)

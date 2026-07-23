@@ -15,7 +15,7 @@ import OCCTSwift
 ///     CADViewportView(
 ///         bodies: viewport.bodies,
 ///         controller: viewport.controller,
-///         selectedFace: viewport.selectedFace,
+///         selected: viewport.selected,
 ///         onClearSelection: { viewport.clearSelection() }
 ///     )
 /// }
@@ -23,19 +23,35 @@ import OCCTSwift
 public struct CADViewportView: View {
     public let bodies: [_ViewportBody]
     @ObservedObject public var controller: _ViewportController
-    public var selectedFace: PickedFaceInfo?
+    public var selected: PickedEntity?
     public var onClearSelection: (() -> Void)?
 
     public init(
         bodies: [_ViewportBody],
         controller: _ViewportController,
-        selectedFace: PickedFaceInfo? = nil,
+        selected: PickedEntity? = nil,
         onClearSelection: (() -> Void)? = nil
     ) {
         self.bodies = bodies
         self.controller = controller
-        self.selectedFace = selectedFace
+        self.selected = selected
         self.onClearSelection = onClearSelection
+    }
+
+    /// Face-only convenience for callers not yet using edge/vertex picking.
+    @available(*, deprecated, message: "Use the `selected:` initializer parameter instead.")
+    public init(
+        bodies: [_ViewportBody],
+        controller: _ViewportController,
+        selectedFace: PickedFaceInfo?,
+        onClearSelection: (() -> Void)? = nil
+    ) {
+        self.init(
+            bodies: bodies,
+            controller: controller,
+            selected: selectedFace.map(PickedEntity.face),
+            onClearSelection: onClearSelection
+        )
     }
 
     public var body: some View {
@@ -45,8 +61,8 @@ public struct CADViewportView: View {
         }
         .clipped()
         .overlay(alignment: .top) {
-            if let face = selectedFace {
-                selectionLabel(face)
+            if let selected {
+                selectionLabel(selected)
                     .padding(8)
             }
         }
@@ -56,11 +72,11 @@ public struct CADViewportView: View {
         }
     }
 
-    private func selectionLabel(_ face: PickedFaceInfo) -> some View {
+    private func selectionLabel(_ entity: PickedEntity) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: face.isHorizontal ? "square.fill" : "rectangle.portrait.fill")
-                .foregroundStyle(.yellow)
-            Text(face.description)
+            Image(systemName: iconName(for: entity))
+                .foregroundStyle(iconColor(for: entity))
+            Text(description(for: entity))
                 .font(.caption)
             Button {
                 onClearSelection?()
@@ -73,6 +89,31 @@ public struct CADViewportView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func iconName(for entity: PickedEntity) -> String {
+        switch entity {
+        case .face(let info): return info.isHorizontal ? "square.fill" : "rectangle.portrait.fill"
+        case .edge: return "line.diagonal"
+        case .vertex: return "circle.fill"
+        }
+    }
+
+    /// Matches the highlight color `CADViewportService` draws in the 3D scene for each kind.
+    private func iconColor(for entity: PickedEntity) -> SwiftUI.Color {
+        switch entity {
+        case .face: return .yellow
+        case .edge: return .cyan
+        case .vertex: return .pink
+        }
+    }
+
+    private func description(for entity: PickedEntity) -> String {
+        switch entity {
+        case .face(let info): return info.description
+        case .edge(let info): return info.description
+        case .vertex(let info): return info.description
+        }
     }
 
     private var viewportControls: some View {
