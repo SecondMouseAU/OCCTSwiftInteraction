@@ -48,10 +48,12 @@ Overlays composite in alphabetical order of their `id` (so use `0_stock`, `1_too
 
 ## Dependencies
 
-- [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) — geometry kernel
-- [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) — Metal renderer (`OCCTSwiftViewport`) and file/body utilities (`OCCTSwiftTools`)
+- [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) — geometry kernel (ships the binary `OCCT.xcframework`)
+- [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) — Metal renderer
+- [OCCTSwiftTools](https://github.com/SecondMouseAU/OCCTSwiftTools) — `CADFileLoader`, `CADBodyMetadata`, `BodyUtilities` (its own repo since `OCCTSwiftViewport` 0.51.0 — no longer a target inside Viewport)
+- [OCCTSwiftAIS](https://github.com/SecondMouseAU/OCCTSwiftAIS) — `InteractiveContext`, `ManipulatorWidget`, `Dimension`, sub-shape selection (exposed via `service.interactiveContext`)
 
-Currently consumed via sibling path packages (matching the PadCAM convention) — see `Package.swift`. Once `OCCTSwiftViewport` publishes a release tag that exports the `OCCTSwiftTools` product, this will switch to URL-based dependencies.
+URL-based SPM dependencies, pinned to floors in `Package.swift`. If a sibling checkout (`../<name>`) is present next to this repo, it's used instead — so a local OCCT-ecosystem checkout shares one `OCCT.xcframework` rather than each repo fetching its own copy. Fresh clones and CI always resolve the URL pin.
 
 ## Platforms
 

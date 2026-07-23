@@ -27,10 +27,10 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.12.9"),   // ≥1.12.9: OCCT kernel crash/hang fixes through #318 and #323 (patches 0003-0009)
-        occtDep("OCCTSwiftViewport", from: "1.1.22"),
-        occtDep("OCCTSwiftTools", from: "1.0.0"),
-        occtDep("OCCTSwiftAIS", from: "1.0.0"),
+        occtDep("OCCTSwift", from: "1.15.15"),         // current OCCT 8.0.0 GA cohort (stable through OCCT 8.1, due May 2027)
+        occtDep("OCCTSwiftViewport", from: "1.1.26"),  // batched/region GPU pick readback + controller-level pick access
+        occtDep("OCCTSwiftTools", from: "1.6.1"),      // FaceIdentityTable/EdgeIdentityTable/VertexIdentityTable (durable identity)
+        occtDep("OCCTSwiftAIS", from: "1.3.1"),        // SubShapeRef, topology-aware selection filters, area selection
     ],
     targets: [
         .target(
