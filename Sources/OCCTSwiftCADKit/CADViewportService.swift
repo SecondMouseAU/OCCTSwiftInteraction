@@ -160,6 +160,29 @@ public final class CADViewportService {
     /// `setScalarField`'s own clear path instead.
     private var comparisonBackup: [String: _ViewportBody] = [:]
 
+    // MARK: - Clipping
+
+    /// Every currently configured clipping plane. Backing for the public `clippingPlanes`
+    /// property.
+    private var clippingPlaneStorage: [ClippingPlane] = []
+
+    /// The plane id `sectionSweep(axis:position:)` owns, so repeated calls move the same
+    /// plane rather than accumulating a new one each time. `nil` until the first call.
+    private var sectionSweepPlaneID: String?
+
+    /// Each body's ORIGINAL shape (before any cap-plane split), keyed by body id — populated
+    /// lazily from `bodyShapes` the first time `updateCapSurfaces()` sees a body, and then
+    /// always read from here afterward instead of `bodyShapes` (which `updateCapSurfaces`
+    /// itself overwrites with the CAPPED shape, so capping stays correct/non-compounding
+    /// across repeated calls — e.g. a scrubbed `sectionSweep` — rather than re-cutting an
+    /// already-cut shape).
+    private var clippingSourceShapes: [String: OCCTSwift.Shape] = [:]
+
+    /// Bodies as they were immediately before `updateCapSurfaces()` last replaced them with a
+    /// capped (or hidden) version, keyed by body id — restored at the START of every
+    /// `updateCapSurfaces()` call before recomputing, mirroring `comparisonBackup`'s pattern.
+    private var clippingCapBackup: [String: _ViewportBody] = [:]
+
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
 
     /// A distinct, addressable entity loaded via the multi-entity API — the model-body
@@ -327,6 +350,8 @@ public final class CADViewportService {
         legacyLoadedShapeEntityID = nil
         comparison = nil
         comparisonBackup.removeAll()
+        clippingSourceShapes.removeAll()
+        clippingCapBackup.removeAll()
     }
 
     /// Builds a `BRepGraph` and `FaceIdentityTable` per body from a multi-body file load's
@@ -650,6 +675,8 @@ public final class CADViewportService {
             if lastScalarFieldBodyID == bodyID {
                 lastScalarFieldBodyID = nil
             }
+            clippingSourceShapes.removeValue(forKey: bodyID)
+            clippingCapBackup.removeValue(forKey: bodyID)
         }
     }
 
@@ -683,7 +710,7 @@ public final class CADViewportService {
               ids.contains(current.referenceID) || ids.contains(current.candidateID) else { return }
         undoComparison(current)
         comparison = nil
-        rebuildBodies()
+        updateCapSurfaces() // re-applies an active cap to the just-restored surviving side; also rebuilds
     }
 
     /// Currently loaded entities' shapes, keyed by entity id — see `entities`' own
@@ -900,6 +927,15 @@ public final class CADViewportService {
     public func setComparison(_ comparison: ComparisonView?) {
         if let previous = self.comparison {
             undoComparison(previous)
+            // Cleared BEFORE calling updateCapSurfaces (rather than after, alongside the
+            // assignment below): updateCapSurfaces reads `self.comparison` itself to preserve
+            // an independently active comparison around its own cap recompute. Since THIS
+            // method is the one driving the comparison change (about to apply a new value, or
+            // none, itself), leaving `previous` in place here would make updateCapSurfaces
+            // redundantly undo-then-reapply it a second time right before this method's own
+            // code does the real work below.
+            self.comparison = nil
+            updateCapSurfaces() // re-applies an active cap to the just-restored body; also rebuilds
         }
         self.comparison = comparison
         guard let comparison else {
@@ -1104,6 +1140,353 @@ public final class CADViewportService {
         )
     }
 
+    // MARK: - Clipping
+
+    /// Every currently configured clipping plane. Setting replaces the whole array (a plane
+    /// dropped from the new value is implicitly removed; add via `addClippingPlane`/
+    /// `sectionSweep` to get an auto-generated `id` instead of inventing your own).
+    /// `OCCTSwiftViewport`'s `ViewportController.clipPlanes` only honors the first 4
+    /// *enabled* planes per frame — this property can hold more, but only the first 4
+    /// enabled ones actually clip.
+    public var clippingPlanes: [ClippingPlane] {
+        get { clippingPlaneStorage }
+        set {
+            clippingPlaneStorage = newValue
+            syncClippingPlanes()
+        }
+    }
+
+    /// Adds a clipping plane and returns its `id` (pass to `removeClippingPlane(id:)` or look
+    /// up in `clippingPlanes` to adjust it later).
+    @discardableResult
+    public func addClippingPlane(origin: SIMD3<Double>, normal: SIMD3<Double>, showCapSurface: Bool = true) -> String {
+        let id = UUID().uuidString
+        clippingPlaneStorage.append(ClippingPlane(id: id, origin: origin, normal: normal, showCapSurface: showCapSurface))
+        syncClippingPlanes()
+        return id
+    }
+
+    /// Removes a clipping plane. No-op if `id` isn't currently configured.
+    public func removeClippingPlane(id: String) {
+        guard clippingPlaneStorage.contains(where: { $0.id == id }) else { return }
+        clippingPlaneStorage.removeAll { $0.id == id }
+        if sectionSweepPlaneID == id {
+            sectionSweepPlaneID = nil
+        }
+        syncClippingPlanes()
+    }
+
+    /// Convenience for the prismatic-axis inspection case: steps a single, dedicated plane
+    /// along `axis` (need not be pre-normalized) to world coordinate `position`. The first
+    /// call creates the plane (capping on by default); later calls move that SAME plane
+    /// (preserving whatever `isEnabled`/`showCapSurface` it's since been set to) rather than
+    /// accumulating a new one per call — call `removeClippingPlane` with the id this method
+    /// first returned via `clippingPlanes` if you need to stop sweeping and remove it.
+    public func sectionSweep(axis: SIMD3<Double>, position: Double) {
+        let unitAxis = simd_length(axis) > 0 ? simd_normalize(axis) : SIMD3<Double>(0, 0, 1)
+        let origin = unitAxis * position
+        if let id = sectionSweepPlaneID, let index = clippingPlaneStorage.firstIndex(where: { $0.id == id }) {
+            clippingPlaneStorage[index].origin = origin
+            clippingPlaneStorage[index].normal = unitAxis
+        } else {
+            let id = UUID().uuidString
+            clippingPlaneStorage.append(ClippingPlane(id: id, origin: origin, normal: unitAxis))
+            sectionSweepPlaneID = id
+        }
+        syncClippingPlanes()
+    }
+
+    /// Pushes `clippingPlaneStorage` to the viewport's global, GPU-only clip mechanism
+    /// (`controller.clipPlanes` — hides geometry on one side, interactively, with no
+    /// per-body scoping; confirmed via `OCCTSwiftViewport`'s `ViewportRenderer`, which
+    /// applies the first 4 *enabled* planes uniformly to every body in the scene every
+    /// frame) and recomputes capping.
+    private func syncClippingPlanes() {
+        if let id = sectionSweepPlaneID, !clippingPlaneStorage.contains(where: { $0.id == id }) {
+            sectionSweepPlaneID = nil
+        }
+        controller.clipPlanes = clippingPlaneStorage.map { plane in
+            let unitNormal = safeUnitNormal(plane.normal)
+            let distance = Float(-simd_dot(unitNormal, plane.origin))
+            return ClipPlane(normal: SIMD3<Float>(unitNormal), distance: distance, isEnabled: plane.isEnabled)
+        }
+        updateCapSurfaces()
+    }
+
+    /// A plane's normal normalized to unit length, falling back to a sensible default
+    /// direction for a degenerate (zero-length) normal rather than propagating NaN through
+    /// `simd_normalize` — which would otherwise make every bounds-center test in
+    /// `cappedShape`/`isPointClipped` silently evaluate to false, treating the whole body as
+    /// clipped away. Mirrors `sectionSweep`'s own guard on its `axis` parameter.
+    private func safeUnitNormal(_ normal: SIMD3<Double>) -> SIMD3<Double> {
+        simd_length(normal) > 0 ? simd_normalize(normal) : SIMD3<Double>(0, 0, 1)
+    }
+
+    /// What a single body's cap recomputation determined, from `cappedShape`.
+    private enum CapOutcome {
+        /// No cap-enabled plane actually intersects this body — leave `modelBodies`/
+        /// `bodyShapes`/identity tables untouched entirely, rather than needlessly
+        /// retessellating (and, via `replaceBody`'s fresh `BRepGraph`, invalidating every
+        /// durable `GraphUID` this body's pristine geometry had ever minted) a body no
+        /// enabled plane comes anywhere near.
+        case unchanged
+        case capped(OCCTSwift.Shape)
+        case fullyClipped
+    }
+
+    /// Rebuilds bodies actually intersected by the currently enabled `showCapSurface` planes,
+    /// so a clipped solid shows real material at the cut instead of looking hollow.
+    /// `OCCTSwiftViewport` has no shader-level capping (confirmed: no capping/stencil logic
+    /// in its `Shaders.metal`, unlike the clip-plane discard it does have) — so this is a
+    /// genuine B-Rep split (`OCCTSwift.Shape.split(atPlane:normal:)`) and retessellation per
+    /// affected body, not a cheap GPU trick. `showCapSurface: false` planes still clip (via
+    /// `syncClippingPlanes`'s GPU path above) but stay hollow and don't hit this cost — and
+    /// nor does a body no enabled cap plane actually touches (`CapOutcome.unchanged`).
+    ///
+    /// Always restores every body `clippingCapBackup` remembers before recomputing, so
+    /// repeated calls (a scrubbed `sectionSweep`, or `setComparison`'s own undo step
+    /// re-triggering this to keep an active cap alive across a comparison change) never
+    /// compound cuts from a previous call — mirrors `undoComparison`'s restore-before-reapply
+    /// pattern for the same reason. Restoring re-tessellates from `clippingSourceShapes` via
+    /// `replaceBody` — the SAME path capping itself uses — rather than just resetting
+    /// `modelBodies`, so `bodyShapes`/the identity tables/`metadata` all end up consistent
+    /// with the restored (pristine) geometry too, not left pointing at the capped one.
+    ///
+    /// Also undoes, then re-applies, an independently active `comparison` around its own
+    /// restore/recompute — without this, a `.overlay`/`.sideBySide`/`.wipe` mutation on a
+    /// body this method also touches would be silently discarded (color/transform reset, or
+    /// wipe-filtering undone) the moment an UNRELATED clipping-plane change ran, since this
+    /// method's own backup only knows about capping, not about `comparisonBackup`.
+    /// `setComparison`/`pruneComparison` clear `self.comparison` before calling this
+    /// themselves specifically so this logic is a no-op when THEY are the ones driving the
+    /// comparison change (avoiding a redundant undo/reapply of a comparison this method
+    /// didn't initiate).
+    private func updateCapSurfaces() {
+        let activeComparison = comparison
+        if let activeComparison {
+            undoComparison(activeComparison)
+        }
+
+        for (bodyID, original) in clippingCapBackup {
+            guard let pristine = clippingSourceShapes[bodyID] else { continue }
+            _ = replaceBody(bodyID: bodyID, withCappedShape: pristine, preserving: original)
+        }
+        clippingCapBackup.removeAll()
+
+        let capPlanes = clippingPlaneStorage.filter { $0.isEnabled && $0.showCapSurface }
+        if !capPlanes.isEmpty {
+            for bodyID in modelBodies.map(\.id) {
+                guard let sourceShape = clippingSourceShapes[bodyID] ?? bodyShapes[bodyID] else { continue }
+                clippingSourceShapes[bodyID] = sourceShape
+                guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
+                let original = modelBodies[index]
+
+                switch cappedShape(sourceShape, cutBy: capPlanes) {
+                case .unchanged:
+                    continue
+                case .fullyClipped:
+                    // Every cap plane's kept region excludes this body entirely.
+                    clippingCapBackup[bodyID] = original
+                    modelBodies[index].isVisible = false
+                case .capped(let capped):
+                    clippingCapBackup[bodyID] = original
+                    if !replaceBody(bodyID: bodyID, withCappedShape: capped, preserving: original) {
+                        // Retessellation failed — leave the original in place rather than show nothing.
+                        modelBodies[index] = original
+                        clippingCapBackup.removeValue(forKey: bodyID)
+                    }
+                }
+            }
+        }
+
+        if let activeComparison {
+            switch activeComparison.mode {
+            case .overlay, .sideBySide, .wipe:
+                backUpComparisonBodies(activeComparison)
+            case .deviation:
+                break
+            }
+            applyComparison(activeComparison)
+        }
+        rebuildBodies()
+    }
+
+    /// Sequentially splits `shape` at each plane in `planes`, keeping only the piece(s) on
+    /// the side the plane's normal points toward each time.
+    ///
+    /// Which returned `split(atPlane:normal:)` piece is "kept" is determined by testing each
+    /// piece's OWN bounds-center against the plane equation — `Shape.split` documents no
+    /// return-order guarantee. This is a bounds-center heuristic, not an exact interior-point
+    /// test: a piece whose true bulk sits on the kept side but whose bounding-box center
+    /// happens to fall just past the plane (an unusual, non-convex shape) could be
+    /// misclassified. Adequate for a review affordance; not a substitute for a real
+    /// point-containment query if that ever proves necessary.
+    ///
+    /// Returns `.unchanged` (rather than `.capped(shape)`) when the result's bounds are
+    /// practically identical to `shape`'s own — i.e. no plane in `planes` actually removed
+    /// anything. Determined by comparing bounds rather than by whether `split` returned
+    /// `nil`: empirically, `split(atPlane:normal:)` does NOT reliably return `nil` for a
+    /// plane that doesn't intersect the shape — it can come back with a single-element
+    /// array containing the shape geometrically unchanged, which a naive "any non-nil result
+    /// means a real cut happened" check would misread as a cut. This inherits the same
+    /// bounds-based approximation as the "kept piece" test above (a cut that removes material
+    /// without changing the axis-aligned bounding box — e.g. a chunk that isn't at the
+    /// shape's extremal point along any axis — would be missed and reported `.unchanged`);
+    /// accepted for the same reason.
+    private func cappedShape(_ shape: OCCTSwift.Shape, cutBy planes: [ClippingPlane]) -> CapOutcome {
+        var current = shape
+        for plane in planes {
+            let unitNormal = safeUnitNormal(plane.normal)
+            func isKept(_ candidate: OCCTSwift.Shape) -> Bool {
+                let b = candidate.bounds
+                let center = SIMD3<Double>((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2)
+                return simd_dot(unitNormal, center - plane.origin) >= 0
+            }
+            guard let pieces = current.split(atPlane: plane.origin, normal: unitNormal) else {
+                guard isKept(current) else { return .fullyClipped }
+                continue
+            }
+            let kept = pieces.filter(isKept)
+            guard !kept.isEmpty else { return .fullyClipped }
+            current = kept.count == 1 ? kept[0] : (OCCTSwift.Shape.fuseAll(kept) ?? kept[0])
+        }
+        return boundsPracticallyEqual(shape, current) ? .unchanged : .capped(current)
+    }
+
+    private func boundsPracticallyEqual(_ a: OCCTSwift.Shape, _ b: OCCTSwift.Shape) -> Bool {
+        let ab = a.bounds, bb = b.bounds
+        let epsilon = 1e-6
+        return simd_length(ab.min - bb.min) < epsilon && simd_length(ab.max - bb.max) < epsilon
+    }
+
+    /// Re-tessellates `bodyID` from `shape` — a capped shape from `cappedShape`, or the
+    /// pristine `clippingSourceShapes` entry when `updateCapSurfaces` is restoring — preserving
+    /// `original`'s caller-configurable state (visibility, pickability, material, transform)
+    /// that `CADFileLoader.shapeToBodyMetadataAndIdentities` would otherwise reset to its own
+    /// defaults, and updates identity tables to match the new geometry (so picking the
+    /// surviving faces — and the new cut face — resolves correctly, per the same identity
+    /// contract `load(_:id:transform:)` maintains). Returns `false` (leaving `modelBodies`
+    /// untouched) if retessellation fails.
+    ///
+    /// Also clears any `ScalarField` set on this body: a cut (in either direction — capping
+    /// or restoring to pristine) inserts/removes faces and renumbers the rest, so the OLD
+    /// field's values have no defined correspondence to the NEW tessellation's face/triangle
+    /// ordinals. Leaving it in place would silently paint (or report via
+    /// `scalarValue(forBody:faceIndex:triangleIndex:)`) values against geometry they were
+    /// never computed for — the same failure mode `removeBodies`/`resetAllModelState` already
+    /// guard against for a removed body.
+    private func replaceBody(bodyID: String, withCappedShape shape: OCCTSwift.Shape, preserving original: _ViewportBody) -> Bool {
+        guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { return false }
+        let graph = BRepGraph(shape: shape)
+        let (freshBody, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
+            shape, id: bodyID, color: original.color, graph: graph
+        )
+        guard var body = freshBody else { return false }
+        body.isVisible = original.isVisible
+        body.isPickable = original.isPickable
+        body.roughness = original.roughness
+        body.metallic = original.metallic
+        body.material = original.material
+        body.renderLayer = original.renderLayer
+        body.pickLayer = original.pickLayer
+        body.transform = original.transform
+
+        modelBodies[index] = body
+        if let meta { metadata[bodyID] = meta } else { metadata.removeValue(forKey: bodyID) }
+        bodyShapes[bodyID] = shape
+        if let graph { bodyGraphs[bodyID] = graph } else { bodyGraphs.removeValue(forKey: bodyID) }
+        if let faceTable { faceIdentity[bodyID] = faceTable } else { faceIdentity.removeValue(forKey: bodyID) }
+        if let edgeTable { edgeIdentity[bodyID] = edgeTable } else { edgeIdentity.removeValue(forKey: bodyID) }
+        if let vertexTable { vertexIdentity[bodyID] = vertexTable } else { vertexIdentity.removeValue(forKey: bodyID) }
+        scalarFields.removeValue(forKey: bodyID)
+        if lastScalarFieldBodyID == bodyID {
+            lastScalarFieldBodyID = nil
+        }
+        return true
+    }
+
+    // MARK: - Clip-aware picking
+
+    /// Whether `worldPoint` is hidden by an active clipping plane. The dedicated GPU pick
+    /// shaders (`pick_fragment`/`pick_line_fragment`/`pick_arc_fragment`/point-pick) don't
+    /// discard against `clipPlanes` the way the main shaded pass does (confirmed via
+    /// `OCCTSwiftViewport`'s `Shaders.metal` — the clip-plane discard loop only appears in
+    /// the shaded fragment function), so a raw GPU pick can hit geometry that's invisible on
+    /// screen. Resolvers test the picked primitive's own position against this rather than
+    /// trusting the pick pass to have already excluded it.
+    ///
+    /// Limited to the first 4 *enabled* planes, matching `ViewportRenderer`'s own
+    /// `Array(controller.clipPlanes.filter { $0.isEnabled }.prefix(4))` — with more than 4
+    /// enabled hollow-clip planes, a 5th+ plane isn't actually applied by the renderer, so
+    /// testing against it here would reject a pick the geometry is still visibly showing.
+    /// (A body already geometrically truncated by capping has no such limit — see
+    /// `cappedShape` — since that path doesn't go through the GPU clip-plane uniform at all.)
+    private func isPointClipped(_ worldPoint: SIMD3<Float>) -> Bool {
+        guard !clippingPlaneStorage.isEmpty else { return false }
+        for plane in clippingPlaneStorage.filter({ $0.isEnabled }).prefix(4) {
+            let unitNormal = SIMD3<Float>(safeUnitNormal(plane.normal))
+            let distance = Float(-simd_dot(safeUnitNormal(plane.normal), plane.origin))
+            if simd_dot(unitNormal, worldPoint) + distance < 0 {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// World-space centroid of a picked triangle (interleaved or direct-mesh body), for
+    /// `isPointClipped`. `nil` on any out-of-bounds index rather than guessing — callers
+    /// treat that as "couldn't determine, don't filter" rather than "clipped".
+    private func triangleWorldCentroid(bodyID: String, triangleIndex: Int) -> SIMD3<Float>? {
+        guard let body = modelBodies.first(where: { $0.id == bodyID }),
+              triangleIndex >= 0, triangleIndex * 3 + 2 < body.indices.count else { return nil }
+        let i0 = Int(body.indices[triangleIndex * 3])
+        let i1 = Int(body.indices[triangleIndex * 3 + 1])
+        let i2 = Int(body.indices[triangleIndex * 3 + 2])
+        let local: SIMD3<Float>
+        if body.usesDirectMesh {
+            guard i0 * 3 + 2 < body.meshPositions.count, i1 * 3 + 2 < body.meshPositions.count,
+                  i2 * 3 + 2 < body.meshPositions.count else { return nil }
+            let p0 = SIMD3<Float>(body.meshPositions[i0 * 3], body.meshPositions[i0 * 3 + 1], body.meshPositions[i0 * 3 + 2])
+            let p1 = SIMD3<Float>(body.meshPositions[i1 * 3], body.meshPositions[i1 * 3 + 1], body.meshPositions[i1 * 3 + 2])
+            let p2 = SIMD3<Float>(body.meshPositions[i2 * 3], body.meshPositions[i2 * 3 + 1], body.meshPositions[i2 * 3 + 2])
+            local = (p0 + p1 + p2) / 3
+        } else {
+            guard i0 * 6 + 2 < body.vertexData.count, i1 * 6 + 2 < body.vertexData.count,
+                  i2 * 6 + 2 < body.vertexData.count else { return nil }
+            let p0 = SIMD3<Float>(body.vertexData[i0 * 6], body.vertexData[i0 * 6 + 1], body.vertexData[i0 * 6 + 2])
+            let p1 = SIMD3<Float>(body.vertexData[i1 * 6], body.vertexData[i1 * 6 + 1], body.vertexData[i1 * 6 + 2])
+            let p2 = SIMD3<Float>(body.vertexData[i2 * 6], body.vertexData[i2 * 6 + 1], body.vertexData[i2 * 6 + 2])
+            local = (p0 + p1 + p2) / 3
+        }
+        let world = body.transform * SIMD4<Float>(local, 1)
+        return SIMD3<Float>(world.x, world.y, world.z)
+    }
+
+    /// World-space midpoint of a picked edge segment, for `isPointClipped`. `segmentIndex`
+    /// walks `body.edges`' polylines in the same flattened order `edgeIndices` documents.
+    private func edgeSegmentWorldMidpoint(bodyID: String, segmentIndex: Int) -> SIMD3<Float>? {
+        guard let body = modelBodies.first(where: { $0.id == bodyID }), segmentIndex >= 0 else { return nil }
+        var remaining = segmentIndex
+        for polyline in body.edges {
+            let segmentCount = max(0, polyline.count - 1)
+            if remaining < segmentCount {
+                let local = (polyline[remaining] + polyline[remaining + 1]) / 2
+                let world = body.transform * SIMD4<Float>(local, 1)
+                return SIMD3<Float>(world.x, world.y, world.z)
+            }
+            remaining -= segmentCount
+        }
+        return nil
+    }
+
+    /// World-space position of a picked vertex, for `isPointClipped`.
+    private func vertexWorldPosition(bodyID: String, pointIndex: Int) -> SIMD3<Float>? {
+        guard let body = modelBodies.first(where: { $0.id == bodyID }),
+              pointIndex >= 0, pointIndex < body.vertices.count else { return nil }
+        let world = body.transform * SIMD4<Float>(body.vertices[pointIndex], 1)
+        return SIMD3<Float>(world.x, world.y, world.z)
+    }
+
     private func focusOnLoadedShape() {
         guard let shape = currentSingleShape else { return }
         let b = shape.bounds
@@ -1284,6 +1667,9 @@ public final class CADViewportService {
     /// callback — `handlePick` is the only production caller.
     func resolveFacePick(bodyID: String, triangleIndex: Int) -> PickedFaceInfo? {
         guard selectionModes.contains(.face) else { return nil }
+        if let centroid = triangleWorldCentroid(bodyID: bodyID, triangleIndex: triangleIndex), isPointClipped(centroid) {
+            return nil
+        }
         guard let meta = metadata[bodyID],
               triangleIndex >= 0, triangleIndex < meta.faceIndices.count else {
             return nil
@@ -1341,6 +1727,9 @@ public final class CADViewportService {
     /// mis-picking. `internal` for the same testability reason as `resolveFacePick`.
     func resolveEdgePick(bodyID: String, segmentIndex: Int) -> PickedEdgeInfo? {
         guard selectionModes.contains(.edge) else { return nil }
+        if let midpoint = edgeSegmentWorldMidpoint(bodyID: bodyID, segmentIndex: segmentIndex), isPointClipped(midpoint) {
+            return nil
+        }
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
               segmentIndex >= 0, segmentIndex < body.edgeIndices.count else {
             return nil
@@ -1391,6 +1780,9 @@ public final class CADViewportService {
     /// same testability reason as `resolveFacePick`.
     func resolveVertexPick(bodyID: String, pointIndex: Int) -> PickedVertexInfo? {
         guard selectionModes.contains(.vertex) else { return nil }
+        if let position = vertexWorldPosition(bodyID: bodyID, pointIndex: pointIndex), isPointClipped(position) {
+            return nil
+        }
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
               pointIndex >= 0, pointIndex < body.vertices.count else {
             return nil

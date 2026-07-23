@@ -12,6 +12,7 @@ Extracted from PadCAM's `CADViewportService`/`CADViewportView` so multiple OCCT-
 - `SelectionSummary` — aggregate count by kind, total face area, total edge length, and combined bounds over the current selection.
 - `ScalarField` / `ColorMap` / `ScalarFieldLegend` — paint a scalar value (deviation, curvature, wall thickness, confidence...) per face or per triangle via `setScalarField(_:forBody:)`; `.viridis`/`.magma`/`.turbo` sequential ramps, `.diverging(center:)` for signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`. A face pick reports its value (`PickedFaceInfo.scalarValue`); `scalarFieldLegend` reports the range/unit/color stops for rendering a legend.
 - `ComparisonView` / `ComparisonMode` — display two already-loaded entities (typically a source mesh and a reconstructed solid) against each other via `setComparison(_:)`: `.overlay(referenceOpacity:)` ghosts the reference, `.deviation` marks the candidate's already-set scalar field as the comparison (CADKit doesn't compute deviation itself), `.sideBySide` offsets the candidate next to the reference, `.wipe(axis:position:)` spatially splits the two at a plane. Settable/clearable without reloading either entity.
+- `ClippingPlane` — clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides geometry on one side, interactively; `showCapSurface: true` (the default) additionally shows the cut as solid material via a genuine B-Rep split rather than looking hollow — expensive relative to the hollow path, so a smoothly-scrubbed `sectionSweep` on complex geometry should expect that cost. Picking respects active planes even though the GPU pick pass itself doesn't.
 - `CADViewportError` — `unsupportedFormat`, `emptyFile`, `loadFailed`.
 
 ## Quick start
@@ -64,6 +65,17 @@ viewport.setScalarField(deviationField, forBody: "candidate")
 viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .deviation))
 
 viewport.setComparison(nil) // restores both entities' plain display
+```
+
+### Clipping and section planes
+
+```swift
+let planeID = viewport.addClippingPlane(origin: .zero, normal: SIMD3(0, 0, 1))   // showCapSurface defaults to true
+
+// Prismatic-axis inspection: steps a single dedicated plane rather than accumulating one per call.
+viewport.sectionSweep(axis: SIMD3(0, 0, 1), position: sliderValue)
+
+viewport.removeClippingPlane(id: planeID)
 ```
 
 ## Dependencies

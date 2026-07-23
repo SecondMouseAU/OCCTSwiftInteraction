@@ -451,6 +451,61 @@ comparison rather than leaving it referencing stale geometry.
 See [`ComparisonView`](#comparisonview) / [`ComparisonMode`](#comparisonmode) /
 [`Axis`](#axis) for the full type definitions.
 
+### Clipping
+
+```swift
+public var clippingPlanes: [ClippingPlane] { get set }
+public func addClippingPlane(origin: SIMD3<Double>, normal: SIMD3<Double>, showCapSurface: Bool = true) -> String
+public func removeClippingPlane(id: String)
+public func sectionSweep(axis: SIMD3<Double>, position: Double)
+```
+
+Clipping/section planes — hides geometry on one side, interactively, and (with
+`showCapSurface: true`, the default) shows the cut as solid material rather than hollow.
+
+```swift
+let planeID = viewport.addClippingPlane(origin: .zero, normal: SIMD3(0, 0, 1))
+viewport.sectionSweep(axis: SIMD3(0, 0, 1), position: sliderValue)   // steps ONE dedicated plane
+viewport.removeClippingPlane(id: planeID)
+```
+
+- **Clipping itself** pushes every plane in `clippingPlanes` to `OCCTSwiftViewport`'s
+  `ViewportController.clipPlanes` — a global, GPU-only mechanism (up to 4 *enabled* planes,
+  applied uniformly to the whole scene every frame). This part is instant/interactive
+  regardless of geometry complexity, and is what makes `sectionSweep` safe to call on every
+  frame of a scrub when `showCapSurface: false`.
+- **Capping** (`showCapSurface: true`) is NOT a shader trick — `OCCTSwiftViewport` has no
+  shader-level capping — so it's a genuine `OCCTSwift.Shape.split(atPlane:normal:)` and
+  retessellation, sequentially against every cap-enabled plane, for each body a cap-enabled
+  plane actually intersects (bodies nowhere near any plane are left completely untouched —
+  no retessellation, no durable-identity churn). This is real geometry work, not a cheap GPU
+  operation for the bodies it does touch: expect a per-body cost proportional to the shape's
+  complexity on every `clippingPlanes` mutation. A caller doing a live, capped `sectionSweep`
+  scrub on complex geometry that plane actually cuts through should expect this cost, or
+  switch to `showCapSurface: false` while dragging and enable capping only once the drag
+  settles. A body with an active `ScalarField` (`setScalarField(_:forBody:)`) loses it the
+  moment that body is genuinely cut — the field's ordinals don't correspond to the new
+  tessellation, so it's cleared rather than silently mispainted; re-`setScalarField` after.
+- **Multiple planes compose** — both for hollow clipping (native to
+  `controller.clipPlanes`) and for capping (`clippingPlanes` filtered to `showCapSurface ==
+  true` are applied as a sequential chain of splits, so the visible remainder is their
+  intersection).
+- **Picking respects clipping**, even though `OCCTSwiftViewport`'s own GPU pick pass doesn't:
+  a face/edge/vertex pick's own world-space position is tested against every enabled plane
+  (up to the first 4, matching the renderer's own limit) before it resolves, so clipped-away
+  geometry can't be picked and the surfaces a clip reveals pick normally.
+- Capping doesn't automatically re-apply across a reload of an entity under the same id —
+  re-set `clippingPlanes = clippingPlanes` (a documented no-op refresh) to reapply it to
+  newly-loaded geometry.
+- An independently active `setComparison(_:)` comparison on the same entity survives a
+  clipping-plane change (and vice versa) — each properly undoes and reapplies around the
+  other's recompute, rather than one silently discarding the other's mutation.
+
+See [`ClippingPlane`](#clippingplane) for the full type definition, and `CLAUDE.md`'s
+"Things to be careful about" for the bounds-based heuristics `cappedShape` uses and the
+narrower interaction with an active `.overlay`/`.sideBySide`/`.wipe` comparison on the same
+entity.
+
 ### `CADViewportService.ShapeBounds`
 
 ```swift
@@ -791,6 +846,23 @@ public enum Axis: Sendable, Equatable, CaseIterable {
 Axis a `.wipe` comparison splits along. A local mirror of the same concept elsewhere in the
 ecosystem (e.g. `OCCTSwiftAIS.ManipulatorWidget.Axis`), kept separate so this package's
 public surface doesn't couple to a widget-specific type for an unrelated concept.
+
+## `ClippingPlane`
+
+```swift
+public struct ClippingPlane: Sendable, Identifiable, Equatable {
+    public let id: String
+    public var origin: SIMD3<Double>
+    public var normal: SIMD3<Double>
+    public var isEnabled: Bool
+    public var showCapSurface: Bool
+}
+```
+
+A clipping/section plane, set via `CADViewportService.clippingPlanes`/
+`addClippingPlane(origin:normal:showCapSurface:)`. Geometry on the side the normal points
+away from is hidden. See the [Clipping](#clipping) section above for what
+`showCapSurface` does and its cost.
 
 ## `FaceBounds`
 

@@ -53,4 +53,11 @@ timestamp: 2026-06-22
   position:)` spatially splits the two at a plane by filtering each side's triangles (not
   `OCCTSwiftViewport`'s `clipPlanes`, which is viewport-global). Settable/clearable repeatedly
   without reloading either entity.
+- **`ClippingPlane`** — clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:
+  normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides
+  geometry on one side (a fast, global GPU clip); `showCapSurface: true` (default) additionally
+  shows the cut as solid material via a genuine B-Rep split and retessellation per affected body
+  — real geometry work, not a shader trick, since `OCCTSwiftViewport` has no shader-level capping.
+  Multiple planes compose. Picking respects active planes even though the GPU pick pass itself
+  doesn't.
 - **`CADViewportError`** — `unsupportedFormat`, `emptyFile`, `loadFailed`.

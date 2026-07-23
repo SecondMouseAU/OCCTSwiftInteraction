@@ -1508,4 +1508,356 @@ struct SmokeTests {
         // nothing useful to compare against.
         #expect(abs((nearTransform?.columns.3.x ?? 0) - 5.3) < 0.01)
     }
+
+    // MARK: - Clipping (#32)
+
+    @Test("ClippingPlane round-trips through equality")
+    func clippingPlaneEquality() {
+        let a = ClippingPlane(id: "p1", origin: SIMD3(0, 0, 1), normal: SIMD3(0, 0, 1))
+        let b = ClippingPlane(id: "p1", origin: SIMD3(0, 0, 1), normal: SIMD3(0, 0, 1))
+        let c = ClippingPlane(id: "p1", origin: SIMD3(0, 0, 2), normal: SIMD3(0, 0, 1))
+        #expect(a == b)
+        #expect(a != c)
+    }
+
+    @MainActor
+    @Test("addClippingPlane converts origin/normal into the viewport's normal/distance plane equation")
+    func clippingPlaneSyncsToController() {
+        let service = CADViewportService()
+        let id = service.addClippingPlane(origin: SIMD3(0, 0, 5), normal: SIMD3(0, 0, 1), showCapSurface: false)
+
+        #expect(service.clippingPlanes.count == 1)
+        #expect(service.controller.clipPlanes.count == 1)
+        guard let clipPlane = service.controller.clipPlanes.first else {
+            Issue.record("expected a synced ClipPlane")
+            return
+        }
+        #expect(abs(clipPlane.normal.z - 1) < 0.001)
+        #expect(abs(clipPlane.distance - (-5)) < 0.001, "dot(normal, origin) + distance = 0 at the plane's own origin")
+        #expect(clipPlane.isEnabled)
+
+        service.removeClippingPlane(id: id)
+        #expect(service.clippingPlanes.isEmpty)
+        #expect(service.controller.clipPlanes.isEmpty)
+    }
+
+    @MainActor
+    @Test("Multiple clipping planes compose in the viewport's global clip array")
+    func clippingPlanesCompose() {
+        let service = CADViewportService()
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: false)
+        service.addClippingPlane(origin: .zero, normal: SIMD3(0, 1, 0), showCapSurface: false)
+        #expect(service.clippingPlanes.count == 2)
+        #expect(service.controller.clipPlanes.count == 2)
+    }
+
+    @MainActor
+    @Test("sectionSweep moves a single dedicated plane rather than accumulating a new one per call")
+    func sectionSweepReusesSamePlane() {
+        let service = CADViewportService()
+        service.sectionSweep(axis: SIMD3(0, 0, 1), position: 0)
+        #expect(service.clippingPlanes.count == 1)
+        let firstID = service.clippingPlanes[0].id
+
+        service.sectionSweep(axis: SIMD3(0, 0, 1), position: 5)
+        #expect(service.clippingPlanes.count == 1)
+        #expect(service.clippingPlanes[0].id == firstID)
+        #expect(abs(service.clippingPlanes[0].origin.z - 5) < 0.001)
+    }
+
+    @MainActor
+    @Test("A showCapSurface: false clipping plane hides geometry but doesn't touch the underlying shape")
+    func clippingWithoutCapDoesNotTruncateShape() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        guard let originalBounds = service.shape(id: "box")?.bounds else {
+            Issue.record("expected box shape")
+            return
+        }
+
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: false)
+
+        guard let boundsAfter = service.shape(id: "box")?.bounds else {
+            Issue.record("expected box shape after adding a non-capping plane")
+            return
+        }
+        #expect(abs(boundsAfter.min.x - originalBounds.min.x) < 0.001, "a hollow clip must not modify the underlying shape")
+        #expect(abs(boundsAfter.max.x - originalBounds.max.x) < 0.001)
+    }
+
+    @MainActor
+    @Test("A cap-enabled clipping plane truncates the body's actual geometry, not just a GPU clip")
+    func clippingCapSurfaceTruncatesGeometry() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        guard let originalBounds = service.shape(id: "box")?.bounds else {
+            Issue.record("expected box shape")
+            return
+        }
+        #expect(abs(originalBounds.min.x - (-2)) < 0.01)
+        #expect(abs(originalBounds.max.x - 2) < 0.01)
+
+        let planeID = service.addClippingPlane(origin: SIMD3(0, 0, 0), normal: SIMD3(1, 0, 0), showCapSurface: true)
+        #expect(service.clippingPlanes.contains { $0.id == planeID })
+
+        guard let cappedBounds = service.shape(id: "box")?.bounds else {
+            Issue.record("expected box shape after capping")
+            return
+        }
+        #expect(cappedBounds.min.x > -0.5, "the negative-X half should have been cut away")
+        #expect(abs(cappedBounds.max.x - 2) < 0.01, "the kept side's extent is unchanged")
+
+        service.removeClippingPlane(id: planeID)
+        guard let restoredBounds = service.shape(id: "box")?.bounds else {
+            Issue.record("expected box shape after removing the plane")
+            return
+        }
+        #expect(abs(restoredBounds.min.x - (-2)) < 0.01, "removing the plane restores the original geometry")
+    }
+
+    @MainActor
+    @Test("Face picking on a clipped-away region returns nil even though the GPU pick pass doesn't itself respect clip planes")
+    func clippingHidesPicksOnClippedGeometry() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        guard let body = service.modelBodies.first(where: { $0.id == "box" }) else {
+            Issue.record("expected box body")
+            return
+        }
+        let triCount = body.indices.count / 3
+        var negativeXTriangle: Int?
+        var positiveXTriangle: Int?
+        for tri in 0..<triCount {
+            let i0 = Int(body.indices[tri * 3]), i1 = Int(body.indices[tri * 3 + 1]), i2 = Int(body.indices[tri * 3 + 2])
+            let x = (body.vertexData[i0 * 6] + body.vertexData[i1 * 6] + body.vertexData[i2 * 6]) / 3
+            if x < -0.1 && negativeXTriangle == nil { negativeXTriangle = tri }
+            if x > 0.1 && positiveXTriangle == nil { positiveXTriangle = tri }
+        }
+        guard let negTri = negativeXTriangle, let posTri = positiveXTriangle else {
+            Issue.record("expected triangles on both sides of X=0")
+            return
+        }
+
+        // Before clipping, both resolve.
+        #expect(service.resolveFacePick(bodyID: "box", triangleIndex: negTri) != nil)
+        #expect(service.resolveFacePick(bodyID: "box", triangleIndex: posTri) != nil)
+
+        // A hollow (non-capping) clip leaves the tessellation untouched — same triangle
+        // indices mean the same thing before and after — only the GPU (visually) and now
+        // resolveFacePick (for picking) hide the negative-X side.
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: false)
+
+        #expect(service.resolveFacePick(bodyID: "box", triangleIndex: negTri) == nil, "clipped-away geometry must not be pickable")
+        #expect(service.resolveFacePick(bodyID: "box", triangleIndex: posTri) != nil, "the kept side stays pickable")
+    }
+
+    @MainActor
+    @Test("Clearing a comparison preserves an independently active cap-enabled clipping plane")
+    func clearingComparisonPreservesActiveCap() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+
+        guard let cappedReferenceBounds = service.shape(id: "reference")?.bounds else {
+            Issue.record("expected reference shape")
+            return
+        }
+        #expect(cappedReferenceBounds.min.x > -0.5, "sanity check: capping actually truncated the reference")
+
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.3)))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 0.3)
+
+        service.setComparison(nil)
+
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 1.0, "overlay must be undone")
+        guard let stillCappedBounds = service.shape(id: "reference")?.bounds else {
+            Issue.record("expected reference shape after clearing the comparison")
+            return
+        }
+        #expect(stillCappedBounds.min.x > -0.5, "the cap must still be applied after the comparison clears")
+    }
+
+    @MainActor
+    @Test("Reloading a different shape under the same id doesn't auto-refresh an active cap, but re-setting clippingPlanes does")
+    func clippingCapRefreshesAfterManualReloadTrigger() {
+        guard let bigBox = Shape.box(width: 4, height: 4, depth: 4),
+              let smallBox = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(bigBox, id: "part")
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+
+        guard let firstCapped = service.shape(id: "part")?.bounds else {
+            Issue.record("expected capped bounds")
+            return
+        }
+        #expect(abs(firstCapped.max.x - 2) < 0.01, "bigBox's half-width")
+
+        service.load(smallBox, id: "part") // reload under the same id, different geometry
+
+        // Documented behavior: capping (like setScalarField) doesn't automatically re-apply
+        // across a reload. Re-setting clippingPlanes is the documented way to refresh it.
+        service.clippingPlanes = service.clippingPlanes
+
+        guard let secondCapped = service.shape(id: "part")?.bounds else {
+            Issue.record("expected capped bounds after reload")
+            return
+        }
+        #expect(abs(secondCapped.max.x - 1) < 0.01, "capping should reflect the NEW (small) box, not the stale cached one")
+    }
+
+    /// Regression for an adversarial-review finding on this PR: `updateCapSurfaces` used to
+    /// retessellate (and mint a fresh `BRepGraph` for) EVERY loaded body whenever any
+    /// cap-enabled plane existed, not just the ones a plane actually cuts through — silently
+    /// invalidating durable `GraphUID`s for bodies nowhere near any plane.
+    @MainActor
+    @Test("A cap-enabled clipping plane doesn't disturb an unrelated body's durable identity")
+    func cappingDoesNotDisturbUnrelatedBodyIdentity() {
+        guard let nearBox = Shape.box(width: 4, height: 4, depth: 4),
+              let farBox = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(nearBox, id: "near")
+        service.load(farBox, id: "far", transform: [
+            1, 0, 0,
+            0, 1, 0,
+            0, 0, 1,
+            100, 0, 0,
+        ])
+
+        guard let farBodyBefore = service.modelBodies.first(where: { $0.id == "far" }) else {
+            Issue.record("expected far body")
+            return
+        }
+        guard let pickBefore = service.resolveFacePick(bodyID: "far", triangleIndex: 0), let uidBefore = pickBefore.uid else {
+            Issue.record("expected a durable identity pick on the far body")
+            return
+        }
+
+        // A plane at x=0, normal +x only intersects "near" (bounds -2...2); "far" (translated
+        // to ~98...102) is entirely on the kept side and should be left completely untouched.
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+
+        let farBodyAfter = service.modelBodies.first(where: { $0.id == "far" })
+        #expect(farBodyAfter?.generation == farBodyBefore.generation, "an untouched body must not be retessellated at all")
+
+        guard let pickAfter = service.resolveFacePick(bodyID: "far", triangleIndex: 0), let uidAfter = pickAfter.uid else {
+            Issue.record("expected a durable identity pick on the far body after capping")
+            return
+        }
+        #expect(uidAfter == uidBefore, "an unrelated body's durable identity must survive a clipping-plane change")
+    }
+
+    /// Regression for an adversarial-review finding on this PR: `updateCapSurfaces`'s own
+    /// restore-then-recompute used to ignore an independently active comparison, so a SECOND,
+    /// unrelated clipping-plane mutation (moving the plane, adding another one, etc.) would
+    /// silently discard whatever `.overlay`/`.sideBySide`/`.wipe` had done to a body that also
+    /// happened to be capped.
+    @MainActor
+    @Test("A second, unrelated clipping-plane mutation doesn't discard an active overlay comparison")
+    func secondClippingMutationPreservesActiveOverlayComparison() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        let planeID = service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .overlay(referenceOpacity: 0.3)))
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 0.3)
+
+        // A SECOND, independent clipping-plane mutation (moving the same plane).
+        service.clippingPlanes = service.clippingPlanes.map { plane in
+            var moved = plane
+            if moved.id == planeID { moved.origin = SIMD3(0.5, 0, 0) }
+            return moved
+        }
+
+        #expect(service.comparison != nil, "the comparison itself must still be reported as active")
+        #expect(service.modelBodies.first { $0.id == "reference" }?.color.w == 0.3, "the ghosting must survive an unrelated clipping-plane change")
+        guard let stillCappedBounds = service.shape(id: "reference")?.bounds else {
+            Issue.record("expected reference shape")
+            return
+        }
+        #expect(stillCappedBounds.min.x > 0.3, "the moved plane should still be capping the reference")
+    }
+
+    @MainActor
+    @Test("A second clipping-plane mutation doesn't compound a sideBySide comparison's offset")
+    func secondClippingMutationDoesNotCompoundSideBySideOffset() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4),
+              let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        // Hollow (non-capping) planes on axes that don't touch either box's own geometry —
+        // isolates the test to whether the OFFSET ITSELF compounds, rather than a plane that
+        // (correctly) changes reference/candidate's bounds and so legitimately changes the
+        // recomputed offset.
+        service.addClippingPlane(origin: SIMD3(0, 0, 100), normal: SIMD3(0, 0, 1), showCapSurface: false)
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .sideBySide))
+        let firstOffset = service.modelBodies.first { $0.id == "candidate" }?.transform.columns.3.x
+
+        service.addClippingPlane(origin: SIMD3(0, 100, 0), normal: SIMD3(0, 1, 0), showCapSurface: false)
+
+        let secondOffset = service.modelBodies.first { $0.id == "candidate" }?.transform.columns.3.x
+        #expect(firstOffset != nil && secondOffset != nil)
+        #expect(abs((secondOffset ?? 0) - (firstOffset ?? 0)) < 0.01, "the sideBySide offset must not compound across an unrelated clipping-plane change")
+    }
+
+    /// Regression for an adversarial-review finding on this PR: `replaceBody` used to preserve
+    /// every caller-configurable field except the scalar field, so a genuinely re-cut body
+    /// kept reporting its OLD `ScalarField` even though the new tessellation's face/triangle
+    /// ordinals have no defined correspondence to the old ones.
+    @MainActor
+    @Test("Capping a body with an active scalar field clears the (now-mismatched) field rather than painting stale values")
+    func cappingClearsScalarFieldOnGenuinelyCutBody() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        service.setScalarField(
+            ScalarField(domain: .perFace, values: [1, 2, 3, 4, 5, 6], colorMap: .viridis, label: "test"),
+            forBody: "box"
+        )
+        #expect(service.scalarField(forBody: "box") != nil)
+
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+
+        #expect(service.scalarField(forBody: "box") == nil, "the field's ordinals no longer correspond to the new (cut) tessellation")
+    }
 }

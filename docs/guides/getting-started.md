@@ -448,10 +448,60 @@ renderer reads both fresh every frame rather than caching them (unlike the scala
 style buffer above). `.wipe` rebuilds each side's body (a fresh `generation`, like
 `setScalarField` does), scaled to that body's triangle count.
 
+## 11. Clipping and section planes (optional)
+
+Cut away geometry to see inside a part — internal bores, pockets, ribs — or inspect exact
+cross-sections along a prismatic axis:
+
+```swift
+let planeID = viewport.addClippingPlane(origin: .zero, normal: SIMD3(0, 0, 1))
+```
+
+Geometry on the side the normal points away from is hidden. By default
+(`showCapSurface: true`) the cut also shows solid material rather than looking hollow — this
+is a genuine B-Rep split and retessellation of the affected body(ies), not a shader trick
+(`OCCTSwiftViewport` has no shader-level capping), so it costs real per-body geometry work on
+every clipping-plane change, unlike the instant, GPU-only hollow clip underneath it.
+
+For the common "step a plane along a prismatic axis" case, `sectionSweep` reuses a single
+dedicated plane instead of accumulating one per call — safe to call every frame of a drag:
+
+```swift
+viewport.sectionSweep(axis: SIMD3(0, 0, 1), position: sliderValue)
+```
+
+If you're scrubbing quickly on complex geometry, disable capping for the duration of the
+drag (cheap, instant hollow clip) and only turn it back on once the drag settles:
+
+```swift
+viewport.clippingPlanes[0].showCapSurface = isDragging ? false : true
+```
+
+Multiple planes compose — both the hollow clip and, for cap-enabled planes, the cut itself
+(a sequential chain of splits, so the visible remainder is their intersection):
+
+```swift
+viewport.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: false)
+viewport.addClippingPlane(origin: .zero, normal: SIMD3(0, 1, 0), showCapSurface: false)
+```
+
+Picking respects active clipping planes — a face/edge/vertex pick's own position is tested
+against every enabled plane before it resolves, even though `OCCTSwiftViewport`'s own GPU
+pick pass doesn't do this itself, so clipped-away geometry never steals a pick.
+
+```swift
+viewport.removeClippingPlane(id: planeID)   // clears just that one; clippingPlanes = [] clears all
+```
+
+**Reload behavior:** capping doesn't automatically re-apply when you reload an entity under
+an id that was previously capped (mirrors `setScalarField` not surviving a reload either —
+same "caller re-applies" contract). Re-set `clippingPlanes = clippingPlanes` to force a
+refresh without changing anything.
+
 ## Next steps
 
 - See [`docs/reference/CADViewportService.md`](../reference/CADViewportService.md) for the
   full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
   `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionSummary` /
   `ScalarField` / `ColorMap` / `ScalarFieldLegend` / `ComparisonView` / `ComparisonMode` /
-  `Axis` / `FaceBounds` types, and `CADViewportError`.
+  `Axis` / `ClippingPlane` / `FaceBounds` types, and `CADViewportError`.
