@@ -1,8 +1,8 @@
 # Getting started with OCCTSwiftCADKit
 
-This guide walks through embedding the shared CAD viewport in a SwiftUI app, importing a
-STEP/STL/BREP file, and handling face/edge/vertex pick selections. Every snippet uses
-only the real public API of `OCCTSwiftCADKit`.
+This guide walks through embedding the shared CAD viewport in a SwiftUI app, importing
+STEP/STL/BREP files (single-shape or multi-entity/assembly), and handling face/edge/vertex
+pick selections. Every snippet uses only the real public API of `OCCTSwiftCADKit`.
 
 Platforms: iOS 18+ / macOS 15+.
 
@@ -55,6 +55,10 @@ display-mode / standard-view controls (bottom-trailing) built in.
 <!-- 3D render TODO: empty CADViewportView with the built-in controls -->
 
 ## 3. Import a STEP / STL / BREP file
+
+`loadFile(from:)`/`loadShape(_:id:)`/`loadFromData(_:filename:)` are the deprecated,
+single-shape convenience: each **replaces** every other model body. For loading several
+parts or an assembly side by side, see [§4](#4-multi-body-and-assembly-loading-optional).
 
 Call `loadFile(from:)` with a file URL — the extension picks the format
 (`.step`/`.stp`, `.stl`, `.brep`). The camera auto-focuses on the loaded shape. Run it
@@ -113,7 +117,72 @@ let box = Shape.box(width: 50, height: 30, depth: 20)
 viewport.loadShape(box, id: "model")
 ```
 
-## 4. Handle a pick
+## 4. Multi-body and assembly loading (optional)
+
+`load(_:id:transform:)` and `loadFile(from:id:progress:)` display several parts — or
+several of an assembly's occurrences — as distinct, addressable **entities**, coexisting
+rather than replacing one another. Unlike the deprecated single-shape overloads, camera
+focus is *not* automatic; call `focus(on:)` once you've loaded what should be visible.
+
+```swift
+viewport.load(housingShape, id: "housing")
+viewport.load(coverShape, id: "cover", transform: [
+    1, 0, 0,
+    0, 1, 0,
+    0, 0, 1,
+    0, 0, 45,       // 45mm along Z — a rigid 12-element affine matrix:
+])                  // 9 rotation elements (row-major 3x3), then translation.
+viewport.focus(on: ["housing", "cover"])
+```
+
+```swift
+try await viewport.loadFile(from: partAURL, id: "partA")
+try await viewport.loadFile(from: partBURL, id: "partB")
+```
+
+A file with several bodies (e.g. a multibody STEP/STL) registers as **one** entity whose
+underlying body ids are `"<id>-0"`, `"<id>-1"`, etc. Loading again under an id already in
+use replaces that entity.
+
+```swift
+viewport.loadedShapes                      // [String: OCCTSwift.Shape], keyed by entity id
+viewport.shape(id: "housing")               // OCCTSwift.Shape?
+viewport.visibility = ["cover": false]      // hide one entity
+viewport.remove(id: "cover")                // drop one entity
+viewport.removeAll()                        // drop every multi-entity load
+```
+
+A pick's `selected` reports the **body** hit (`PickedEntity.bodyID`); map it back to the
+entity that owns it with `entityID(forBodyID:)`:
+
+```swift
+if let hitBodyID = viewport.selected?.bodyID, let entityID = viewport.entityID(forBodyID: hitBodyID) {
+    print("hit entity:", entityID)
+}
+```
+
+The multi-entity API and the deprecated single-shape overloads are safe to mix — they
+share one internal entity registry, so `loadShape(_:id:)`/`loadFile(from:progress:)`
+(which still replace every model body) register what they load there too, and
+`loadedShapes`/`visibility`/`removeAll()`/`entityID(forBodyID:)` all see it. `loadedShape`
+(deprecated) still returns the single shape when exactly one entity is loaded, however it
+was loaded.
+
+### Memory behavior
+
+Each occurrence loaded via `load(_:id:transform:)` is tessellated independently — v1 does
+not deduplicate geometry across repeated instances of the same underlying part (an
+assembly's "product and occurrence" model, where placement lives on the occurrence and
+definitions are shared, is not implemented). Measured on this machine: loading 1245
+occurrences of a plain 10×8×6mm box (a synthetic proxy — not the actual reference
+corpus's own geometry, which is more complex) cost **~646 MB** resident memory, about
+0.52 MB/occurrence. Real parts with more complex geometry (fillets, holes, threads) will
+cost more per occurrence than this proxy. For an assembly with many repeated instances of
+a small number of unique products, sharing tessellated geometry across occurrences of the
+same product would very likely reduce memory substantially — worth a follow-up if
+per-occurrence memory becomes a real constraint at your assembly's scale.
+
+## 5. Handle a pick
 
 Face picking is enabled by default. When the user taps a face, the service updates its
 `selected` property (a `PickedEntity`, `.face(PickedFaceInfo)` for a face pick). Because
@@ -169,7 +238,7 @@ a later mutation an ordinal alone does not.
 for face picks, `nil` for everything else including edge/vertex picks — for callers not
 yet migrated off it.
 
-## 5. Edge and vertex picking (optional)
+## 6. Edge and vertex picking (optional)
 
 Opt a body into edge and/or vertex picking via `selectionModes` (default `[.face]`):
 
@@ -205,7 +274,7 @@ gates face picking itself; remove `.face` to disable it.
 entirely separate, independent selection system: the two don't share state, and
 `SelectionMode.body` has no effect here (there's no whole-body `PickedEntity` case).
 
-## 6. Overlays (optional)
+## 7. Overlays (optional)
 
 Anything that isn't part of the imported model — stock boxes, toolpaths, flat-pattern
 outlines, annotations — goes through named overlay layers. They composite with the model

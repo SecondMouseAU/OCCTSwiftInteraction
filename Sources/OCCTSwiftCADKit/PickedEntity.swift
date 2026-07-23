@@ -10,6 +10,17 @@ public enum PickedEntity: Sendable, Equatable {
     case face(PickedFaceInfo)
     case edge(PickedEdgeInfo)
     case vertex(PickedVertexInfo)
+
+    /// The id of the body this pick landed on, regardless of kind. With the multi-entity
+    /// loading API (`CADViewportService.load`/`loadFile(from:id:)`), pass this to
+    /// `entityID(forBodyID:)` to find which loaded entity was hit.
+    public var bodyID: String {
+        switch self {
+        case .face(let info): return info.bodyID
+        case .edge(let info): return info.bodyID
+        case .vertex(let info): return info.bodyID
+        }
+    }
 }
 
 /// Information about an edge picked in the viewport.

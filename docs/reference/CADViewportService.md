@@ -69,16 +69,24 @@ let custom = CADViewportService(configuration: .init(
 | `controller` | `_ViewportController` | Viewport controller — camera, display mode, picking config. Bind into `CADViewportView`. |
 | `interactiveContext` | `InteractiveContext` | AIS interactive context backed by this viewport. Install `ManipulatorWidget`, dimensions, or extra `InteractiveObject`s here; appended bodies are composited with the CADKit-owned bodies. |
 | `bodies` | `[_ViewportBody]` | All bodies currently displayed: model bodies + overlay layers + selection highlight + AIS-owned bodies. Read-only; mirrors `interactiveContext.bodies`. |
-| `loadedShape` | `OCCTSwift.Shape?` | The loaded shape, or `nil` until something is loaded. Read-only. |
+| `loadedShape` | `OCCTSwift.Shape?` | **Deprecated**, use `loadedShapes`/`shape(id:)`. Non-nil only when exactly one entity is loaded, however it was loaded. |
+| `loadedShapes` | `[String: OCCTSwift.Shape]` | Multi-entity loads, keyed by entity id (see [Multi-body / assembly](#multi-body--assembly)). |
 | `selected` | `PickedEntity?` | Currently picked face/edge/vertex, or `nil`. Read-only; updated internally on pick. |
 | `selectionModes` | `Set<SelectionMode>` | Which sub-shape kinds picking resolves. Defaults to `[.face]`. |
 | `selectedFace` | `PickedFaceInfo?` | **Deprecated**, use `selected`. Non-nil only for face picks. |
-| `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of `loadedShape`, or `nil`. |
+| `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of the single loaded shape, or `nil` (see `loadedShape`'s single-entity caveat). |
 | `overlayIDs` | `[String]` | Sorted ids of overlay layers currently staged. |
+| `visibility` | `[String: Bool]` | Per-entity visibility, keyed by entity id. |
 
-### File import
+### File import (single-shape, deprecated)
+
+`loadFile(from:progress:)`, `loadShape(_:id:)`, and `loadFromData(_:filename:progress:)`
+each **replace every model body**, including any loaded via the multi-entity API below —
+safe to mix with it, since both register in the same internal entity registry. See
+[Multi-body / assembly](#multi-body--assembly) for loading several parts or an assembly.
 
 ```swift
+@available(*, deprecated)
 @discardableResult
 public func loadFile(from url: URL, progress: ImportProgress? = nil) async throws -> OCCTSwift.Shape
 ```
@@ -113,6 +121,7 @@ try await viewport.loadFile(from: url, progress: progress)
 ---
 
 ```swift
+@available(*, deprecated)
 public func loadShape(_ shape: OCCTSwift.Shape, id: String = "model")
 ```
 
@@ -128,6 +137,7 @@ viewport.loadShape(box, id: "stockModel")
 ---
 
 ```swift
+@available(*, deprecated)
 @discardableResult
 public func loadFromData(_ data: Data, filename: String, progress: ImportProgress? = nil) async throws -> OCCTSwift.Shape
 ```
@@ -142,6 +152,77 @@ return value and errors as `loadFile(from:progress:)`.
 let data = try Data(contentsOf: pickedURL)
 try await viewport.loadFromData(data, filename: pickedURL.lastPathComponent)
 ```
+
+### Multi-body / assembly
+
+Several parts — or several of an assembly's occurrences — can display simultaneously as
+distinct, addressable **entities**, rather than one replacing another. Shares one entity
+registry with the deprecated single-shape overloads above (see their note), so
+`loadedShapes`/`visibility`/`removeAll()`/`entityID(forBodyID:)` see everything currently
+loaded regardless of which API loaded it.
+
+```swift
+@discardableResult
+public func load(_ shape: OCCTSwift.Shape, id: String, transform: [Double]? = nil) -> String
+
+@discardableResult
+public func loadFile(from url: URL, id: String, progress: ImportProgress? = nil) async throws -> String
+
+@discardableResult
+public func loadFromData(_ data: Data, filename: String, id: String, progress: ImportProgress? = nil) async throws -> String
+```
+
+- **`id`** — the entity id. Loading again under an id already in use replaces that
+  entity. Required on every overload (unlike the deprecated `loadFile(from:progress:)`
+  family's implicit single entity) — a defaulted `id` would make e.g.
+  `loadFile(from: url)` ambiguous against the deprecated 2-argument overload.
+- **`transform`** (`load` only) — places the shape before tessellating it. A rigid
+  12-element affine matrix matching `OCCTSwift.Shape.transformed(matrix:)`'s layout:
+  `[r00,r01,r02, r10,r11,r12, r20,r21,r22, tx,ty,tz]` (row-major 3x3 rotation, then
+  translation). `nil` (default) leaves the shape as-is.
+- **Returns:** `id`, echoed back.
+- A file with several bodies (e.g. a multibody STEP/STL) registers as **one** entity
+  whose underlying body ids are `"<id>-0"`, `"<id>-1"`, etc.
+- Camera is **not** auto-focused (unlike the deprecated single-shape overloads) — call
+  `focus(on:)` explicitly.
+
+```swift
+viewport.load(housingShape, id: "housing")
+viewport.load(coverShape, id: "cover", transform: [
+    1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 45,   // 45mm along Z
+])
+try await viewport.loadFile(from: partAURL, id: "partA")
+```
+
+```swift
+public func remove(id: String)                                    // remove one entity
+public func removeAll()                                           // remove every multi-entity load
+public var loadedShapes: [String: OCCTSwift.Shape] { get }        // keyed by entity id
+public func shape(id: String) -> OCCTSwift.Shape?
+public func entityID(forBodyID bodyID: String) -> String?         // which entity owns a pick's bodyID
+public var visibility: [String: Bool] { get set }                 // per-entity visibility
+public func focus(on ids: [String])                               // frame the camera on a subset
+```
+
+```swift
+viewport.visibility = ["cover": false]
+viewport.focus(on: ["housing"])
+viewport.remove(id: "cover")
+
+if let hitBodyID = viewport.selected?.bodyID, let entityID = viewport.entityID(forBodyID: hitBodyID) {
+    print("hit entity:", entityID)
+}
+```
+
+**Memory behavior:** each occurrence loaded via `load(_:id:transform:)` is tessellated
+independently — v1 does not deduplicate geometry across repeated instances of the same
+part (an assembly's shared-definition/occurrence model is not implemented). Measured on
+this machine: 1245 occurrences of a plain 10×8×6mm box (a synthetic proxy, not the actual
+reference corpus's own geometry) cost ~646 MB resident memory, ~0.52 MB/occurrence — real
+parts will cost more per occurrence than this proxy. Sharing tessellated geometry across
+occurrences of the same product would very likely reduce memory substantially for an
+assembly with many repeated instances of a small number of unique products; worth a
+follow-up if this becomes a real constraint.
 
 ### Overlay layers
 
@@ -287,12 +368,16 @@ public enum PickedEntity: Sendable, Equatable {
     case face(PickedFaceInfo)
     case edge(PickedEdgeInfo)
     case vertex(PickedVertexInfo)
+
+    public var bodyID: String { get }
 }
 ```
 
 A pick result generalised over which kind of sub-shape was hit. `CADViewportService.selected`
 is this type. Every case's payload shares the same durable-identity shape (`shape`/`uid`,
-plus an ephemeral render-path ordinal).
+plus an ephemeral render-path ordinal). `bodyID` reads whichever case's `bodyID` field,
+regardless of kind — pass it to `entityID(forBodyID:)` to find which multi-entity load (if
+any) owns the picked body.
 
 ## `PickedFaceInfo`
 

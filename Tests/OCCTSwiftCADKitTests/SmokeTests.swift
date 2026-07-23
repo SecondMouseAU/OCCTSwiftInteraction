@@ -461,4 +461,226 @@ struct SmokeTests {
         #expect(b.sizeY == 7)
         #expect(b.sizeZ == 9)
     }
+
+    /// Regression for #28: several entities must display simultaneously, addressable and
+    /// independently removable, rather than the deprecated single-shape `loadShape`/
+    /// `loadFile` "replace everything" behavior.
+    @MainActor
+    @Test("Multiple entities load, coexist, and remove independently")
+    func multipleEntitiesCoexistAndRemoveIndependently() {
+        guard let boxA = Shape.box(width: 4, height: 4, depth: 4),
+              let boxB = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+
+        #expect(service.load(boxA, id: "partA") == "partA")
+        #expect(service.load(boxB, id: "partB") == "partB")
+
+        #expect(service.modelBodies.contains { $0.id == "partA" })
+        #expect(service.modelBodies.contains { $0.id == "partB" })
+        #expect(Set(service.loadedShapes.keys) == ["partA", "partB"])
+        #expect(service.shape(id: "partA") != nil)
+        #expect(service.shape(id: "partB") != nil)
+        #expect(service.shape(id: "nonexistent") == nil)
+
+        service.remove(id: "partA")
+        #expect(!service.modelBodies.contains { $0.id == "partA" })
+        #expect(service.modelBodies.contains { $0.id == "partB" })
+        #expect(Set(service.loadedShapes.keys) == ["partB"])
+
+        service.removeAll()
+        #expect(service.modelBodies.isEmpty)
+        #expect(service.loadedShapes.isEmpty)
+    }
+
+    /// Regression for #28: re-loading under an id already in use replaces that entity
+    /// rather than accumulating duplicate bodies.
+    @MainActor
+    @Test("Loading again under an existing id replaces that entity")
+    func loadingAgainUnderExistingIDReplacesEntity() {
+        guard let smallBox = Shape.box(width: 2, height: 2, depth: 2),
+              let bigBox = Shape.box(width: 8, height: 8, depth: 8) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(smallBox, id: "part")
+        service.load(bigBox, id: "part")
+
+        #expect(service.modelBodies.filter { $0.id == "part" }.count == 1)
+        guard let reloaded = service.shape(id: "part") else {
+            Issue.record("expected \"part\" to still be loaded")
+            return
+        }
+        let bounds = reloaded.bounds
+        #expect(bounds.max.x - bounds.min.x > 7, "expected the second (bigger) load to have won")
+    }
+
+    /// Regression for #28: `transform` places the shape before tessellating it.
+    @MainActor
+    @Test("load(_:id:transform:) places the shape via the given rigid transform")
+    func loadAppliesTransform() {
+        guard let box = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "untransformed")
+        service.load(box, id: "translated", transform: [
+            1, 0, 0,
+            0, 1, 0,
+            0, 0, 1,
+            10, 20, 30,
+        ])
+
+        guard let plain = service.shape(id: "untransformed"), let moved = service.shape(id: "translated") else {
+            Issue.record("expected both entities to be loaded")
+            return
+        }
+        let plainBounds = plain.bounds
+        let movedBounds = moved.bounds
+        #expect(abs((movedBounds.min.x - plainBounds.min.x) - 10) < 0.01)
+        #expect(abs((movedBounds.min.y - plainBounds.min.y) - 20) < 0.01)
+        #expect(abs((movedBounds.min.z - plainBounds.min.z) - 30) < 0.01)
+    }
+
+    /// Regression for #28: per-entity visibility toggles the bodies that entity owns.
+    @MainActor
+    @Test("visibility toggles the right entity's bodies")
+    func visibilityTogglesEntityBodies() {
+        guard let boxA = Shape.box(width: 2, height: 2, depth: 2),
+              let boxB = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(boxA, id: "partA")
+        service.load(boxB, id: "partB")
+
+        #expect(service.visibility == ["partA": true, "partB": true])
+
+        service.visibility = ["partA": false]
+
+        #expect(service.modelBodies.first { $0.id == "partA" }?.isVisible == false)
+        #expect(service.modelBodies.first { $0.id == "partB" }?.isVisible == true)
+        #expect(service.visibility["partA"] == false)
+    }
+
+    /// Regression for #28: `loadedShape` (deprecated) still works for the single-shape
+    /// case, whichever API loaded it, but goes `nil` once more than one entity is loaded.
+    @MainActor
+    @Test("Deprecated loadedShape reflects the single-entity case only")
+    func deprecatedLoadedShapeReflectsSingleEntityCase() {
+        guard let box = Shape.box(width: 2, height: 2, depth: 2) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        #expect(service.loadedShape == nil)
+
+        service.load(box, id: "onlyOne")
+        #expect(service.loadedShape != nil, "exactly one entity is loaded")
+
+        service.load(box, id: "second")
+        #expect(service.loadedShape == nil, "more than one entity is loaded")
+    }
+
+    /// Regression for #28: a pick reports which entity was hit via `entityID(forBodyID:)`.
+    @MainActor
+    @Test("Picks report which entity was hit")
+    func picksReportWhichEntityWasHit() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "thePart")
+
+        guard let pick = service.resolveFacePick(bodyID: "thePart", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil for a valid triangle")
+            return
+        }
+        let entity = PickedEntity.face(pick)
+        #expect(entity.bodyID == "thePart")
+        #expect(service.entityID(forBodyID: entity.bodyID) == "thePart")
+        #expect(service.entityID(forBodyID: "no-such-body") == nil)
+    }
+
+    /// Regression for #28 review: the deprecated `loadShape`/`loadFile` and the new
+    /// `load`/`loadFile(from:id:)` share one `entities` registry precisely so this doesn't
+    /// happen — mixing the two APIs under the same id must replace, not duplicate. Before
+    /// the fix, `loadShape`'s default id ("model") never registered in `entities`, so a
+    /// later `load(_, id: "model")` had nothing to detect and remove, leaving two "model"
+    /// bodies rendered simultaneously.
+    @MainActor
+    @Test("Mixing the deprecated single-shape API and the multi-entity API under the same id replaces rather than duplicates")
+    func mixingDeprecatedAndMultiEntityAPIsUnderSameIDReplaces() {
+        guard let boxA = Shape.box(width: 4, height: 4, depth: 4),
+              let boxB = Shape.box(width: 6, height: 6, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+
+        service.loadShape(boxA) // deprecated, default id "model"
+        #expect(service.modelBodies.filter { $0.id == "model" }.count == 1)
+
+        _ = service.load(boxB, id: "model") // new API, same id
+        #expect(service.modelBodies.filter { $0.id == "model" }.count == 1, "must replace, not duplicate")
+        #expect(service.entityID(forBodyID: "model") == "model")
+
+        // The deprecated loadedShape/shapeBounds convenience must track the replacement
+        // too — not keep reporting boxA (4mm) after boxB (6mm) has taken over "model".
+        guard let bounds = service.shapeBounds else {
+            Issue.record("expected shapeBounds to be non-nil with exactly one entity loaded")
+            return
+        }
+        #expect(abs(bounds.sizeX - 6) < 0.01, "shapeBounds must reflect boxB (6mm), not the replaced boxA (4mm)")
+    }
+
+    /// Regression for #28 review: the deprecated single-shape `loadShape`/`loadFile`
+    /// replace *everything*, including entities loaded via the new multi-entity API before
+    /// them — previously only `modelBodies` was fully replaced; `metadata`/`bodyShapes`/etc.
+    /// for an orphaned entity leaked, and `entities` still listed it (making `loadedShapes`/
+    /// `entityID(forBodyID:)` report a body that could no longer actually be picked).
+    @MainActor
+    @Test("The deprecated single-shape API fully replaces prior multi-entity loads, not just modelBodies")
+    func deprecatedSingleShapeAPIFullyReplacesPriorMultiEntityLoads() {
+        guard let boxA = Shape.box(width: 4, height: 4, depth: 4),
+              let boxB = Shape.box(width: 6, height: 6, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+
+        _ = service.load(boxA, id: "orphanEntity")
+        service.loadShape(boxB, id: "model") // deprecated, different id
+
+        #expect(Set(service.loadedShapes.keys) == ["model"], "orphanEntity must be fully gone, not just from modelBodies")
+        #expect(service.entityID(forBodyID: "orphanEntity") == nil)
+        #expect(service.resolveFacePick(bodyID: "orphanEntity", triangleIndex: 0) == nil)
+    }
+
+    /// Regression for #28 review: `removeAll()` must clear the deprecated single-shape
+    /// API's backing too, or `loadedShape` (deprecated) can report a stale shape after
+    /// "removing everything."
+    @MainActor
+    @Test("removeAll() clears the deprecated single-shape loadedShape too")
+    func removeAllClearsDeprecatedLoadedShape() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.loadShape(box) // deprecated
+
+        #expect(service.loadedShape != nil)
+
+        service.removeAll()
+
+        #expect(service.loadedShape == nil)
+        #expect(service.modelBodies.isEmpty)
+    }
 }

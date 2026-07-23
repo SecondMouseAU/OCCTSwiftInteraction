@@ -41,8 +41,37 @@ public final class CADViewportService {
     /// `interactiveContext.bodies`.
     public private(set) var bodies: [_ViewportBody] = []
 
-    /// The loaded OCCTSwift shape. `nil` until something is loaded.
-    public private(set) var loadedShape: OCCTSwift.Shape?
+    /// The loaded OCCTSwift shape, or `nil` until something is loaded.
+    ///
+    /// Set by the deprecated single-shape `loadFile(from:progress:)`/`loadShape(_:id:)`.
+    /// The multi-entity API (`load(_:id:transform:)`/`loadFile(from:id:progress:)`) doesn't
+    /// set it directly — the public `loadedShape` getter falls back to it when exactly one
+    /// entity is loaded that way, matching this property's "single-shape convenience"
+    /// contract either way.
+    private var legacyLoadedShape: OCCTSwift.Shape?
+
+    /// The entity id `legacyLoadedShape` corresponds to (the given `id` for `loadShape`;
+    /// the first resulting body's id for `loadFile(from:progress:)`, since that's what it
+    /// also registers as its own entity). Lets `remove(id:)` invalidate `legacyLoadedShape`
+    /// precisely when *that* entity is removed or replaced — e.g. `loadShape(box, id:
+    /// "model")` followed by `load(otherBox, id: "model")` must stop `loadedShape` from
+    /// still reporting the first `box` — without wrongly clearing it when a *different*
+    /// entity is removed.
+    private var legacyLoadedShapeEntityID: String?
+
+    /// The loaded shape, when exactly one is loaded (however it was loaded). `nil` if
+    /// nothing is loaded, or if more than one entity is loaded via the multi-entity API.
+    @available(*, deprecated, message: "Use `loadedShapes`/`shape(id:)` instead — returns non-nil only when exactly one entity is loaded.")
+    public var loadedShape: OCCTSwift.Shape? { currentSingleShape }
+
+    /// Non-deprecated backing for `loadedShape`'s fallback logic, so `shapeBounds` and
+    /// `focusOnLoadedShape()` can use the same lookup without tripping the deprecation
+    /// warning on every internal read.
+    private var currentSingleShape: OCCTSwift.Shape? {
+        if let legacyLoadedShape { return legacyLoadedShape }
+        guard entities.count == 1, let onlyID = entities.keys.first else { return nil }
+        return shape(id: onlyID)
+    }
 
     /// Currently picked sub-shape (face, edge, or vertex), gated by `selectionModes`.
     /// `nil` if nothing is picked.
@@ -97,6 +126,27 @@ public final class CADViewportService {
     /// Vertex-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
     private var vertexIdentity: [String: VertexIdentityTable] = [:]
 
+    // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
+
+    /// A distinct, addressable entity loaded via the multi-entity API — the model-body
+    /// ids it owns (more than one for a multi-body file loaded under one entity id) and
+    /// its own visibility flag.
+    private struct Entity {
+        var bodyIDs: [String]
+        var isVisible: Bool = true
+    }
+
+    /// Every currently loaded entity, keyed by entity id — whether loaded via
+    /// `load(_:id:transform:)`/`loadFile(from:id:progress:)`, or via the deprecated
+    /// single-shape `loadFile(from:progress:)`/`loadShape(_:id:)` (each of which registers
+    /// its own resulting body/bodies here too, one entity per body, since it has no
+    /// caller-supplied grouping concept of its own). This is the single source of truth
+    /// `remove(id:)`/`loadedShapes`/`visibility`/etc. read — kept accurate regardless of
+    /// which loading API was used is what makes mixing the two APIs in one session safe
+    /// (e.g. `loadShape(_:id:"model")` then `load(_:id:"model")` correctly replaces the
+    /// first load rather than leaving a stray duplicate body).
+    private var entities: [String: Entity] = [:]
+
     public init(configuration: _ViewportConfiguration = .init(
         rotationStyle: .turntable,
         displayMode: .shadedWithEdges,
@@ -130,6 +180,12 @@ public final class CADViewportService {
     /// Pass an `ImportProgress` (e.g. `ImportProgressClosure`) to observe
     /// STEP/IGES import progress and/or request cooperative cancellation;
     /// cancellation surfaces as `ImportError.cancelled`.
+    ///
+    /// Single-shape convenience: replaces every model body, including any loaded via
+    /// `load(_:id:transform:)`/`loadFile(from:id:progress:)` — registers each resulting
+    /// body as its own entity (see `entities`' own documentation), so `remove(id:)`/
+    /// `loadedShapes`/etc. see it too.
+    @available(*, deprecated, message: "Use loadFile(from:id:progress:) instead for multi-entity loading. This overload still replaces every model body.")
     @discardableResult
     public func loadFile(
         from url: URL,
@@ -149,10 +205,15 @@ public final class CADViewportService {
             throw CADViewportError.emptyFile
         }
 
-        self.loadedShape = firstShape
+        resetAllModelState()
+        self.legacyLoadedShape = firstShape
+        self.legacyLoadedShapeEntityID = result.bodies.first?.id
         self.modelBodies = result.bodies
         self.metadata = result.metadata
         rebuildIdentity(bodies: result.bodies, shapes: result.shapes)
+        for body in result.bodies {
+            entities[body.id] = Entity(bodyIDs: [body.id])
+        }
         clearSelection()
         rebuildBodies()
         focusOnLoadedShape()
@@ -161,8 +222,16 @@ public final class CADViewportService {
 
     /// Display an in-memory shape (e.g. one constructed programmatically via
     /// OCCTSwift) without going through the file loader.
+    ///
+    /// Single-shape convenience: replaces every model body, including any loaded via
+    /// `load(_:id:transform:)`/`loadFile(from:id:progress:)` — registers as its own entity
+    /// under `id` (see `entities`' own documentation), so `remove(id:)`/`loadedShapes`/etc.
+    /// see it too.
+    @available(*, deprecated, message: "Use load(_:id:transform:) instead for multi-entity loading. This overload still replaces every model body.")
     public func loadShape(_ shape: OCCTSwift.Shape, id: String = "model") {
-        self.loadedShape = shape
+        resetAllModelState()
+        self.legacyLoadedShape = shape
+        self.legacyLoadedShapeEntityID = id
         let graph = BRepGraph(shape: shape)
         let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
             shape,
@@ -189,9 +258,30 @@ public final class CADViewportService {
         if let vertexTable {
             self.vertexIdentity[id] = vertexTable
         }
+        entities[id] = Entity(bodyIDs: [id])
         clearSelection()
         rebuildBodies()
         focusOnLoadedShape()
+    }
+
+    /// Full clean slate for every collection a load populates, including `entities` and
+    /// `legacyLoadedShape`. Used by the deprecated single-shape `loadFile(from:progress:)`/
+    /// `loadShape(_:id:)` (which replace *everything*, not just their own prior load) and by
+    /// `removeAll()`. Centralising this is what makes it safe to mix the deprecated and
+    /// multi-entity APIs in one session — e.g. `loadShape(_:id:"model")` followed by
+    /// `load(_:id:"model")` correctly replaces the first load's body rather than leaving a
+    /// stray duplicate, since both register in the same `entities` registry.
+    private func resetAllModelState() {
+        modelBodies.removeAll()
+        metadata.removeAll()
+        bodyShapes.removeAll()
+        bodyGraphs.removeAll()
+        faceIdentity.removeAll()
+        edgeIdentity.removeAll()
+        vertexIdentity.removeAll()
+        entities.removeAll()
+        legacyLoadedShape = nil
+        legacyLoadedShapeEntityID = nil
     }
 
     /// Builds a `BRepGraph` and `FaceIdentityTable` per body from a multi-body file load's
@@ -298,6 +388,7 @@ public final class CADViewportService {
 
     /// Convenience for callers that have file `Data` rather than a URL
     /// (e.g. `.fileImporter` results, drag-and-drop on iOS).
+    @available(*, deprecated, message: "Use loadFromData(_:filename:id:progress:) instead for multi-entity loading. This overload still replaces every model body.")
     @discardableResult
     public func loadFromData(
         _ data: Data,
@@ -311,8 +402,282 @@ public final class CADViewportService {
         return try await loadFile(from: tempURL, progress: progress)
     }
 
+    /// Multi-entity counterpart to the deprecated `loadFromData(_:filename:progress:)`: for
+    /// callers that have file `Data` rather than a URL. See `loadFile(from:id:progress:)`.
+    ///
+    /// `id` is required — a defaulted one would make calls like
+    /// `loadFromData(data, filename: "part.step")` ambiguous against the deprecated
+    /// 3-argument overload, since both would become callable with identical arguments.
+    @discardableResult
+    public func loadFromData(
+        _ data: Data,
+        filename: String,
+        id: String,
+        progress: ImportProgress? = nil
+    ) async throws -> String {
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempURL = tempDir.appendingPathComponent(filename)
+        try data.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        return try await loadFile(from: tempURL, id: id, progress: progress)
+    }
+
+    // MARK: - Multi-body / Assembly
+
+    /// Load a CAD file as a distinct, addressable entity. Unlike the deprecated
+    /// `loadFile(from:progress:)`, this adds to the currently loaded entities rather than
+    /// replacing them, so multiple parts (or several of an assembly's occurrences) can
+    /// coexist. A file with several bodies (e.g. a multibody STEP/STL) registers one
+    /// entity whose body ids are `"<id>-0"`, `"<id>-1"`, etc.
+    ///
+    /// Camera is **not** auto-focused (unlike the deprecated single-shape overload) — call
+    /// `focus(on:)` once you've loaded what should be visible.
+    ///
+    /// - Parameters:
+    ///   - url: file URL on disk.
+    ///   - id: the entity id. Loading again under an id already in use replaces that entity.
+    ///   - progress: optional `ImportProgress` (e.g. `ImportProgressClosure`).
+    /// - Returns: `id`, echoed back.
+    /// - Throws: `CADViewportError.unsupportedFormat(ext)` for an unsupported extension;
+    ///   `CADViewportError.emptyFile` if the file contains no geometry;
+    ///   `ImportError.cancelled` if cancelled via `progress`.
+    @discardableResult
+    public func loadFile(
+        from url: URL,
+        id: String,
+        progress: ImportProgress? = nil
+    ) async throws -> String {
+        let ext = url.pathExtension.lowercased()
+        let format: CADFileFormat
+        switch ext {
+        case "step", "stp": format = .step
+        case "stl": format = .stl
+        case "brep": format = .brep
+        default: throw CADViewportError.unsupportedFormat(ext)
+        }
+
+        let result = try await CADFileLoader.load(from: url, format: format, progress: progress)
+        guard !result.bodies.isEmpty else {
+            throw CADViewportError.emptyFile
+        }
+
+        remove(id: id)
+
+        var bodyIDs: [String] = []
+        for (index, originalBody) in result.bodies.enumerated() {
+            let bodyID = "\(id)-\(index)"
+            if let originalMeta = result.metadata[originalBody.id] {
+                metadata[bodyID] = originalMeta
+            }
+            var body = originalBody
+            body.id = bodyID
+            modelBodies.append(body)
+            bodyIDs.append(bodyID)
+        }
+        addIdentity(bodyIDs: bodyIDs, shapes: result.bodies.count == result.shapes.count ? result.shapes : [])
+
+        entities[id] = Entity(bodyIDs: bodyIDs)
+        rebuildBodies()
+        return id
+    }
+
+    /// Display an in-memory shape as a distinct, addressable entity. Unlike the deprecated
+    /// `loadShape(_:id:)`, this adds to the currently loaded entities rather than replacing
+    /// them.
+    ///
+    /// Pass `transform` to place the shape before tessellating it — e.g. an assembly
+    /// occurrence's location. Matches `OCCTSwift.Shape.transformed(matrix:)`'s layout: a
+    /// rigid 12-element affine matrix, `[r00,r01,r02, r10,r11,r12, r20,r21,r22, tx,ty,tz]`
+    /// (row-major 3x3 rotation, then translation). `nil` (default) leaves the shape as-is.
+    ///
+    /// Camera is **not** auto-focused — call `focus(on:)` once you've loaded what should
+    /// be visible.
+    ///
+    /// - Returns: `id`, echoed back.
+    @discardableResult
+    public func load(_ shape: OCCTSwift.Shape, id: String, transform: [Double]? = nil) -> String {
+        let placedShape = transform.flatMap { shape.transformed(matrix: $0) } ?? shape
+
+        remove(id: id)
+
+        let graph = BRepGraph(shape: placedShape)
+        let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
+            placedShape,
+            id: id,
+            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
+            graph: graph
+        )
+
+        guard let body else {
+            entities[id] = Entity(bodyIDs: [])
+            rebuildBodies()
+            return id
+        }
+
+        modelBodies.append(body)
+        if let meta {
+            metadata[id] = meta
+        }
+        bodyShapes[id] = placedShape
+        if let graph {
+            bodyGraphs[id] = graph
+        }
+        if let faceTable {
+            faceIdentity[id] = faceTable
+        }
+        if let edgeTable {
+            edgeIdentity[id] = edgeTable
+        }
+        if let vertexTable {
+            vertexIdentity[id] = vertexTable
+        }
+
+        entities[id] = Entity(bodyIDs: [id])
+        rebuildBodies()
+        return id
+    }
+
+    /// Additive counterpart to `rebuildIdentity`: builds identity for one entity's bodies
+    /// and merges it in with whatever other entities' identity already exists, rather than
+    /// wiping everything (which is what `rebuildIdentity`, used by the deprecated
+    /// single-entity `loadFile(from:progress:)`, does). Same defensive count-mismatch
+    /// guard as `rebuildIdentity`: if `bodyIDs` and `shapes` don't correspond positionally
+    /// (or an empty `shapes` was passed because the caller already detected a mismatch),
+    /// identity is skipped for this batch — the bodies still display, without
+    /// durable-identity picks, rather than risk pairing a body with the wrong shape.
+    private func addIdentity(bodyIDs: [String], shapes: [OCCTSwift.Shape]) {
+        guard bodyIDs.count == shapes.count else { return }
+        for (index, bodyID) in bodyIDs.enumerated() {
+            let shape = shapes[index]
+            bodyShapes[bodyID] = shape
+            let graph = BRepGraph(shape: shape)
+            if let graph {
+                bodyGraphs[bodyID] = graph
+            }
+            faceIdentity[bodyID] = Self.makeFaceIdentityTable(shape: shape, graph: graph)
+            edgeIdentity[bodyID] = Self.makeEdgeIdentityTable(shape: shape, graph: graph)
+            vertexIdentity[bodyID] = Self.makeVertexIdentityTable(shape: shape, graph: graph)
+        }
+    }
+
+    /// Removes a loaded entity (and its bodies) from the viewport. No-op if `id` isn't
+    /// currently loaded. Clears the current selection if it referenced this entity.
+    ///
+    /// Also invalidates `legacyLoadedShape` if it was this entity's — otherwise the
+    /// deprecated `loadedShape`/`shapeBounds` could keep reporting a shape whose entity was
+    /// just removed or replaced (e.g. `loadShape(box, id: "model")` followed by
+    /// `load(otherBox, id: "model")`, which calls this internally before adding the new
+    /// body under the same id).
+    public func remove(id: String) {
+        guard let entity = entities.removeValue(forKey: id) else { return }
+        if legacyLoadedShapeEntityID == id {
+            legacyLoadedShape = nil
+            legacyLoadedShapeEntityID = nil
+        }
+        removeBodies(entity.bodyIDs)
+        clearSelectionIfNeeded(afterRemoving: entity.bodyIDs)
+    }
+
+    /// Removes every currently loaded entity — whichever API loaded it (see `entities`'
+    /// own documentation) — and clears the deprecated single-shape `loadedShape`'s legacy
+    /// backing too. A full clean slate, equivalent to a fresh `CADViewportService`.
+    public func removeAll() {
+        let hadSelection = selected != nil
+        resetAllModelState()
+        if hadSelection {
+            clearSelection() // also calls rebuildBodies()
+        } else {
+            rebuildBodies()
+        }
+    }
+
+    private func removeBodies(_ bodyIDs: [String]) {
+        for bodyID in bodyIDs {
+            modelBodies.removeAll { $0.id == bodyID }
+            metadata.removeValue(forKey: bodyID)
+            bodyShapes.removeValue(forKey: bodyID)
+            bodyGraphs.removeValue(forKey: bodyID)
+            faceIdentity.removeValue(forKey: bodyID)
+            edgeIdentity.removeValue(forKey: bodyID)
+            vertexIdentity.removeValue(forKey: bodyID)
+        }
+    }
+
+    private func clearSelectionIfNeeded(afterRemoving removedBodyIDs: [String]) {
+        if let selectedBodyID = selected?.bodyID, removedBodyIDs.contains(selectedBodyID) {
+            clearSelection() // also calls rebuildBodies()
+        } else {
+            rebuildBodies()
+        }
+    }
+
+    /// Currently loaded entities' shapes, keyed by entity id. Only reflects entities
+    /// loaded via the multi-entity API — see `entities`' own documentation.
+    public var loadedShapes: [String: OCCTSwift.Shape] {
+        entities.keys.reduce(into: [:]) { result, id in
+            result[id] = shape(id: id)
+        }
+    }
+
+    /// The shape a loaded entity owns — its first body's shape, for a multi-body entity
+    /// (e.g. a multibody file loaded under one id). `nil` if `id` isn't currently loaded,
+    /// or its shape failed to tessellate.
+    public func shape(id: String) -> OCCTSwift.Shape? {
+        guard let entity = entities[id], let firstBodyID = entity.bodyIDs.first else { return nil }
+        return bodyShapes[firstBodyID]
+    }
+
+    /// The entity id that owns a body id (e.g. from a pick's `PickedEntity.bodyID`), or
+    /// `nil` if the body isn't tracked by the multi-entity API.
+    public func entityID(forBodyID bodyID: String) -> String? {
+        entities.first { $0.value.bodyIDs.contains(bodyID) }?.key
+    }
+
+    /// Per-entity visibility. Reading returns every loaded entity's current flag; setting
+    /// applies each given key's value (a key not currently loaded is ignored).
+    public var visibility: [String: Bool] {
+        get { entities.mapValues(\.isVisible) }
+        set {
+            for (id, isVisible) in newValue where entities[id] != nil {
+                setVisible(isVisible, forEntity: id)
+            }
+        }
+    }
+
+    private func setVisible(_ isVisible: Bool, forEntity id: String) {
+        guard var entity = entities[id] else { return }
+        entity.isVisible = isVisible
+        entities[id] = entity
+        for i in modelBodies.indices where entity.bodyIDs.contains(modelBodies[i].id) {
+            modelBodies[i].isVisible = isVisible
+        }
+        rebuildBodies()
+    }
+
+    /// Frames the camera on the union of bounds of the given entities. No-op if none of
+    /// `ids` are currently loaded.
+    public func focus(on ids: [String]) {
+        let shapes = ids.compactMap { shape(id: $0) }
+        guard !shapes.isEmpty else { return }
+
+        var minPt = SIMD3<Double>(repeating: .infinity)
+        var maxPt = SIMD3<Double>(repeating: -.infinity)
+        for s in shapes {
+            let b = s.bounds
+            minPt = SIMD3(min(minPt.x, b.min.x), min(minPt.y, b.min.y), min(minPt.z, b.min.z))
+            maxPt = SIMD3(max(maxPt.x, b.max.x), max(maxPt.y, b.max.y), max(maxPt.z, b.max.z))
+        }
+        let center = SIMD3<Float>(
+            Float((minPt.x + maxPt.x) / 2),
+            Float((minPt.y + maxPt.y) / 2),
+            Float((minPt.z + maxPt.z) / 2)
+        )
+        let maxDim = Float(max(maxPt.x - minPt.x, max(maxPt.y - minPt.y, maxPt.z - minPt.z)))
+        controller.focusOn(point: center, distance: maxDim * 2.5)
+    }
+
     private func focusOnLoadedShape() {
-        guard let shape = loadedShape else { return }
+        guard let shape = currentSingleShape else { return }
         let b = shape.bounds
         let center = SIMD3<Float>(
             Float((b.min.x + b.max.x) / 2),
@@ -334,7 +699,7 @@ public final class CADViewportService {
     }
 
     public var shapeBounds: ShapeBounds? {
-        guard let shape = loadedShape else { return nil }
+        guard let shape = currentSingleShape else { return nil }
         let b = shape.bounds
         return ShapeBounds(
             minX: b.min.x, minY: b.min.y, minZ: b.min.z,
