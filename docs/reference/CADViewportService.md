@@ -384,8 +384,10 @@ viewport.setScalarField(nil, forBody: "candidate")   // clears it
 
 `scalarFieldLegend` reports the most recently set (still-active) field's label, unit,
 range, and evenly-spaced color stops — read it to render a color bar with real tick
-labels; an unlabelled heatmap is decorative. Removing/replacing a body clears its field
-(and the legend, if it was that body's field being reported).
+labels; an unlabelled heatmap is decorative. Removing/replacing a body clears its field; if
+that body was the one the legend was tracking, it falls back to another still-active field
+on a different body if one exists, and only goes `nil` once no body has an active field at
+all.
 
 ```swift
 if let legend = viewport.scalarFieldLegend {
@@ -494,17 +496,20 @@ viewport.removeClippingPlane(id: planeID)
   a face/edge/vertex pick's own world-space position is tested against every enabled plane
   (up to the first 4, matching the renderer's own limit) before it resolves, so clipped-away
   geometry can't be picked and the surfaces a clip reveals pick normally.
-- Capping doesn't automatically re-apply across a reload of an entity under the same id —
-  re-set `clippingPlanes = clippingPlanes` (a documented no-op refresh) to reapply it to
-  newly-loaded geometry.
+- **Reloading picks up an already-active cap immediately** — every loader (`load`/
+  `loadFile`/`loadShape`/`loadFromData`, including reloading under an id already in use)
+  ends by syncing clipping state, so newly-loaded (or freshly-reloaded) geometry never
+  displays uncut or hollow-without-a-cap until some unrelated later clipping-plane call
+  happens to trigger the sync.
 - An independently active `setComparison(_:)` comparison on the same entity survives a
-  clipping-plane change (and vice versa) — each properly undoes and reapplies around the
-  other's recompute, rather than one silently discarding the other's mutation.
+  clipping-plane change (and vice versa) for `.overlay`/`.sideBySide`/`.wipe` — each properly
+  undoes and reapplies around the other's recompute, rather than one silently discarding the
+  other's mutation. `.deviation` doesn't need this treatment at all: it has no body for
+  clipping to preserve, and is left untouched by any clipping-plane change (a genuine re-cut
+  of the candidate's own body still correctly clears its scalar field, independently).
 
 See [`ClippingPlane`](#clippingplane) for the full type definition, and `CLAUDE.md`'s
-"Things to be careful about" for the bounds-based heuristics `cappedShape` uses and the
-narrower interaction with an active `.overlay`/`.sideBySide`/`.wipe` comparison on the same
-entity.
+"Things to be careful about" for the bounds-based heuristics `cappedShape` uses.
 
 ### Escalation
 

@@ -1698,9 +1698,13 @@ struct SmokeTests {
         #expect(stillCappedBounds.min.x > -0.5, "the cap must still be applied after the comparison clears")
     }
 
+    /// Regression for #44: reloading an entity under an id already in use goes through the
+    /// same loader (`load(_:id:transform:)` calls `remove(id:)` then re-adds), which now ends
+    /// in `updateCapSurfaces()` rather than a bare `rebuildBodies()` — so a reload picks up an
+    /// already-active cap immediately too, with no manual `clippingPlanes` re-set needed.
     @MainActor
-    @Test("Reloading a different shape under the same id doesn't auto-refresh an active cap, but re-setting clippingPlanes does")
-    func clippingCapRefreshesAfterManualReloadTrigger() {
+    @Test("Reloading a different shape under the same id picks up an already-active cap immediately")
+    func clippingCapRefreshesAutomaticallyOnReload() {
         guard let bigBox = Shape.box(width: 4, height: 4, depth: 4),
               let smallBox = Shape.box(width: 2, height: 2, depth: 2) else {
             Issue.record("Shape.box returned nil")
@@ -1716,17 +1720,14 @@ struct SmokeTests {
         }
         #expect(abs(firstCapped.max.x - 2) < 0.01, "bigBox's half-width")
 
-        service.load(smallBox, id: "part") // reload under the same id, different geometry
-
-        // Documented behavior: capping (like setScalarField) doesn't automatically re-apply
-        // across a reload. Re-setting clippingPlanes is the documented way to refresh it.
-        service.clippingPlanes = service.clippingPlanes
+        // Reload under the same id, different geometry — no further clipping-plane call.
+        service.load(smallBox, id: "part")
 
         guard let secondCapped = service.shape(id: "part")?.bounds else {
             Issue.record("expected capped bounds after reload")
             return
         }
-        #expect(abs(secondCapped.max.x - 1) < 0.01, "capping should reflect the NEW (small) box, not the stale cached one")
+        #expect(abs(secondCapped.max.x - 1) < 0.01, "capping should reflect the NEW (small) box, immediately, not the stale cached one")
     }
 
     /// Regression for an adversarial-review finding on this PR: `updateCapSurfaces` used to
@@ -2018,7 +2019,7 @@ struct SmokeTests {
     /// stayed stuck forever unless something else (a fresh `present(_:)`, entity removal,
     /// `removeAll()`) happened to resolve it later.
     @MainActor
-    @Test("Cancelling the awaiting task resolves the pending escalation rather than leaking it")
+    @Test("Cancelling the awaiting task resolves the pending escalation rather than leaking it", .timeLimit(.minutes(1)))
     func cancellingAwaitingTaskResolvesEscalation() async {
         guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
             Issue.record("Shape.box returned nil")
@@ -2117,5 +2118,266 @@ struct SmokeTests {
 
         service.respond(.deferred)
         _ = await responseTask.value
+    }
+
+    // MARK: - Independent-review fixes (#43-#47)
+
+    /// Regression for #43: `scalarFieldLegend` only ever tracked the single most-recently-set
+    /// body, going `nil` when THAT body's field cleared even if a different, still-loaded
+    /// body has an active field currently painted — contradicting the property's own doc
+    /// ("nil if no field is currently set on any body").
+    @MainActor
+    @Test("scalarFieldLegend falls back to another still-active field rather than going nil")
+    func scalarFieldLegendFallsBackToAnotherActiveField() {
+        guard let boxA = Shape.box(width: 4, height: 4, depth: 4), let boxB = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(boxA, id: "A")
+        service.load(boxB, id: "B")
+
+        let fieldA = ScalarField(domain: .perFace, values: [1, 2, 3, 4, 5, 6], colorMap: .viridis, label: "A field")
+        let fieldB = ScalarField(domain: .perFace, values: [1, 2, 3, 4, 5, 6], colorMap: .viridis, label: "B field")
+        service.setScalarField(fieldA, forBody: "A")
+        service.setScalarField(fieldB, forBody: "B")
+        #expect(service.scalarFieldLegend?.label == "B field")
+
+        // Clearing the NON-last body's field must not disturb the legend at all.
+        service.setScalarField(nil, forBody: "A")
+        #expect(service.scalarFieldLegend?.label == "B field")
+
+        // Re-establish both, then clear the LAST-set body's field — must fall back to the
+        // other still-active field rather than going nil.
+        service.setScalarField(fieldA, forBody: "A")
+        service.setScalarField(fieldB, forBody: "B")
+        service.setScalarField(nil, forBody: "B")
+        #expect(service.scalarFieldLegend?.label == "A field", "must fall back to A's still-active field, not go nil")
+
+        // Clearing the LAST remaining field must still correctly go nil.
+        service.setScalarField(nil, forBody: "A")
+        #expect(service.scalarFieldLegend == nil)
+    }
+
+    /// Regression for #44: none of CADKit's loading entry points applied already-active
+    /// clipping planes to newly-loaded geometry — a new entity displayed uncut, or cut but
+    /// hollow with no cap surface, until some unrelated later clip-plane change happened to
+    /// trigger the sync.
+    @MainActor
+    @Test("A newly-loaded entity picks up an already-active cap-enabled clipping plane immediately")
+    func newlyLoadedEntityPicksUpActiveCapImmediately() {
+        guard let firstBox = Shape.box(width: 4, height: 4, depth: 4), let secondBox = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(firstBox, id: "first")
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+
+        guard let firstCapped = service.shape(id: "first")?.bounds else {
+            Issue.record("expected capped bounds")
+            return
+        }
+        #expect(firstCapped.min.x > -0.5, "sanity check: the first body is already capped")
+
+        // Load a SECOND entity while the plane is already active — no further clipping call.
+        service.load(secondBox, id: "second")
+
+        guard let secondCapped = service.shape(id: "second")?.bounds else {
+            Issue.record("expected capped bounds for the newly-loaded entity")
+            return
+        }
+        #expect(secondCapped.min.x > -0.5, "the newly-loaded entity should be capped immediately, without any further clipping-plane call")
+    }
+
+    @MainActor
+    @Test("The deprecated single-shape loadShape(_:id:) also picks up an already-active cap immediately")
+    func deprecatedLoadShapePicksUpActiveCapImmediately() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+
+        service.loadShape(box, id: "model")
+
+        guard let capped = service.shape(id: "model")?.bounds else {
+            Issue.record("expected capped bounds")
+            return
+        }
+        #expect(capped.min.x > -0.5, "loadShape should pick up the already-active cap immediately")
+    }
+
+    /// Regression for #45: `updateCapSurfaces()` unconditionally restored-then-recapped every
+    /// body already tracked as capped on every call, even when that body's relationship to
+    /// every plane hadn't changed at all — minting a fresh `BRepGraph`/`GraphUID` (and a
+    /// wasted double retessellation) on every unrelated clipping-plane mutation anywhere in
+    /// the scene, not just ones that actually affected that body.
+    @MainActor
+    @Test("An actively-capped body's durable identity and generation survive an unrelated clipping-plane change")
+    func activelyCappedBodyIdentitySurvivesUnrelatedUpdate() {
+        guard let boxA = Shape.box(width: 4, height: 4, depth: 4), let boxB = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(boxA, id: "A")
+        service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
+
+        guard let pickBefore = service.resolveFacePick(bodyID: "A", triangleIndex: 0), let uidBefore = pickBefore.uid else {
+            Issue.record("expected a durable identity pick on the capped body")
+            return
+        }
+        let generationBefore = service.modelBodies.first { $0.id == "A" }?.generation
+
+        // An unrelated clipping-plane mutation: a second entity loaded far away, plus a second
+        // plane positioned so far below both bodies (kept region z >= -100) that it clips
+        // neither away — a plane whose kept half-space simply happens to contain everything,
+        // rather than one that would (as any half-space plane far from the geometry it
+        // doesn't pass through does on ONE side) hide the whole body instead of leaving it
+        // untouched.
+        service.load(boxB, id: "B", transform: [
+            1, 0, 0,
+            0, 1, 0,
+            0, 0, 1,
+            100, 0, 0,
+        ])
+        service.addClippingPlane(origin: SIMD3(0, 0, -100), normal: SIMD3(0, 0, 1), showCapSurface: true)
+
+        let generationAfter = service.modelBodies.first { $0.id == "A" }?.generation
+        #expect(generationAfter == generationBefore, "A's cap outcome hasn't changed at all — it must not be rebuilt")
+
+        guard let pickAfter = service.resolveFacePick(bodyID: "A", triangleIndex: 0), let uidAfter = pickAfter.uid else {
+            Issue.record("expected a durable identity pick on the capped body after the unrelated update")
+            return
+        }
+        #expect(uidAfter == uidBefore, "an actively-capped body's durable identity must survive an unrelated clipping-plane change")
+    }
+
+    /// Regression for #46 — the most serious finding in this batch: an active `.deviation`
+    /// comparison was silently destroyed by ANY unrelated clipping-plane mutation anywhere in
+    /// the scene (even one touching no cap planes at all), because `updateCapSurfaces()`
+    /// routed `.deviation` through the same destructive undo-then-reapply cycle as the
+    /// body-mutating modes, but `.deviation`'s "undo" (`setScalarField(nil, forBody:)`) has no
+    /// corresponding restore. `comparison?.mode` kept reporting `.deviation` as active even
+    /// though the candidate's scalar field had actually been silently cleared.
+    @MainActor
+    @Test("An active .deviation comparison survives an unrelated clipping-plane mutation")
+    func deviationComparisonSurvivesUnrelatedClippingMutation() {
+        guard let mesh = Shape.box(width: 4, height: 4, depth: 4), let solid = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(mesh, id: "reference")
+        service.load(solid, id: "candidate")
+
+        service.setScalarField(
+            ScalarField(domain: .perFace, values: [1, 2, 3, 4, 5, 6], colorMap: .viridis, label: "deviation"),
+            forBody: "candidate"
+        )
+        service.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .deviation))
+        #expect(service.scalarField(forBody: "candidate") != nil)
+
+        // Unrelated clipping-plane mutation — doesn't touch reference/candidate, and isn't
+        // even a capping plane; syncClippingPlanes() calls updateCapSurfaces() regardless.
+        service.addClippingPlane(origin: SIMD3(0, 0, 100), normal: SIMD3(0, 0, 1), showCapSurface: false)
+
+        #expect(service.comparison?.mode == .deviation, "the comparison must still report as active")
+        #expect(service.scalarField(forBody: "candidate") != nil, "the deviation field must survive an unrelated clipping-plane change")
+    }
+
+    /// Regression for #47: `present(_:)`'s task-cancellation fix (from an earlier review round
+    /// on #33) resolved `.deferred` unconditionally from its `onCancel` hop, with no way to
+    /// tell whether the escalation it was originally about was still the one pending. A STALE
+    /// cancellation hop, delayed enough that a newer `present(_:)` call had already legitimately
+    /// superseded the one being cancelled, would wrongly resolve the NEWER, still-pending
+    /// escalation instead — silently delivering a wrong (but plausible-looking) answer to
+    /// whoever was awaiting it, with no crash or hang to signal anything went wrong.
+    ///
+    /// This exercises the REAL end-to-end cancellation pathway (confirms it doesn't crash or
+    /// hang, and that everything still resolves correctly under real `Task` scheduling), but
+    /// an adversarial review found it does NOT actually force the specific stale-ordering race
+    /// it's named for: `present(_:)`'s own `onCancel` hop reliably finishes before a
+    /// newly-spawned superseding `present(_:)` task gets a turn on the same `@MainActor`
+    /// serial executor, so this test would pass identically with or without the id-check fix.
+    /// `respondIfStillPendingIgnoresSupersededRequestID` below forces the exact scenario
+    /// deterministically instead, by calling the guard directly rather than depending on
+    /// scheduling timing — that's the test that actually proves the fix.
+    @MainActor
+    @Test("A stale cancellation for an already-superseded escalation doesn't resolve a newer pending one", .timeLimit(.minutes(1)))
+    func staleCancellationDoesNotResolveNewerEscalation() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let requestA = EscalationRequest(id: "A", entities: [entity], question: "A?")
+        let taskA = Task { @MainActor in await service.present(requestA) }
+        await Task.yield()
+        #expect(service.pendingEscalation?.id == "A")
+
+        taskA.cancel() // enqueues an onCancel hop for A, but doesn't necessarily run it yet
+
+        // Before that stale hop runs, a NEW request legitimately supersedes A.
+        let requestB = EscalationRequest(id: "B", entities: [entity], question: "B?")
+        let taskB = Task { @MainActor in await service.present(requestB) }
+        await Task.yield()
+        #expect(service.pendingEscalation?.id == "B", "B should now be the pending escalation")
+
+        let responseA = await taskA.value
+        #expect(responseA == .deferred, "A resolves deferred, superseded by B's present(_:) call")
+
+        // Give A's stale onCancel hop every chance to run, if it hasn't already.
+        await Task.yield()
+        await Task.yield()
+        await Task.yield()
+
+        #expect(service.pendingEscalation?.id == "B", "B must still be pending — a stale cancellation for A must not resolve B")
+
+        service.respond(.chose(candidateID: "yes"))
+        let responseB = await taskB.value
+        #expect(responseB == .chose(candidateID: "yes"), "B must resolve with its own real answer, not a stale .deferred bleeding over from A's cancellation")
+    }
+
+    /// Deterministic counterpart to the test above — forces the EXACT stale-hop-after-
+    /// supersession scenario directly (via the `internal` `respondIfStillPending`, exposed
+    /// for exactly this reason) rather than hoping `Task` cancellation happens to interleave
+    /// in the right order, which the scheduling-based test above was found NOT to reliably
+    /// force. This is the test that actually proves #47's fix does something.
+    @MainActor
+    @Test("respondIfStillPending is a no-op for a request id that's already been superseded")
+    func respondIfStillPendingIgnoresSupersededRequestID() async {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let entity = makeFacePick(bodyID: "box") else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let requestA = EscalationRequest(id: "A", entities: [entity], question: "A?")
+        let taskA = Task { @MainActor in await service.present(requestA) }
+        await Task.yield()
+        #expect(service.pendingEscalation?.id == "A")
+
+        // B legitimately supersedes A: present's own guard resolves A .deferred and installs B.
+        let requestB = EscalationRequest(id: "B", entities: [entity], question: "B?")
+        let taskB = Task { @MainActor in await service.present(requestB) }
+        await Task.yield()
+        #expect(service.pendingEscalation?.id == "B")
+        let responseA = await taskA.value
+        #expect(responseA == .deferred)
+
+        // Directly simulate A's cancellation hop firing AFTER it's already been superseded —
+        // exactly what present(_:)'s onCancel would produce if it ran late.
+        service.respondIfStillPending("A", with: .deferred)
+        #expect(service.pendingEscalation?.id == "B", "a stale hop for the already-superseded A must not touch B")
+
+        service.respond(.chose(candidateID: "yes"))
+        let responseB = await taskB.value
+        #expect(responseB == .chose(candidateID: "yes"), "B must resolve with its own real answer")
     }
 }

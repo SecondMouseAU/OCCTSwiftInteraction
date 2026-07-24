@@ -387,8 +387,10 @@ if let legend = viewport.scalarFieldLegend {
 }
 ```
 
-`scalarFieldLegend` reports the most recently set field (across whichever body it's on);
-`scalarField(forBody:)` reads any particular body's field directly.
+`scalarFieldLegend` reports the most recently set field (across whichever body it's on),
+falling back to another still-active field on a different body if that one is cleared —
+only going `nil` once no body has an active field at all; `scalarField(forBody:)` reads any
+particular body's field directly.
 
 **Performance:** rebuilding a body's triangle styles scales linearly with triangle count.
 Measured on this machine: a single body with 25,132 triangles took ~4.3ms per
@@ -493,10 +495,12 @@ pick pass doesn't do this itself, so clipped-away geometry never steals a pick.
 viewport.removeClippingPlane(id: planeID)   // clears just that one; clippingPlanes = [] clears all
 ```
 
-**Reload behavior:** capping doesn't automatically re-apply when you reload an entity under
-an id that was previously capped (mirrors `setScalarField` not surviving a reload either —
-same "caller re-applies" contract). Re-set `clippingPlanes = clippingPlanes` to force a
-refresh without changing anything.
+**Reload behavior:** capping DOES automatically re-apply when you reload an entity (even
+under an id already in use) — every loader ends by syncing clipping state, so the new
+geometry is clipped/capped immediately, with no further clipping-plane call needed. A
+`ScalarField` set via `setScalarField(_:forBody:)` is different: it does NOT survive a
+reload (or a genuine re-cut from capping) — its ordinals are tied to the specific
+tessellation they were computed against, so the caller re-applies it after.
 
 ## 12. Escalation: asking a bounded question about geometry (optional)
 

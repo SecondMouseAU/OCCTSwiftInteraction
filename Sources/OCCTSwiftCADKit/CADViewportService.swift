@@ -145,9 +145,20 @@ public final class CADViewportService {
     private var scalarFields: [String: ScalarField] = [:]
 
     /// The body id `scalarFieldLegend` reports on — the most recent `setScalarField(_:forBody:)`
-    /// call that set a non-nil field. `nil` once that body's field is cleared or the body
-    /// itself is removed/reloaded.
+    /// call that set a non-nil field. When THAT body's field is cleared or removed, falls
+    /// back to another still-active entry in `scalarFields` (via `dropLastScalarFieldBodyID`)
+    /// rather than going `nil` outright — `nil` only once `scalarFields` is entirely empty.
     private var lastScalarFieldBodyID: String?
+
+    /// Clears `lastScalarFieldBodyID` if it currently points at `bodyID`, falling back to
+    /// another remaining entry in `scalarFields` (an arbitrary choice among ties — dictionary
+    /// order isn't meaningful) rather than unconditionally going `nil`. Callers must remove
+    /// `bodyID` from `scalarFields` BEFORE calling this, so a fallback never re-selects the
+    /// very body whose field is being cleared.
+    private func dropLastScalarFieldBodyID(ifCurrently bodyID: String) {
+        guard lastScalarFieldBodyID == bodyID else { return }
+        lastScalarFieldBodyID = scalarFields.keys.first
+    }
 
     // MARK: - Comparison
 
@@ -279,7 +290,7 @@ public final class CADViewportService {
             entities[body.id] = Entity(bodyIDs: [body.id])
         }
         clearSelection()
-        rebuildBodies()
+        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
         focusOnLoadedShape()
         return firstShape
     }
@@ -324,7 +335,7 @@ public final class CADViewportService {
         }
         entities[id] = Entity(bodyIDs: [id])
         clearSelection()
-        rebuildBodies()
+        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
         focusOnLoadedShape()
     }
 
@@ -550,7 +561,7 @@ public final class CADViewportService {
         addIdentity(bodyIDs: bodyIDs, shapes: result.bodies.count == result.shapes.count ? result.shapes : [])
 
         entities[id] = Entity(bodyIDs: bodyIDs)
-        rebuildBodies()
+        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
         return id
     }
 
@@ -583,7 +594,7 @@ public final class CADViewportService {
 
         guard let body else {
             entities[id] = Entity(bodyIDs: [])
-            rebuildBodies()
+            updateCapSurfaces() // no-op for capping (nothing new to cut), but keeps this path consistent
             return id
         }
 
@@ -606,7 +617,7 @@ public final class CADViewportService {
         }
 
         entities[id] = Entity(bodyIDs: [id])
-        rebuildBodies()
+        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
         return id
     }
 
@@ -676,9 +687,7 @@ public final class CADViewportService {
             edgeIdentity.removeValue(forKey: bodyID)
             vertexIdentity.removeValue(forKey: bodyID)
             scalarFields.removeValue(forKey: bodyID)
-            if lastScalarFieldBodyID == bodyID {
-                lastScalarFieldBodyID = nil
-            }
+            dropLastScalarFieldBodyID(ifCurrently: bodyID)
             clippingSourceShapes.removeValue(forKey: bodyID)
             clippingCapBackup.removeValue(forKey: bodyID)
         }
@@ -795,9 +804,7 @@ public final class CADViewportService {
     public func setScalarField(_ field: ScalarField?, forBody id: String) {
         guard let field else {
             scalarFields.removeValue(forKey: id)
-            if lastScalarFieldBodyID == id {
-                lastScalarFieldBodyID = nil
-            }
+            dropLastScalarFieldBodyID(ifCurrently: id)
             applyTriangleStyles(nil, forBody: id)
             return
         }
@@ -1238,6 +1245,22 @@ public final class CADViewportService {
         case fullyClipped
     }
 
+    /// Whether an active `ComparisonView`'s mode mutates bodies in a way `updateCapSurfaces`
+    /// needs to undo-and-reapply around its own recompute. `.overlay`/`.sideBySide`/`.wipe`
+    /// all mutate `modelBodies` directly; `.deviation` doesn't — it's a marker over a
+    /// `ScalarField` the caller manages via `setScalarField(_:forBody:)`, independent of
+    /// anything `updateCapSurfaces` touches. Treating `.deviation` as "nothing to preserve"
+    /// (rather than routing it through `undoComparison`'s destructive
+    /// `setScalarField(nil, forBody:)` "undo", which has no corresponding restore in
+    /// `applyComparison`) is what keeps an active deviation heatmap from being silently wiped
+    /// by a clipping-plane change that has nothing to do with it — see the fix for #46.
+    private func comparisonNeedsBodyPreservation(_ comparison: ComparisonView) -> Bool {
+        switch comparison.mode {
+        case .overlay, .sideBySide, .wipe: return true
+        case .deviation: return false
+        }
+    }
+
     /// Rebuilds bodies actually intersected by the currently enabled `showCapSurface` planes,
     /// so a clipped solid shows real material at the cut instead of looking hollow.
     /// `OCCTSwiftViewport` has no shader-level capping (confirmed: no capping/stencil logic
@@ -1245,71 +1268,85 @@ public final class CADViewportService {
     /// genuine B-Rep split (`OCCTSwift.Shape.split(atPlane:normal:)`) and retessellation per
     /// affected body, not a cheap GPU trick. `showCapSurface: false` planes still clip (via
     /// `syncClippingPlanes`'s GPU path above) but stay hollow and don't hit this cost — and
-    /// nor does a body no enabled cap plane actually touches (`CapOutcome.unchanged`).
+    /// nor does a body no enabled cap plane actually touches, OR a body that's already
+    /// showing exactly the cap outcome it should (see the `.capped` case below — #45's fix):
+    /// only a body whose outcome ACTUALLY changes since the last call goes through
+    /// `replaceBody` (a fresh `BRepGraph`/`generation`, and — per #43/#45 — a durable
+    /// `GraphUID` any caller was holding for it stops resolving). An earlier version
+    /// unconditionally restored-then-recapped every body already in `clippingCapBackup` on
+    /// every call, so an actively-capped body whose relationship to every plane hadn't
+    /// changed at all still got two full retessellations (and a fresh, unresolvable
+    /// `GraphUID`) every time ANY unrelated clipping-plane mutation happened anywhere in the
+    /// scene.
     ///
-    /// Always restores every body `clippingCapBackup` remembers before recomputing, so
-    /// repeated calls (a scrubbed `sectionSweep`, or `setComparison`'s own undo step
-    /// re-triggering this to keep an active cap alive across a comparison change) never
-    /// compound cuts from a previous call — mirrors `undoComparison`'s restore-before-reapply
-    /// pattern for the same reason. Restoring re-tessellates from `clippingSourceShapes` via
-    /// `replaceBody` — the SAME path capping itself uses — rather than just resetting
-    /// `modelBodies`, so `bodyShapes`/the identity tables/`metadata` all end up consistent
-    /// with the restored (pristine) geometry too, not left pointing at the capped one.
+    /// Considers the union of every body already tracked in `clippingCapBackup` (so one that
+    /// no longer needs capping gets restored) and every currently loaded body (so a body
+    /// that's newly in range of a plane — including one just loaded, per issue #44's fix in
+    /// the loaders — gets capped for the first time), rather than the previous two-pass
+    /// "restore everything, then re-cap everything" structure.
     ///
-    /// Also undoes, then re-applies, an independently active `comparison` around its own
-    /// restore/recompute — without this, a `.overlay`/`.sideBySide`/`.wipe` mutation on a
-    /// body this method also touches would be silently discarded (color/transform reset, or
-    /// wipe-filtering undone) the moment an UNRELATED clipping-plane change ran, since this
-    /// method's own backup only knows about capping, not about `comparisonBackup`.
-    /// `setComparison`/`pruneComparison` clear `self.comparison` before calling this
-    /// themselves specifically so this logic is a no-op when THEY are the ones driving the
-    /// comparison change (avoiding a redundant undo/reapply of a comparison this method
-    /// didn't initiate).
+    /// Also undoes, then re-applies, an independently active BODY-MUTATING `comparison`
+    /// (`comparisonNeedsBodyPreservation`) around its own restore/recompute — without this, a
+    /// `.overlay`/`.sideBySide`/`.wipe` mutation on a body this method also touches would be
+    /// silently discarded (color/transform reset, or wipe-filtering undone) the moment an
+    /// UNRELATED clipping-plane change ran, since this method's own backup only knows about
+    /// capping, not about `comparisonBackup`. `setComparison`/`pruneComparison` clear
+    /// `self.comparison` before calling this themselves specifically so this logic is a no-op
+    /// when THEY are the ones driving the comparison change (avoiding a redundant
+    /// undo/reapply of a comparison this method didn't initiate).
     private func updateCapSurfaces() {
-        let activeComparison = comparison
+        let activeComparison = comparison.flatMap { comparisonNeedsBodyPreservation($0) ? $0 : nil }
         if let activeComparison {
             undoComparison(activeComparison)
         }
 
-        for (bodyID, original) in clippingCapBackup {
-            guard let pristine = clippingSourceShapes[bodyID] else { continue }
-            _ = replaceBody(bodyID: bodyID, withCappedShape: pristine, preserving: original)
-        }
-        clippingCapBackup.removeAll()
-
         let capPlanes = clippingPlaneStorage.filter { $0.isEnabled && $0.showCapSurface }
-        if !capPlanes.isEmpty {
-            for bodyID in modelBodies.map(\.id) {
-                guard let sourceShape = clippingSourceShapes[bodyID] ?? bodyShapes[bodyID] else { continue }
-                clippingSourceShapes[bodyID] = sourceShape
-                guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
-                let original = modelBodies[index]
 
-                switch cappedShape(sourceShape, cutBy: capPlanes) {
-                case .unchanged:
+        var bodyIDsToConsider = Set(clippingCapBackup.keys)
+        bodyIDsToConsider.formUnion(modelBodies.map(\.id))
+
+        for bodyID in bodyIDsToConsider {
+            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
+            guard let sourceShape = clippingSourceShapes[bodyID] ?? bodyShapes[bodyID] else { continue }
+            clippingSourceShapes[bodyID] = sourceShape
+
+            let wasCapped = clippingCapBackup[bodyID] != nil
+            let outcome: CapOutcome = capPlanes.isEmpty ? .unchanged : cappedShape(sourceShape, cutBy: capPlanes)
+
+            switch outcome {
+            case .unchanged:
+                guard wasCapped, let original = clippingCapBackup[bodyID] else { continue }
+                _ = replaceBody(bodyID: bodyID, withCappedShape: sourceShape, preserving: original)
+                clippingCapBackup.removeValue(forKey: bodyID)
+
+            case .fullyClipped:
+                // Every cap plane's kept region excludes this body entirely.
+                if !wasCapped {
+                    clippingCapBackup[bodyID] = modelBodies[index]
+                }
+                modelBodies[index].isVisible = false
+
+            case .capped(let capped):
+                // Skip the retessellation entirely when this body is already showing exactly
+                // this outcome — visibly (not left hidden by a since-reverted full clip,
+                // which always needs a real transition back to visible regardless of bounds).
+                if wasCapped, modelBodies[index].isVisible,
+                   let currentlyDisplayed = bodyShapes[bodyID],
+                   boundsPracticallyEqual(capped, currentlyDisplayed) {
                     continue
-                case .fullyClipped:
-                    // Every cap plane's kept region excludes this body entirely.
-                    clippingCapBackup[bodyID] = original
-                    modelBodies[index].isVisible = false
-                case .capped(let capped):
-                    clippingCapBackup[bodyID] = original
-                    if !replaceBody(bodyID: bodyID, withCappedShape: capped, preserving: original) {
-                        // Retessellation failed — leave the original in place rather than show nothing.
-                        modelBodies[index] = original
-                        clippingCapBackup.removeValue(forKey: bodyID)
-                    }
+                }
+                let original = wasCapped ? (clippingCapBackup[bodyID] ?? modelBodies[index]) : modelBodies[index]
+                clippingCapBackup[bodyID] = original
+                if !replaceBody(bodyID: bodyID, withCappedShape: capped, preserving: original) {
+                    // Retessellation failed — leave the original in place rather than show nothing.
+                    modelBodies[index] = original
+                    clippingCapBackup.removeValue(forKey: bodyID)
                 }
             }
         }
 
         if let activeComparison {
-            switch activeComparison.mode {
-            case .overlay, .sideBySide, .wipe:
-                backUpComparisonBodies(activeComparison)
-            case .deviation:
-                break
-            }
+            backUpComparisonBodies(activeComparison)
             applyComparison(activeComparison)
         }
         rebuildBodies()
@@ -1403,9 +1440,7 @@ public final class CADViewportService {
         if let edgeTable { edgeIdentity[bodyID] = edgeTable } else { edgeIdentity.removeValue(forKey: bodyID) }
         if let vertexTable { vertexIdentity[bodyID] = vertexTable } else { vertexIdentity.removeValue(forKey: bodyID) }
         scalarFields.removeValue(forKey: bodyID)
-        if lastScalarFieldBodyID == bodyID {
-            lastScalarFieldBodyID = nil
-        }
+        dropLastScalarFieldBodyID(ifCurrently: bodyID)
         return true
     }
 
@@ -1945,12 +1980,22 @@ public final class CADViewportService {
     /// against its own timeout — resolves `.deferred` on its own rather than leaving
     /// `pendingEscalation`/the continuation stuck forever with nothing left to cancel it.
     /// `withTaskCancellationHandler`'s `onCancel` isn't guaranteed to run on `MainActor`, so it
-    /// hops via an unstructured `Task` into `respond(_:)`, which is safe to call from there
-    /// even if that happens before `escalationContinuation` is set (`respond` just no-ops)
-    /// — `@MainActor`'s cooperative, non-preemptive scheduling means that hop can't actually
-    /// run until this method's own synchronous continuation-setup completes, so the ordering
-    /// that matters (`escalationContinuation` set before any cancellation response can fire)
-    /// always holds in practice.
+    /// hops via an unstructured `Task` into `respondIfStillPending(_:with:)`, which is safe to
+    /// call from there even if that happens before `escalationContinuation` is set (it just
+    /// no-ops) — `@MainActor`'s cooperative, non-preemptive scheduling means that hop can't
+    /// actually run until this method's own synchronous continuation-setup completes, so the
+    /// ordering that matters (`escalationContinuation` set before any cancellation response
+    /// can fire) always holds in practice.
+    ///
+    /// The `onCancel` hop captures `request.id`, not just "resolve whatever's pending" —
+    /// otherwise a STALE cancellation (this exact request already superseded by a newer
+    /// `present(_:)` call before the hop got a chance to run) would wrongly resolve the NEWER,
+    /// still-legitimately-pending request instead of being a no-op. Concretely: task A is
+    /// cancelled, its `onCancel` hop is merely enqueued (not yet run); before it runs, a
+    /// caller legitimately calls `present(requestB)`, which itself supersedes A (correctly,
+    /// via the `respond(.deferred)` above) and installs B's own continuation; THEN A's queued
+    /// hop finally executes — without the id check, it would silently resolve B as `.deferred`
+    /// even though nothing about B was ever cancelled.
     @discardableResult
     public func present(_ request: EscalationRequest) async -> EscalationResponse {
         if pendingEscalation != nil {
@@ -1973,13 +2018,14 @@ public final class CADViewportService {
             }
         }
 
+        let requestID = request.id
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 escalationContinuation = continuation
             }
         } onCancel: {
             Task { @MainActor in
-                self.respond(.deferred)
+                self.respondIfStillPending(requestID, with: .deferred)
             }
         }
     }
@@ -1991,6 +2037,28 @@ public final class CADViewportService {
         escalationContinuation = nil
         pendingEscalation = nil
         continuation.resume(returning: response)
+    }
+
+    /// Resolves the pending escalation only if it's still the one named by `requestID` —
+    /// guards against a STALE resolution (from `present(_:)`'s `onCancel` hop, which captures
+    /// a request id rather than running synchronously at the moment of cancellation) wrongly
+    /// terminating a newer, still-legitimately-pending escalation that has already superseded
+    /// the one actually being cancelled. Direct callers of `respond(_:)` (a SwiftUI action, an
+    /// agent) don't need this: they're always resolving whatever `pendingEscalation` currently
+    /// is, which is exactly what's on screen.
+    ///
+    /// `internal` rather than `private` — like `resolveFacePick`/`resolveEdgePick`/
+    /// `resolveVertexPick` — so a test can exercise the exact stale-hop scenario directly
+    /// (call this with a superseded id and assert it's a no-op) rather than only through
+    /// `present(_:)`'s real `Task` cancellation, whose `onCancel` hop and a superseding
+    /// `present(_:)` call both racing on the SAME `@MainActor` serial executor don't actually
+    /// force the "hop resolves after supersession" ordering this guards against — confirmed
+    /// empirically (a temporary probe) that a scheduling-only test of this passes identically
+    /// with or without the guard, since the hop always finishes before a newly-spawned
+    /// superseding `Task` gets a turn.
+    func respondIfStillPending(_ requestID: String, with response: EscalationResponse) {
+        guard pendingEscalation?.id == requestID else { return }
+        respond(response)
     }
 
     /// Convenience for "the human answered by picking geometry" — resolves with the CURRENT
