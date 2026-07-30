@@ -35,7 +35,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.15.0"),   // ≥1.15.0: TopologyGraph renamed to BRepGraph (OCCTSwift#333)
+        occtDep("OCCTSwift", from: "1.17.0"),   // ≥1.17.0: Pass 1a duplication/bug-fix audit (OCCTSwift#377/#380): continuity enum consolidation (source-compatible via deprecated aliases), Surface.drawMesh/evaluateGrid now return SurfaceGrid (not used here); ≥1.15.0: TopologyGraph renamed to BRepGraph (OCCTSwift#333)
         occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.7.0"),  // ≥1.7.0: ShapeLoader splits multibody into per-body entries (#21)
     ],
