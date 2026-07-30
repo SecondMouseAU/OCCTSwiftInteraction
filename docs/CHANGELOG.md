@@ -2,6 +2,14 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.6.2 (2026-07-30)
+
+**Repin OCCTSwift floor to 1.17.0.** Picks up Pass 1a of OCCTSwift's [#377/#380](https://github.com/SecondMouseAU/OCCTSwift/issues/377) duplication/bug-fix audit: nine duplicated continuity enums consolidated into two (source-compatible via deprecated-alias shims), several dedup cleanups, and edge-case bug fixes (arc-length failure sentinels, `Surface.normal` at singularities, `Curve2D.circle` at radius zero). One real API break — `Surface.drawMesh`/`evaluateGrid` now return a `SurfaceGrid` struct instead of `[[SIMD3<Double>]]` — is unused in this repo (grep-verified).
+
+Bumped to **PATCH** per the cohort SemVer policy: floor bump only, no new API surface, no behaviour change here.
+
+**Dep bump:** `OCCTSwift from: "1.15.0"` → `from: "1.17.0"`.
+
 ## v1.6.1 (2026-07-20)
 
 **Renamed `TopologyGraph` to `BRepGraph` throughout, matching OCCTSwift v1.15.0.** Closes [#45](https://github.com/SecondMouseAU/OCCTSwiftTools/issues/45).
