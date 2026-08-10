@@ -108,10 +108,14 @@ struct EdgeIdentityTableTests {
             return
         }
 
-        // Sanity check this is the same fixture shape as the face regression test: the raw face
-        // traversal double-counts the shared face, but the shape's own dedup edge/vertex maps
-        // must still agree with the original box.
-        #expect(compound.faces().count == 7)
+        // Sanity check this is the same fixture shape as the face regression test. As of
+        // OCCTSwift v2.0.0 (#541), Shape.faces() is itself deduplicated (6, matching
+        // subShapes(ofType: .face)), so it no longer double-counts the shared face the way the
+        // pre-2.0.0 raw traversal did; orientedFaces() (#614) is the new spelling of that old
+        // occurrence count (7). The shape's own dedup edge/vertex maps agree with the original
+        // box either way.
+        #expect(compound.faces().count == 6)
+        #expect(compound.orientedFaces().count == 7)
         #expect(compound.edgeCount == box.edgeCount)
         #expect(compound.vertexCount == box.vertexCount)
 

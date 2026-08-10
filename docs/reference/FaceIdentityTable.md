@@ -11,14 +11,26 @@ Maps a render-path face ordinal, the value stored in `ViewportBody.faceIndices` 
 
 ## Why it exists
 
-The mesher assigns `Mesh.Triangle.faceIndex` by walking faces with a raw, non-deduplicating
-`TopExp_Explorer` traversal, the same one `Shape.faces()` uses. `Shape.subShapes(ofType: .face)`
-and a `BRepGraph`'s node ordering both deduplicate instead: a face shared between two shells
-collapses to one entry there. The two enumerations agree on a clean single solid and silently
-diverge, shifting every later index, once a face is shared between shells. Resolving a face
-ordinal via `shape.subShapes(ofType: .face)[ordinal]` assumes they agree and can silently name the
-wrong face. `FaceIdentityTable` captures the correspondence directly at tessellation time instead
-of asking a consumer to reconstruct it from a mismatched enumeration.
+Before OCCTSwift v2.0.0, the mesher assigned `Mesh.Triangle.faceIndex` by walking faces with a
+raw, non-deduplicating `TopExp_Explorer` traversal, the same one `Shape.faces()` used.
+`Shape.subShapes(ofType: .face)` and a `BRepGraph`'s node ordering both deduplicated instead: a
+face shared between two shells collapsed to one entry there. The two enumerations agreed on a
+clean single solid and silently diverged, shifting every later index, once a face was shared
+between shells. Resolving a face ordinal via `shape.subShapes(ofType: .face)[ordinal]` assumed
+they agreed and could silently name the wrong face. `FaceIdentityTable` captures the
+correspondence directly at tessellation time instead of asking a consumer to reconstruct it from
+a mismatched enumeration.
+
+**As of OCCTSwift v2.0.0** ([#541](https://github.com/SecondMouseAU/OCCTSwift/issues/541) and
+[#613](https://github.com/SecondMouseAU/OCCTSwift/issues/613)), that specific divergence is closed
+upstream: `Shape.faces()` is itself now the deduplicated enumeration, and `Mesh.Triangle.faceIndex`
+moved onto that same enumeration in the same release. A shared face's two shell-local
+triangulations now carry the one index that names it, matching the single entry `Shape.faces()`
+returns for it. `FaceIdentityTable` needed no source change for the bump (it reads `Shape.faces()`
+dynamically, not a hardcoded traversal) and still earns its keep: it saves a consumer from
+re-walking `Shape.faces()` on every pick, and `GraphUID` resolution is an identity lookup
+(`graph.findNode(for:)`) that never assumed index correspondence with the graph's own node
+numbering to begin with.
 
 See also [EdgeIdentityTable](EdgeIdentityTable) and [VertexIdentityTable](VertexIdentityTable),
 which mirror this table for `ViewportBody.edgeIndices` / `vertexIndices`.

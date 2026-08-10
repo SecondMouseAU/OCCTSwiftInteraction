@@ -69,18 +69,30 @@ struct FaceIdentityTableTests {
         #expect(meta.faceIndices == metaViaOverload.faceIndices)
     }
 
-    /// Regression for issue #42: a face shared between two shells is one node in a
-    /// `BRepGraph` but appears once *per shell* in the render-path traversal
-    /// `Shape.faces()` uses — the very enumeration `FaceIdentityTable.shapes` is built from.
-    /// Build two shells from a box's faces that both include the identical face `Shape`
-    /// (same underlying `TopoDS_Face`, so `IsSame` holds), compound them, and verify:
-    ///   - the raw per-shell traversal counts the shared face twice (unlike the deduplicated
-    ///     `subShapes(ofType: .face)`, which is exactly the enumeration issue #42 says
-    ///     consumers wrongly assumed agreed with the render path),
-    ///   - both ordinals resolve, via the supplied graph, to the same node and the same
-    ///     `GraphUID`,
-    ///   - every ordinal's `table.shape(forOrdinal:)` resolves via `graph.findNode(for:)` to a
-    ///     non-nil node.
+    /// Regression for issue #42, updated for OCCTSwift v2.0.0 (issue #51). Originally, a face
+    /// shared between two shells was one node in a `BRepGraph` but appeared once *per shell* in
+    /// the render-path traversal `Shape.faces()` used, which is exactly why `FaceIdentityTable`
+    /// exists: to capture the correspondence directly rather than let a consumer assume the
+    /// render-path ordinal agrees with `subShapes(ofType: .face)`'s independently deduplicated
+    /// one.
+    ///
+    /// OCCTSwift v2.0.0 (#541/#613) closed that specific divergence upstream: `Shape.faces()` is
+    /// now itself the deduplicated enumeration, and `Mesh.Triangle.faceIndex` moved onto that
+    /// same enumeration in the same release, so the shared face's two shell-local triangulations
+    /// now carry one index, not two. `FaceIdentityTable` needed no source change for this (it
+    /// already reads `shape.faces()` dynamically rather than hardcoding an enumeration), but this
+    /// fixture's own expectations did. Build two shells from a box's faces that both include the
+    /// identical face `Shape` (same underlying `TopoDS_Face`, so `IsSame` holds), compound them,
+    /// and verify the new, collapsed contract end to end:
+    ///   - `Shape.faces()` and `subShapes(ofType: .face)` now agree (6, not the old 7 vs 6);
+    ///     `orientedFaces()` (#614) is the new spelling of the old occurrence count (7),
+    ///   - the identity table has exactly one ordinal per distinct face, each resolving through
+    ///     the supplied graph to a distinct node and a distinct `GraphUID` (there is nothing left
+    ///     for a consumer to collapse),
+    ///   - the render path collapsed the same way: the tessellated body's own `faceIndices`
+    ///     carry the same number of distinct values as the table has ordinals, proving the
+    ///     mesher's `Mesh.Triangle.faceIndex` and this table's `shape.faces()`-keyed ordinals
+    ///     stayed in lockstep across the version bump rather than drifting apart.
     @Test func t_sharedFaceBetweenShellsResolvesToOneGraphUID() {
         guard let box = Shape.box(width: 10, height: 10, depth: 10) else {
             Issue.record("Shape.box returned nil")
@@ -98,11 +110,13 @@ struct FaceIdentityTableTests {
             return
         }
 
-        // The render path's raw traversal visits the shared face once per shell (7 total),
-        // diverging from the deduplicated `subShapes(ofType: .face)` (6) it's easy to
-        // mistakenly assume it agrees with.
-        #expect(compound.faces().count == 7)
+        // Post-v2.0.0 (#541), Shape.faces() is itself the deduplicated enumeration, so it now
+        // agrees with subShapes(ofType: .face) instead of double-counting the shared face.
+        // orientedFaces() (#614) is the new spelling of the old occurrence-based count: shellA's
+        // 3 faces plus shellB's 4, the shared face counted once per shell, is still 7.
+        #expect(compound.faces().count == 6)
         #expect(compound.subShapes(ofType: .face).count == 6)
+        #expect(compound.orientedFaces().count == 7)
 
         guard let graph = BRepGraph(shape: compound) else {
             Issue.record("BRepGraph(shape:) returned nil")
@@ -117,14 +131,14 @@ struct FaceIdentityTableTests {
             return
         }
         #expect(body.faceIndices.count == meta.faceIndices.count)
-        #expect(table.shapes.count == 7, "shellA's 3 faces + shellB's 4 faces, shared face counted once per shell")
+        #expect(table.shapes.count == 6, "one ordinal per distinct face; the shared face no longer duplicates")
         guard let uids = table.uids else {
             Issue.record("expected UIDs when a graph was supplied")
             return
         }
         #expect(uids.count == table.shapes.count)
 
-        // Every ordinal must resolve back through the supplied graph.
+        // Every ordinal must resolve back through the supplied graph, to its own node.
         var nodes: [(kind: BRepGraph.NodeKind, index: Int)] = []
         for ordinal in 0..<table.shapes.count {
             guard let faceShape = table.shape(forOrdinal: ordinal) else {
@@ -137,25 +151,19 @@ struct FaceIdentityTableTests {
             }
             nodes.append(node)
         }
-        #expect(nodes.count == 7)
+        #expect(nodes.count == 6)
 
-        // Ordinal 0 (shellA's copy of the shared face) and ordinal 3 (shellB's copy,
-        // immediately after shellA's 3 faces) must collapse to the same graph node...
-        #expect(nodes[0].kind == nodes[3].kind)
-        #expect(nodes[0].index == nodes[3].index)
-        // ...and the same durable GraphUID.
-        guard let uid0 = table.uid(forOrdinal: 0), let uid3 = table.uid(forOrdinal: 3) else {
-            Issue.record("expected both shared-face ordinals to mint a GraphUID")
-            return
-        }
-        #expect(uid0 == uid3)
+        // Unlike pre-2.0.0, no two ordinals should collapse onto the same GraphUID anymore:
+        // there is only one ordinal per distinct face to begin with.
+        let allUIDs = (0..<table.shapes.count).compactMap { table.uid(forOrdinal: $0) }
+        #expect(allUIDs.count == table.shapes.count, "every ordinal must mint a GraphUID")
+        #expect(Set(allUIDs).count == allUIDs.count, "every ordinal should mint a distinct GraphUID")
 
-        // A sanity check that the equality above isn't vacuous: an unshared face's ordinal
-        // mints a different UID.
-        guard let uid1 = table.uid(forOrdinal: 1) else {
-            Issue.record("expected ordinal 1 to mint a GraphUID")
-            return
-        }
-        #expect(uid1 != uid0)
+        // The render path collapsed the same way: the tessellated body's distinct face indices
+        // match the table's ordinal count, proving the mesher's Mesh.Triangle.faceIndex and
+        // FaceIdentityTable's shape.faces()-keyed ordinals stayed in lockstep across the bump.
+        let distinctRenderFaceIndices = Set(body.faceIndices.map(Int.init))
+        #expect(distinctRenderFaceIndices.count == table.shapes.count,
+                "the shared face's two shell-local triangulations must carry the same faceIndex")
     }
 }
