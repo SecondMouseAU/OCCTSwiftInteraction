@@ -5,26 +5,34 @@
 
 import OCCTSwift
 
-/// Maps a render-path face ordinal — the value stored in `ViewportBody.faceIndices` /
-/// `CADBodyMetadata.faceIndices` — back to the `Shape` (and, when available, the durable
+/// Maps a render-path face ordinal (the value stored in `ViewportBody.faceIndices` /
+/// `CADBodyMetadata.faceIndices`) back to the `Shape` (and, when available, the durable
 /// `GraphUID`) it was tessellated from.
 ///
 /// Consumers have historically resolved a triangle's face ordinal via
-/// `shape.subShapes(ofType: .face)[ordinal]`. That assumes the render-path ordinal — which
-/// walks faces via the same raw, non-deduplicating `TopExp_Explorer` traversal `Shape.faces()`
-/// uses — lines up with `subShapes(ofType:)`'s deduplicated enumeration and with a
-/// `BRepGraph`'s own node ordering. All three agree on a single clean solid but diverge
-/// once a face is shared between two shells: the graph collapses it to one node,
-/// `subShapes(ofType:)` collapses it to one entry (shifting every later index), while the
-/// render path — and `Shape.faces()` — still visit it once per shell.
+/// `shape.subShapes(ofType: .face)[ordinal]`. Before OCCTSwift v2.0.0, that assumed the
+/// render-path ordinal, which walked faces via the same raw, non-deduplicating
+/// `TopExp_Explorer` traversal `Shape.faces()` used, lined up with `subShapes(ofType:)`'s
+/// independently deduplicated enumeration and with a `BRepGraph`'s own node ordering. All three
+/// agreed on a single clean solid but diverged once a face was shared between two shells: the
+/// graph collapsed it to one node, `subShapes(ofType:)` collapsed it to one entry (shifting every
+/// later index), while the render path and `Shape.faces()` still visited it once per shell.
 ///
-/// `FaceIdentityTable` captures the correspondence directly at tessellation time instead of
-/// asking a consumer to reconstruct it from a mismatched enumeration. See the durable identity
-/// cookbook (`topology-graph-uids.md`).
+/// OCCTSwift v2.0.0 (#541/#613) closed that specific divergence upstream: `Shape.faces()` is now
+/// itself the deduplicated enumeration, and `Mesh.Triangle.faceIndex` moved onto that same
+/// enumeration in the same release, so a shared face's two shell-local triangulations now carry
+/// one index, matching `Shape.faces()`'s one entry for it. `FaceIdentityTable` needed no source
+/// change for the bump (it already reads `shape.faces()` dynamically), and it still earns its
+/// keep: it captures the ordinal-to-`Shape`-to-`GraphUID` correspondence once at tessellation
+/// time rather than asking a consumer to re-walk `shape.faces()` per pick, and `GraphUID`
+/// resolution is an identity lookup (`graph.findNode(for:)`) that never assumed index
+/// correspondence with the graph's own node numbering in the first place.
+///
+/// See the durable identity cookbook (`topology-graph-uids.md`).
 public struct FaceIdentityTable: Sendable {
     /// Indexed by the ordinal stored in `ViewportBody.faceIndices` /
-    /// `CADBodyMetadata.faceIndices`. Built from `Shape.faces()` — the same traversal the
-    /// mesher uses to assign that ordinal — so `shapes[ordinal]` is always the exact face
+    /// `CADBodyMetadata.faceIndices`. Built from `Shape.faces()`, the same enumeration the
+    /// mesher uses to assign that ordinal, so `shapes[ordinal]` is always the exact face
     /// tessellated into the triangles carrying that ordinal.
     public let shapes: [Shape]
 

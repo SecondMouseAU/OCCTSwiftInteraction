@@ -72,7 +72,10 @@ struct VertexIdentityTableTests {
             return
         }
 
-        #expect(compound.faces().count == 7)
+        // As of OCCTSwift v2.0.0 (#541), Shape.faces() is itself deduplicated (6); the old
+        // per-shell occurrence count (7) is now orientedFaces() (#614).
+        #expect(compound.faces().count == 6)
+        #expect(compound.orientedFaces().count == 7)
         #expect(compound.vertexCount == box.vertexCount)
 
         guard let graph = BRepGraph(shape: compound) else {

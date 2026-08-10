@@ -266,10 +266,14 @@ public enum CADFileLoader {
 
     /// Overload of `shapeToBodyAndMetadata` that also emits a `FaceIdentityTable` mapping every
     /// ordinal in the returned metadata's `faceIndices` back to the `Shape` it was tessellated
-    /// from — and, when `graph` is supplied, to the durable `GraphUID` minted from that graph.
-    /// See issue #42 and `FaceIdentityTable`'s documentation for why this exists: a face ordinal
-    /// resolved via `shape.subShapes(ofType: .face)[ordinal]` silently misaligns once a face is
-    /// shared between two shells, and this captures the correspondence directly instead.
+    /// from, and, when `graph` is supplied, to the durable `GraphUID` minted from that graph.
+    /// See issue #42 and `FaceIdentityTable`'s documentation for why this exists: pre-OCCTSwift-2.0.0,
+    /// a face ordinal resolved via `shape.subShapes(ofType: .face)[ordinal]` silently misaligned
+    /// once a face was shared between two shells, and this captures the correspondence directly
+    /// instead of relying on two enumerations agreeing. OCCTSwift v2.0.0 (#541/#613) closed that
+    /// particular divergence upstream (see `makeFaceIdentityTable` below), but the table remains
+    /// the cheap, identity-correct path: no re-walk of `shape.faces()` per pick, and `GraphUID`
+    /// resolution needs `graph.findNode(for:)`'s identity match regardless of enumeration.
     ///
     /// Pass a `BRepGraph` built from this same `shape` to populate `FaceIdentityTable.uids`
     /// — minted via `graph.findNode(for:)` on each ordinal's face `Shape`, so `IsSame` semantics
@@ -451,11 +455,20 @@ public enum CADFileLoader {
         return (body, meta, faceIdentity, edgeIdentity, vertexIdentity)
     }
 
-    /// Builds a `FaceIdentityTable` from `shape.faces()` — the same raw, non-deduplicating
-    /// `TopExp_Explorer` traversal `OCCTShapeCreateMeshWithParams` uses to assign
-    /// `Mesh.Triangle.faceIndex` — so `shapes[ordinal]` always names the exact face tessellated
-    /// into the triangles carrying that ordinal, even when a face is shared between two shells
-    /// (where it appears once per shell here, but collapses to one node in `graph`).
+    /// Builds a `FaceIdentityTable` from `shape.faces()`, the same enumeration
+    /// `OCCTShapeCreateMeshWithParams` uses to assign `Mesh.Triangle.faceIndex`, so
+    /// `shapes[ordinal]` always names the exact face tessellated into the triangles carrying that
+    /// ordinal. As of OCCTSwift v2.0.0 (#541/#613) both sides moved together onto the same
+    /// deduplicated enumeration: a face shared between two shells is meshed once per owning
+    /// shell (each triangulation wound outward for its own owner) but both triangulations now
+    /// carry the one index that names the shared face, matching the single entry `shape.faces()`
+    /// now returns for it. Before v2.0.0, `shape.faces()` and the mesher's own walk were the
+    /// SAME raw, non-deduplicating `TopExp_Explorer` traversal (one entry per shell a shared face
+    /// belonged to), which is what motivated capturing this correspondence directly in the first
+    /// place (issue #42) rather than trusting `shape.subShapes(ofType: .face)`'s independently
+    /// deduplicated enumeration to agree with it. No source change was needed here for the bump:
+    /// this function already reads `shape.faces()` dynamically rather than hardcoding either
+    /// enumeration's shape.
     private static func makeFaceIdentityTable(from shape: Shape, graph: BRepGraph?) -> FaceIdentityTable {
         let faceShapes = shape.faces().compactMap { Shape.fromFace($0) }
         guard let graph else {

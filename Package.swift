@@ -35,7 +35,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.17.0"),   // ≥1.17.0: Pass 1a duplication/bug-fix audit (OCCTSwift#377/#380): continuity enum consolidation (source-compatible via deprecated aliases), Surface.drawMesh/evaluateGrid now return SurfaceGrid (not used here); ≥1.15.0: TopologyGraph renamed to BRepGraph (OCCTSwift#333)
+        occtDep("OCCTSwift", from: "2.0.0"),    // ≥2.0.0: correctness release (OCCTSwift#377/#669), OCCT absorbed to 8.0.1. 17 breaking changes (docs/SEMVER.md#v200); audited every call site in this repo against the full break table (issue #51). Shape.faces() and Mesh.Triangle.faceIndex both moved to the deduplicated enumeration together (#541/#613), which the FaceIdentityTable comments below described as a raw-vs-deduplicated split that no longer exists post-2.0.0 (comments updated, no logic change: makeFaceIdentityTable already reads shape.faces() dynamically rather than hardcoding the old enumeration). AAG / mass-property / continuity / PathParser surfaces are not reachable from this repo (grep-verified, zero hits); ≥1.17.0: Pass 1a duplication/bug-fix audit (OCCTSwift#377/#380): continuity enum consolidation (source-compatible via deprecated aliases), Surface.drawMesh/evaluateGrid now return SurfaceGrid (not used here); ≥1.15.0: TopologyGraph renamed to BRepGraph (OCCTSwift#333)
         occtDep("OCCTSwiftViewport", from: "1.1.23"),
         occtDep("OCCTSwiftIO", from: "1.7.0"),  // ≥1.7.0: ShapeLoader splits multibody into per-body entries (#21)
     ],
