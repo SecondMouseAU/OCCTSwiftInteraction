@@ -27,7 +27,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "1.17.0"),         // >=1.17.0: Pass 1a duplication/bug-fix audit (OCCTSwift#377/#380); still the current OCCT 8.0.0 GA cohort (stable through OCCT 8.1, due May 2027)
+        occtDep("OCCTSwift", from: "2.0.0"),          // >=2.0.0: correctness release (duplication audit #377 + five correctness clusters #669); 17 breaking Swift API changes, OCCT kernel 8.0.1 (+15 carried patches); see SEMVER.md#v200
         occtDep("OCCTSwiftViewport", from: "1.1.26"),  // batched/region GPU pick readback + controller-level pick access
         occtDep("OCCTSwiftTools", from: "1.6.1"),      // FaceIdentityTable/EdgeIdentityTable/VertexIdentityTable (durable identity)
         occtDep("OCCTSwiftAIS", from: "1.3.1"),        // SubShapeRef, topology-aware selection filters, area selection

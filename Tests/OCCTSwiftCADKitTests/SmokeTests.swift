@@ -65,12 +65,23 @@ struct SmokeTests {
         #expect(bounds.height == 5)
     }
 
-    /// Regression for #25: a face shared between two shells must resolve to the same
-    /// durable `GraphUID` from both shells' picks, even though each shell contributes its
-    /// own copy of the face to the non-deduplicating `faceIndex` ordinal (0 and 3 here,
-    /// mirroring the fixture in OCCTSwiftTools' `FaceIdentityTableTests`). Re-deriving the
-    /// face via `loadedShape.faces()[faceIndex]` alone has no way to know these two
-    /// ordinals name the same underlying `TopoDS_Face` — only the `uid` carries that.
+    /// Regression for #25, updated for OCCTSwift v2.0.0 (issue #54). Originally, a face shared
+    /// between two shells was one node in a `BRepGraph` but appeared once *per shell* in the
+    /// render-path traversal `faceIndex` used, which is exactly why `FaceIdentityTable`/`uid`
+    /// exist: to capture the correspondence directly rather than let a consumer assume the
+    /// render-path ordinal agrees with `subShapes(ofType: .face)`'s independently deduplicated
+    /// one.
+    ///
+    /// OCCTSwift v2.0.0 (#541/#613) closed that specific divergence upstream: `Shape.faces()` is
+    /// now itself the deduplicated enumeration, and `Mesh.Triangle.faceIndex` moved onto that
+    /// same enumeration in the same release (mirrors OCCTSwiftTools' own
+    /// `FaceIdentityTableTests` update for the identical fixture, issue #51). The shared face's
+    /// two shell-local triangulations now carry the *same* `faceIndex` (measured: both land on
+    /// ordinal 0, not 0 and 3 as they used to) rather than two different ones — so this test now
+    /// proves durable identity is still correct once the render path has already collapsed them:
+    /// every triangle landing on the shared face's ordinal, from either shell's contribution,
+    /// resolves to one `uid`, and a genuinely different face's ordinal still resolves to a
+    /// different one.
     @MainActor
     @Test("Durable identity: a face shared between two shells resolves to the same GraphUID from both picks")
     func sharedFaceBetweenShellsResolvesToSameUID() {
@@ -88,12 +99,18 @@ struct SmokeTests {
             Issue.record("failed to build the shared-face compound fixture")
             return
         }
-        #expect(compound.faces().count == 7)
+        // Post-v2.0.0, Shape.faces() is itself the deduplicated enumeration, so it now agrees
+        // with subShapes(ofType: .face) instead of double-counting the shared face (was 7 vs 6
+        // pre-2.0.0). orientedFaces() (#614) is the new spelling of the old occurrence count.
+        #expect(compound.faces().count == 6)
         #expect(compound.subShapes(ofType: .face).count == 6)
+        #expect(compound.orientedFaces().count == 7)
 
-        // Independently learn the triangle -> faceIndex mapping the mesher assigns, so we
-        // can pick triangles landing on the shared face's two copies (ordinals 0 and 3)
-        // without reaching into CADViewportService's private metadata.
+        // Independently learn the triangle -> faceIndex mapping the mesher assigns, so we can
+        // pick triangles landing on the shared face's ordinal without reaching into
+        // CADViewportService's private metadata. Since #613, both shells' triangulations of the
+        // shared face carry the identical faceIndex, so — unlike pre-2.0.0 — we need two
+        // *distinct triangle positions that both hold that same value*, not two different values.
         let (_, referenceMeta, _) = CADFileLoader.shapeToBodyMetadataAndIdentity(
             compound, id: "shared", color: SIMD4<Float>(1, 1, 1, 1)
         )
@@ -101,28 +118,34 @@ struct SmokeTests {
             Issue.record("shapeToBodyMetadataAndIdentity returned nil for the shared-face compound")
             return
         }
-        guard let triForOrdinal0 = referenceMeta.faceIndices.firstIndex(of: 0),
-              let triForOrdinal1 = referenceMeta.faceIndices.firstIndex(of: 1),
-              let triForOrdinal3 = referenceMeta.faceIndices.firstIndex(of: 3) else {
-            Issue.record("expected triangles landing on ordinals 0, 1 and 3")
+        let sharedOrdinal: Int32 = 0
+        let sharedPositions = referenceMeta.faceIndices.indices.filter { referenceMeta.faceIndices[$0] == sharedOrdinal }
+        guard sharedPositions.count >= 2,
+              let triForShellA = sharedPositions.first,
+              let triForShellB = sharedPositions.last,
+              triForShellA != triForShellB else {
+            Issue.record("expected at least two distinct triangle positions (one per shell) landing on the shared face's ordinal")
+            return
+        }
+        guard let triForDistinctFace = referenceMeta.faceIndices.firstIndex(where: { $0 != sharedOrdinal }) else {
+            Issue.record("expected at least one triangle landing on a non-shared face")
             return
         }
 
         let service = CADViewportService()
         service.loadShape(compound, id: "shared")
 
-        guard let pickA = service.resolveFacePick(bodyID: "shared", triangleIndex: triForOrdinal0) else {
-            Issue.record("resolveFacePick returned nil for ordinal 0's triangle")
+        guard let pickA = service.resolveFacePick(bodyID: "shared", triangleIndex: triForShellA) else {
+            Issue.record("resolveFacePick returned nil for the shared face's first triangulation")
             return
         }
-        guard let pickB = service.resolveFacePick(bodyID: "shared", triangleIndex: triForOrdinal3) else {
-            Issue.record("resolveFacePick returned nil for ordinal 3's triangle")
+        guard let pickB = service.resolveFacePick(bodyID: "shared", triangleIndex: triForShellB) else {
+            Issue.record("resolveFacePick returned nil for the shared face's second triangulation")
             return
         }
 
-        #expect(pickA.faceIndex == 0)
-        #expect(pickB.faceIndex == 3)
-        #expect(pickA.faceIndex != pickB.faceIndex)
+        #expect(pickA.faceIndex == Int(sharedOrdinal))
+        #expect(pickB.faceIndex == Int(sharedOrdinal))
 
         guard let uidA = pickA.uid, let uidB = pickB.uid else {
             Issue.record("expected both shared-face picks to carry a GraphUID")
@@ -130,14 +153,14 @@ struct SmokeTests {
         }
         #expect(uidA == uidB)
 
-        // Sanity check that the equality above isn't vacuous: an unshared face's pick
+        // Sanity check that the equality above isn't vacuous: a genuinely different face's pick
         // mints a different UID.
-        guard let pickUnshared = service.resolveFacePick(bodyID: "shared", triangleIndex: triForOrdinal1),
-              let uidUnshared = pickUnshared.uid else {
-            Issue.record("expected ordinal 1 to resolve with a GraphUID")
+        guard let pickDistinct = service.resolveFacePick(bodyID: "shared", triangleIndex: triForDistinctFace),
+              let uidDistinct = pickDistinct.uid else {
+            Issue.record("expected the distinct face's triangle to resolve with a GraphUID")
             return
         }
-        #expect(uidUnshared != uidA)
+        #expect(uidDistinct != uidA)
     }
 
     /// Regression for #25 review: `rebuildIdentity` is `loadFile`'s multi-body identity
@@ -149,6 +172,10 @@ struct SmokeTests {
     /// fixture, to prove the local reimplementation collapses the shared face to one
     /// `GraphUID` the same way. `metadata` is seeded directly since `loadFile` needs a real
     /// multi-body file on disk, which this package's tests don't ship.
+    ///
+    /// Updated for OCCTSwift v2.0.0 (issue #54): see `sharedFaceBetweenShellsResolvesToSameUID`
+    /// above for why the shared face's two triangulations are now found by *value*, not by two
+    /// different ordinals.
     @MainActor
     @Test("rebuildIdentity resolves durable identity correctly across multiple bodies")
     func rebuildIdentityMultiBodyResolvesDurableIdentity() {
@@ -179,9 +206,17 @@ struct SmokeTests {
             Issue.record("shapeToBodyAndMetadata returned nil building the multi-body fixture")
             return
         }
-        guard let triForOrdinal0 = compoundMeta.faceIndices.firstIndex(of: 0),
-              let triForOrdinal3 = compoundMeta.faceIndices.firstIndex(of: 3) else {
-            Issue.record("expected triangles landing on ordinals 0 and 3")
+        // Since OCCTSwift v2.0.0 (#541/#613), the shared face's two shell-local triangulations
+        // carry the identical faceIndex (see sharedFaceBetweenShellsResolvesToSameUID above for
+        // the measured mapping) — pick two distinct triangle positions that both hold ordinal 0,
+        // rather than two different ordinals (0 and 3, as pre-2.0.0).
+        let sharedOrdinal: Int32 = 0
+        let sharedPositions = compoundMeta.faceIndices.indices.filter { compoundMeta.faceIndices[$0] == sharedOrdinal }
+        guard sharedPositions.count >= 2,
+              let triForShellA = sharedPositions.first,
+              let triForShellB = sharedPositions.last,
+              triForShellA != triForShellB else {
+            Issue.record("expected at least two distinct triangle positions landing on the shared face's ordinal")
             return
         }
 
@@ -189,8 +224,8 @@ struct SmokeTests {
         service.metadata = ["multi-0": plainMeta, "multi-1": compoundMeta]
         service.rebuildIdentity(bodies: [plainBody, compoundBody], shapes: [plainBox, compound])
 
-        guard let pickA = service.resolveFacePick(bodyID: "multi-1", triangleIndex: triForOrdinal0),
-              let pickB = service.resolveFacePick(bodyID: "multi-1", triangleIndex: triForOrdinal3) else {
+        guard let pickA = service.resolveFacePick(bodyID: "multi-1", triangleIndex: triForShellA),
+              let pickB = service.resolveFacePick(bodyID: "multi-1", triangleIndex: triForShellB) else {
             Issue.record("resolveFacePick failed against rebuildIdentity's output")
             return
         }
