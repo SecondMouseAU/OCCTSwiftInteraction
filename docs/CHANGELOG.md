@@ -2,6 +2,14 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## v1.6.3 (2026-08-10)
+
+**Repin OCCTSwift floor to 2.0.0.** OCCTSwift's v2.0.0 ([`docs/SEMVER.md#v200`](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md#v200)) is a correctness major (Pass 1a/1b duplication+bug-fix audit, [#377](https://github.com/SecondMouseAU/OCCTSwift/issues/377)/[#669](https://github.com/SecondMouseAU/OCCTSwift/issues/669); OCCT absorbed to 8.0.1), 17 breaking API changes. A full audit of this repo's own `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable` and `shapeToBodyMetadataAndIdentities(...)` surface against the whole break table found one real thing: `Mesh.Triangle.faceIndex`, read in `CADFileLoader.swift` to build `FaceIdentityTable`, moved onto the same deduplicated `Shape.faces()` enumeration OCCTSwift's #541/#613 already put `Shape.faces()` itself on ([#642](https://github.com/SecondMouseAU/OCCTSwift/issues/642) generalizes this — both were the raw, non-deduplicating enumeration before, exactly why `FaceIdentityTable` existed per issue #42). `makeFaceIdentityTable()` needed no logic fix (it already calls `shape.faces()` dynamically, not a hardcoded enumeration), but its own doc comments, `FaceIdentityTable.swift`'s type docs, and `docs/reference/FaceIdentityTable.md` described the old, now-incorrect behaviour in the present tense; updated all three. Fixed a hardcoded pre-dedup face count (`compound.faces().count == 7`) in `FaceIdentityTableTests` (and the same fixture reused in `EdgeIdentityTableTests`/`VertexIdentityTableTests`), rewritten to check the new contract directly rather than just patching the number.
+
+Bumped to **PATCH** per the cohort SemVer policy: no production logic change, doc/test corrections plus the floor bump.
+
+**Dep bump:** `OCCTSwift from: "1.17.0"` → `from: "2.0.0"`.
+
 ## v1.6.2 (2026-07-30)
 
 **Repin OCCTSwift floor to 1.17.0.** Picks up Pass 1a of OCCTSwift's [#377/#380](https://github.com/SecondMouseAU/OCCTSwift/issues/377) duplication/bug-fix audit: nine duplicated continuity enums consolidated into two (source-compatible via deprecated-alias shims), several dedup cleanups, and edge-case bug fixes (arc-length failure sentinels, `Surface.normal` at singularities, `Curve2D.circle` at radius zero). One real API break — `Surface.drawMesh`/`evaluateGrid` now return a `SurfaceGrid` struct instead of `[[SIMD3<Double>]]` — is unused in this repo (grep-verified).
