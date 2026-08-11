@@ -373,10 +373,14 @@ public final class CADViewportService {
     /// identity-table overload — it owns the STL/IGES robust-reload fallback, which this
     /// package shouldn't reimplement just to get identity — so the table is built directly
     /// from `shape.faces()` instead of re-tessellating each body through
-    /// `shapeToBodyMetadataAndIdentity`. `shape.faces()` is the same non-deduplicating
-    /// traversal the mesher used to assign `CADBodyMetadata.faceIndices` in the first place
-    /// (see `FaceIdentityTable`'s own documentation), so ordinals line up without a second
-    /// tessellation pass.
+    /// `shapeToBodyMetadataAndIdentity`. Since OCCTSwift 2.0.0 (#541/#613), `shape.faces()`
+    /// is a 0-based, *deduplicated* enumeration (`TopExp::MapShapes`-backed), and
+    /// `Mesh.Triangle.faceIndex` — the value the mesher writes into
+    /// `CADBodyMetadata.faceIndices` — was converted onto that same deduplicated enumeration
+    /// in the same release. The two still name the identical ordinal for the identical
+    /// shape (see `FaceIdentityTable`'s own documentation), so ordinals still line up
+    /// without a second tessellation pass; only the underlying semantics moved, together,
+    /// from per-occurrence to per-distinct-face.
     ///
     /// Requires `bodies` and `shapes` to correspond positionally (`shapes[i]` is the shape
     /// `bodies[i]` was tessellated from) — true for `CADFileLoader.load(from:format:)`'s
