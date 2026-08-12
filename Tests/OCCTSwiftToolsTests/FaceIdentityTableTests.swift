@@ -1,7 +1,8 @@
-import Testing
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import Testing
+import simd
+
 @testable import OCCTSwiftTools
 
 @Suite("CADFileLoader.shapeToBodyMetadataAndIdentity / FaceIdentityTable")
@@ -103,8 +104,8 @@ struct FaceIdentityTableTests {
         let sharedFace = boxFaces[0]
 
         guard let shellA = Shape.shellFromFaces([sharedFace, boxFaces[1], boxFaces[2]]),
-              let shellB = Shape.shellFromFaces([sharedFace, boxFaces[3], boxFaces[4], boxFaces[5]]),
-              let compound = Shape.compound([shellA, shellB])
+            let shellB = Shape.shellFromFaces([sharedFace, boxFaces[3], boxFaces[4], boxFaces[5]]),
+            let compound = Shape.compound([shellA, shellB])
         else {
             Issue.record("failed to build the shared-face compound fixture")
             return
@@ -131,7 +132,9 @@ struct FaceIdentityTableTests {
             return
         }
         #expect(body.faceIndices.count == meta.faceIndices.count)
-        #expect(table.shapes.count == 6, "one ordinal per distinct face; the shared face no longer duplicates")
+        #expect(
+            table.shapes.count == 6,
+            "one ordinal per distinct face; the shared face no longer duplicates")
         guard let uids = table.uids else {
             Issue.record("expected UIDs when a graph was supplied")
             return
@@ -157,13 +160,15 @@ struct FaceIdentityTableTests {
         // there is only one ordinal per distinct face to begin with.
         let allUIDs = (0..<table.shapes.count).compactMap { table.uid(forOrdinal: $0) }
         #expect(allUIDs.count == table.shapes.count, "every ordinal must mint a GraphUID")
-        #expect(Set(allUIDs).count == allUIDs.count, "every ordinal should mint a distinct GraphUID")
+        #expect(
+            Set(allUIDs).count == allUIDs.count, "every ordinal should mint a distinct GraphUID")
 
         // The render path collapsed the same way: the tessellated body's distinct face indices
         // match the table's ordinal count, proving the mesher's Mesh.Triangle.faceIndex and
         // FaceIdentityTable's shape.faces()-keyed ordinals stayed in lockstep across the bump.
         let distinctRenderFaceIndices = Set(body.faceIndices.map(Int.init))
-        #expect(distinctRenderFaceIndices.count == table.shapes.count,
-                "the shared face's two shell-local triangulations must carry the same faceIndex")
+        #expect(
+            distinctRenderFaceIndices.count == table.shapes.count,
+            "the shared face's two shell-local triangulations must carry the same faceIndex")
     }
 }

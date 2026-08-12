@@ -1,17 +1,20 @@
-import Testing
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import Testing
+import simd
+
 @testable import OCCTSwiftTools
 
 @Suite("SurfaceConverter")
 struct SurfaceConverterTests {
 
     @Test func t_planeProducesTwoIsoparametricBodies() {
-        guard let plane = Surface.plane(
-            origin: SIMD3<Double>(0, 0, 0),
-            normal: SIMD3<Double>(0, 0, 1)
-        ) else {
+        guard
+            let plane = Surface.plane(
+                origin: SIMD3<Double>(0, 0, 0),
+                normal: SIMD3<Double>(0, 0, 1)
+            )
+        else {
             Issue.record("Surface.plane returned nil")
             return
         }
@@ -21,7 +24,7 @@ struct SurfaceConverterTests {
             vColor: SIMD4<Float>(0, 1, 0, 1),
             uLines: 4, vLines: 6
         )
-        // Plane is unbounded so OCCT may return empty grids — accept that, but if
+        // Plane is unbounded so OCCT may return empty grids; accept that, but if
         // bodies come back they must follow the -u / -v naming convention.
         for body in bodies {
             #expect(body.id == "grid-u" || body.id == "grid-v")
@@ -31,11 +34,13 @@ struct SurfaceConverterTests {
     }
 
     @Test func t_cylinderProducesBothIsoFamilies() {
-        guard let cyl = Surface.cylinder(
-            origin: SIMD3<Double>(0, 0, 0),
-            axis: SIMD3<Double>(0, 0, 1),
-            radius: 1
-        ) else {
+        guard
+            let cyl = Surface.cylinder(
+                origin: SIMD3<Double>(0, 0, 0),
+                axis: SIMD3<Double>(0, 0, 1),
+                radius: 1
+            )
+        else {
             Issue.record("Surface.cylinder returned nil")
             return
         }

@@ -3,7 +3,7 @@ type: repo
 title: OCCTSwiftTools
 resource: https://github.com/SecondMouseAU/OCCTSwiftTools
 tags: [cad, occt, bridge, viewport, converters, swift, kernel]
-description: Bridge layer between the OCCTSwift kernel and the OCCTSwiftViewport renderer — converts Shapes/curves/surfaces into ViewportBody and loads CAD files.
+description: Bridge layer between the OCCTSwift kernel and the OCCTSwiftViewport renderer; converts Shapes/curves/surfaces into ViewportBody and loads CAD files.
 timestamp: 2026-06-22
 ---
 
@@ -49,3 +49,4 @@ and OpenCASCADE upstream.
 - [Search before building](policies/search-before-building.md)
 - [Code structure](policies/code-structure.md)
 - [Issue labels and project-board tracking](policies/issue-tracking.md)
+- [Code style](policies/code-style.md)

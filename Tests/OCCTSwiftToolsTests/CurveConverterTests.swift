@@ -1,7 +1,8 @@
-import Testing
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import Testing
+import simd
+
 @testable import OCCTSwiftTools
 
 @Suite("CurveConverter")
@@ -21,17 +22,19 @@ struct CurveConverterTests {
         #expect(body.edges.count == 1, "single polyline for the circle")
         let polyline = body.edges[0]
         #expect(polyline.count >= 4, "drawAdaptive should sample the circle")
-        // Y must be exactly 0 — the converter projects 2D curves onto the XZ ground plane.
+        // Y must be exactly 0: the converter projects 2D curves onto the XZ ground plane.
         for p in polyline {
             #expect(p.y == 0)
         }
     }
 
     @Test func t_curve3DPreservesAllAxes() {
-        guard let segment = Curve3D.segment(
-            from: SIMD3<Double>(0, 0, 0),
-            to: SIMD3<Double>(1, 2, 3)
-        ) else {
+        guard
+            let segment = Curve3D.segment(
+                from: SIMD3<Double>(0, 0, 0),
+                to: SIMD3<Double>(1, 2, 3)
+            )
+        else {
             Issue.record("Curve3D.segment returned nil")
             return
         }

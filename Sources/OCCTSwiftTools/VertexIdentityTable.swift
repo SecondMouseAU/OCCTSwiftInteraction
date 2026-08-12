@@ -20,15 +20,17 @@ import OCCTSwift
 /// `graph.findNode(for:)` plus `graph.uid(ofNodeKind:index:)` resolution `FaceIdentityTable` already
 /// does for faces.
 public struct VertexIdentityTable: Sendable {
-    /// Indexed by the ordinal stored in `ViewportBody.vertexIndices`. Built from
-    /// `Shape.subShapes(ofType: .vertex)`, the same `TopTools_IndexedMapOfShape` traversal
-    /// `Shape.vertices()` / `Shape.vertex(at:)` use, so `shapes[ordinal]` is always the exact
-    /// vertex behind the pick point carrying that ordinal.
+    /// Indexed by the ordinal stored in `ViewportBody.vertexIndices`.
+    ///
+    /// Built from `Shape.subShapes(ofType: .vertex)`, the same `TopTools_IndexedMapOfShape`
+    /// traversal `Shape.vertices()` / `Shape.vertex(at:)` use, so `shapes[ordinal]` is always the
+    /// exact vertex behind the pick point carrying that ordinal.
     public let shapes: [Shape]
 
-    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was
-    /// built. `nil` when no graph was supplied. When present, an individual element is `nil`
-    /// only if that ordinal's vertex could not be resolved in the graph.
+    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was built.
+    ///
+    /// `nil` when no graph was supplied. When present, an individual element is `nil` only if
+    /// that ordinal's vertex could not be resolved in the graph.
     public let uids: [BRepGraph.GraphUID?]?
 
     public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil) {

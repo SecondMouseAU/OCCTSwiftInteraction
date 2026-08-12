@@ -1,7 +1,8 @@
-import Testing
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import Testing
+import simd
+
 @testable import OCCTSwiftTools
 
 @Suite("CADFileLoader.shapeToBodyMetadataAndIdentities / EdgeIdentityTable")
@@ -62,8 +63,8 @@ struct EdgeIdentityTableTests {
         let (bodyViaIdentities, metaViaIdentities, faceTableViaIdentities, edgeTable, vertexTable) =
             CADFileLoader.shapeToBodyMetadataAndIdentities(box, id: "box", color: color)
         guard let body, let meta, let bodyViaIdentity, let metaViaIdentity,
-              let bodyViaIdentities, let metaViaIdentities, let faceTableViaIdentity,
-              let faceTableViaIdentities, let edgeTable, let vertexTable
+            let bodyViaIdentities, let metaViaIdentities, let faceTableViaIdentity,
+            let faceTableViaIdentities, let edgeTable, let vertexTable
         else {
             Issue.record("all three entry points should succeed on a closed box")
             return
@@ -82,7 +83,9 @@ struct EdgeIdentityTableTests {
 
     /// Regression for issue #43: a face shared between two shells (as in
     /// `FaceIdentityTableTests.t_sharedFaceBetweenShellsResolvesToOneGraphUID`) also shares that
-    /// face's boundary edges between the two shells. Unlike faces, `Shape.edges()` is already
+    /// face's boundary edges between the two shells.
+    ///
+    /// Unlike faces, `Shape.edges()` is already
     /// built from a deduplicating `TopTools_IndexedMapOfShape` (confirmed against the
     /// OCCTBridge source: `OCCTShapeGetTotalEdgeCount` / `OCCTShapeGetEdgeAtIndex` and the bulk
     /// edge-polyline extractor behind `ViewportBody.edgeIndices` all build that same map), so the
@@ -101,8 +104,8 @@ struct EdgeIdentityTableTests {
         let sharedFace = boxFaces[0]
 
         guard let shellA = Shape.shellFromFaces([sharedFace, boxFaces[1], boxFaces[2]]),
-              let shellB = Shape.shellFromFaces([sharedFace, boxFaces[3], boxFaces[4], boxFaces[5]]),
-              let compound = Shape.compound([shellA, shellB])
+            let shellB = Shape.shellFromFaces([sharedFace, boxFaces[3], boxFaces[4], boxFaces[5]]),
+            let compound = Shape.compound([shellA, shellB])
         else {
             Issue.record("failed to build the shared-face compound fixture")
             return
@@ -128,11 +131,13 @@ struct EdgeIdentityTableTests {
             compound, id: "shared", color: SIMD4<Float>(1, 1, 1, 1), graph: graph
         )
         guard let body, let meta, let edgeTable else {
-            Issue.record("shapeToBodyMetadataAndIdentities returned nil for the shared-face compound")
+            Issue.record(
+                "shapeToBodyMetadataAndIdentities returned nil for the shared-face compound")
             return
         }
         #expect(body.faceIndices.count == meta.faceIndices.count)
-        #expect(edgeTable.shapes.count == box.edgeCount, "no double-counting despite the shared face")
+        #expect(
+            edgeTable.shapes.count == box.edgeCount, "no double-counting despite the shared face")
         guard let uids = edgeTable.uids else {
             Issue.record("expected UIDs when a graph was supplied")
             return
@@ -160,9 +165,13 @@ struct EdgeIdentityTableTests {
                 continue
             }
             let expectedUID = graph.uid(ofNodeKind: Int(kind.rawValue), index: index)
-            guard let ordinal = (0..<edgeTable.shapes.count).first(where: {
-                graph.findNode(for: edgeTable.shapes[$0]).map { $0.kind == kind && $0.index == index } ?? false
-            }) else {
+            guard
+                let ordinal = (0..<edgeTable.shapes.count).first(where: {
+                    graph.findNode(for: edgeTable.shapes[$0]).map {
+                        $0.kind == kind && $0.index == index
+                    } ?? false
+                })
+            else {
                 Issue.record("no table ordinal resolves to the shared edge's graph node")
                 continue
             }

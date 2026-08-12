@@ -1,7 +1,8 @@
-import Testing
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import Testing
+import simd
+
 @testable import OCCTSwiftTools
 
 @Suite("CADFileLoader.shapeToBodyMetadataAndIdentities / VertexIdentityTable")
@@ -65,8 +66,8 @@ struct VertexIdentityTableTests {
         let sharedFace = boxFaces[0]
 
         guard let shellA = Shape.shellFromFaces([sharedFace, boxFaces[1], boxFaces[2]]),
-              let shellB = Shape.shellFromFaces([sharedFace, boxFaces[3], boxFaces[4], boxFaces[5]]),
-              let compound = Shape.compound([shellA, shellB])
+            let shellB = Shape.shellFromFaces([sharedFace, boxFaces[3], boxFaces[4], boxFaces[5]]),
+            let compound = Shape.compound([shellA, shellB])
         else {
             Issue.record("failed to build the shared-face compound fixture")
             return
@@ -87,11 +88,14 @@ struct VertexIdentityTableTests {
             compound, id: "shared", color: SIMD4<Float>(1, 1, 1, 1), graph: graph
         )
         guard let body, let meta, let vertexTable else {
-            Issue.record("shapeToBodyMetadataAndIdentities returned nil for the shared-face compound")
+            Issue.record(
+                "shapeToBodyMetadataAndIdentities returned nil for the shared-face compound")
             return
         }
         #expect(body.faceIndices.count == meta.faceIndices.count)
-        #expect(vertexTable.shapes.count == box.vertexCount, "no double-counting despite the shared face")
+        #expect(
+            vertexTable.shapes.count == box.vertexCount,
+            "no double-counting despite the shared face")
         guard let uids = vertexTable.uids else {
             Issue.record("expected UIDs when a graph was supplied")
             return
@@ -117,9 +121,13 @@ struct VertexIdentityTableTests {
                 continue
             }
             let expectedUID = graph.uid(ofNodeKind: Int(kind.rawValue), index: index)
-            guard let ordinal = (0..<vertexTable.shapes.count).first(where: {
-                graph.findNode(for: vertexTable.shapes[$0]).map { $0.kind == kind && $0.index == index } ?? false
-            }) else {
+            guard
+                let ordinal = (0..<vertexTable.shapes.count).first(where: {
+                    graph.findNode(for: vertexTable.shapes[$0]).map {
+                        $0.kind == kind && $0.index == index
+                    } ?? false
+                })
+            else {
                 Issue.record("no table ordinal resolves to the shared vertex's graph node")
                 continue
             }

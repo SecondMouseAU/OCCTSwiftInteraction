@@ -1,6 +1,7 @@
+import OCCTSwiftViewport
 import Testing
 import simd
-import OCCTSwiftViewport
+
 @testable import OCCTSwiftTools
 
 @Suite("BodyUtilities")
@@ -29,13 +30,15 @@ struct BodyUtilitiesTests {
         let original = BodyUtilities.makeMarkerSphere(
             at: .zero, radius: 1, id: "src", color: SIMD4<Float>(1, 1, 1, 1)
         )
-        let dx: Float = 10, dy: Float = -5, dz: Float = 2.5
+        let dx: Float = 10
+        let dy: Float = -5
+        let dz: Float = 2.5
         let shifted = BodyUtilities.offsetBody(original, dx: dx, dy: dy, dz: dz)
 
         #expect(shifted.vertexData.count == original.vertexData.count)
         // Verify position triplets shifted exactly; normals (channels 3..5) preserved.
         for i in stride(from: 0, to: original.vertexData.count, by: 6) {
-            #expect(shifted.vertexData[i]     == original.vertexData[i]     + dx)
+            #expect(shifted.vertexData[i] == original.vertexData[i] + dx)
             #expect(shifted.vertexData[i + 1] == original.vertexData[i + 1] + dy)
             #expect(shifted.vertexData[i + 2] == original.vertexData[i + 2] + dz)
             #expect(shifted.vertexData[i + 3] == original.vertexData[i + 3])
