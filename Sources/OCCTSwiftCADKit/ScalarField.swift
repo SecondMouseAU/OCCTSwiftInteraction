@@ -2,16 +2,18 @@ import Foundation
 import simd
 
 /// A scalar value per face or per triangle, painted over a body via
-/// `CADViewportService.setScalarField(_:forBody:)`. Generalises deviation heatmaps to any
-/// per-surface quantity — curvature, wall thickness, draft angle, confidence — since the
-/// rendering mechanism (a per-triangle GPU style buffer) doesn't care what the numbers mean.
+/// `CADViewportService.setScalarField(_:forBody:)`.
+///
+/// Generalises deviation heatmaps to any per-surface quantity (curvature, wall thickness,
+/// draft angle, confidence) since the rendering mechanism (a per-triangle GPU style buffer)
+/// doesn't care what the numbers mean.
 public struct ScalarField: Sendable {
     /// What `values` is indexed by.
     public enum Domain: Sendable, Equatable {
-        /// `values[ordinal]` is indexed the same way `PickedFaceInfo.faceIndex` is — the
+        /// `values[ordinal]` is indexed the same way `PickedFaceInfo.faceIndex` is: the
         /// picked body's face-ordinal (`CADBodyMetadata.faceIndices`/`ViewportBody.faceIndices`).
         case perFace
-        /// `values[triangleIndex]` is indexed directly by triangle — one value per mesh
+        /// `values[triangleIndex]` is indexed directly by triangle: one value per mesh
         /// triangle, for fields that vary within a face (e.g. per-vertex-averaged deviation
         /// baked to per-triangle at mesh time).
         case perTriangle
@@ -20,12 +22,14 @@ public struct ScalarField: Sendable {
     public let domain: Domain
 
     /// One value per face ordinal (`domain == .perFace`) or per triangle (`.perTriangle`).
+    ///
     /// A missing/out-of-range index for a given triangle simply isn't painted (its
     /// `TriangleStyle` stays `.none`) rather than crashing or wrapping.
     public let values: [Double]
 
-    /// The value range the color map spans. `nil` auto-ranges to `values`' own min/max
-    /// (ignoring any `.nan` entries).
+    /// The value range the color map spans.
+    ///
+    /// `nil` auto-ranges to `values`' own min/max (ignoring any `.nan` entries).
     public let range: ClosedRange<Double>?
 
     public let colorMap: ColorMap
@@ -52,8 +56,9 @@ public struct ScalarField: Sendable {
         self.unit = unit
     }
 
-    /// `range`, or `values`' own min/max when `range` is `nil`. `nil` only if `values` is
-    /// empty or every entry is `.nan`.
+    /// The color map's plotted range: `range`, or the min/max of `values` when `range` is `nil`.
+    ///
+    /// `nil` only if `values` is empty or every entry is `.nan`.
     public var effectiveRange: ClosedRange<Double>? {
         if let range { return range }
         let finite = values.filter { !$0.isNaN }
@@ -62,17 +67,19 @@ public struct ScalarField: Sendable {
     }
 }
 
-/// How a scalar value maps to a color. Every case samples deterministically from a
-/// `ClosedRange<Double>` (see `ScalarField.effectiveRange`), so the same value always
-/// paints the same color regardless of which triangle carries it.
+/// How a scalar value maps to a color.
+///
+/// Every case samples deterministically from a `ClosedRange<Double>` (see
+/// `ScalarField.effectiveRange`), so the same value always paints the same color regardless of
+/// which triangle carries it.
 public enum ColorMap: Sendable, Equatable {
     /// Perceptually-uniform sequential ramps (dark→light), good defaults for an
     /// unsigned magnitude (curvature, thickness, confidence). Approximate reproductions
-    /// of the published matplotlib/Google colormaps of the same name — close enough for
+    /// of the published matplotlib/Google colormaps of the same name: close enough for
     /// review purposes, not colorimetrically exact.
     case viridis, magma, turbo
 
-    /// A two-sided ramp about `center` — blue (below) through white (at `center`) to red
+    /// A two-sided ramp about `center`: blue (below) through white (at `center`) to red
     /// (above). Use for signed deviation: material outside the source and material
     /// missing from it are different failures, and a one-ended ramp hides which is which.
     case diverging(center: Double)
@@ -107,10 +114,12 @@ public enum ColorMap: Sendable, Equatable {
     /// the nearest end (except `.threshold`, which only cares which side of each level
     /// `value` falls on).
     public func color(for value: Double, in range: ClosedRange<Double>) -> SIMD4<Float> {
-        guard !value.isNaN else { return SIMD4(0, 0, 0, 0) } // unpainted, matches TriangleStyle.none
+        // Unpainted, matches TriangleStyle.none.
+        guard !value.isNaN else { return SIMD4(0, 0, 0, 0) }
         switch self {
         case .viridis:
-            return Self.rgb(Self.sampleGradient(Self.viridisStops, at: Self.normalize(value, range)))
+            return Self.rgb(
+                Self.sampleGradient(Self.viridisStops, at: Self.normalize(value, range)))
         case .magma:
             return Self.rgb(Self.sampleGradient(Self.magmaStops, at: Self.normalize(value, range)))
         case .turbo:
@@ -118,7 +127,8 @@ public enum ColorMap: Sendable, Equatable {
         case .diverging(let center):
             return Self.rgb(Self.divergingColor(value: value, center: center, range: range))
         case .threshold(let levels):
-            return Self.thresholdPalette[Self.band(for: value, levels: levels) % Self.thresholdPalette.count]
+            return Self.thresholdPalette[
+                Self.band(for: value, levels: levels) % Self.thresholdPalette.count]
         case .custom(let stops):
             return Self.rgb(Self.sampleCustomStops(stops, at: value))
         }
@@ -158,7 +168,9 @@ public enum ColorMap: Sendable, Equatable {
         (1.00, SIMD3(0.987, 0.991, 0.749)),
     ]
 
-    private static func sampleGradient(_ stops: [(Double, SIMD3<Double>)], at t: Double) -> SIMD3<Double> {
+    private static func sampleGradient(_ stops: [(Double, SIMD3<Double>)], at t: Double) -> SIMD3<
+        Double
+    > {
         guard let first = stops.first else { return SIMD3(0, 0, 0) }
         guard t > first.0 else { return first.1 }
         for i in 1..<stops.count {
@@ -179,7 +191,7 @@ public enum ColorMap: Sendable, Equatable {
     // MARK: - Turbo (polynomial approximation)
 
     /// Google's published polynomial approximation of the Turbo colormap (Anton Mikhailov,
-    /// 2019, public domain) — a compact fit rather than a 256-entry LUT.
+    /// 2019, public domain): a compact fit rather than a 256-entry LUT.
     private static func turboColor(_ t: Double) -> SIMD3<Double> {
         let x = min(max(t, 0), 1)
         let x2 = x * x
@@ -187,11 +199,14 @@ public enum ColorMap: Sendable, Equatable {
         let x4 = x3 * x
         let x5 = x4 * x
 
-        let r = 0.13572138 + 4.61539260 * x - 42.66032258 * x2 + 132.13108234 * x3
+        let r =
+            0.13572138 + 4.61539260 * x - 42.66032258 * x2 + 132.13108234 * x3
             - 152.94239396 * x4 + 59.28637943 * x5
-        let g = 0.09140261 + 2.19418839 * x + 4.84296658 * x2 - 14.18503333 * x3
+        let g =
+            0.09140261 + 2.19418839 * x + 4.84296658 * x2 - 14.18503333 * x3
             + 4.27729857 * x4 + 2.82956604 * x5
-        let b = 0.10667330 + 12.64194608 * x - 60.58204836 * x2 + 110.36276771 * x3
+        let b =
+            0.10667330 + 12.64194608 * x - 60.58204836 * x2 + 110.36276771 * x3
             - 89.90310912 * x4 + 27.34824973 * x5
 
         return SIMD3(min(max(r, 0), 1), min(max(g, 0), 1), min(max(b, 0), 1))
@@ -199,7 +214,9 @@ public enum ColorMap: Sendable, Equatable {
 
     // MARK: - Diverging
 
-    private static func divergingColor(value: Double, center: Double, range: ClosedRange<Double>) -> SIMD3<Double> {
+    private static func divergingColor(value: Double, center: Double, range: ClosedRange<Double>)
+        -> SIMD3<Double>
+    {
         let maxDeviation = max(abs(range.upperBound - center), abs(range.lowerBound - center))
         guard maxDeviation > 0 else { return SIMD3(1, 1, 1) }
         let t = min(max((value - center) / maxDeviation, -1), 1)
@@ -216,11 +233,11 @@ public enum ColorMap: Sendable, Equatable {
     // MARK: - Threshold
 
     static let thresholdPalette: [SIMD4<Float>] = [
-        SIMD4(0.15, 0.75, 0.25, 1), // pass — green
-        SIMD4(0.95, 0.85, 0.15, 1), // warn — yellow
-        SIMD4(0.90, 0.45, 0.10, 1), // caution — orange
-        SIMD4(0.85, 0.15, 0.15, 1), // fail — red
-        SIMD4(0.55, 0.15, 0.65, 1), // purple, repeats from here for extra bands
+        SIMD4(0.15, 0.75, 0.25, 1),  // pass: green
+        SIMD4(0.95, 0.85, 0.15, 1),  // warn: yellow
+        SIMD4(0.90, 0.45, 0.10, 1),  // caution: orange
+        SIMD4(0.85, 0.15, 0.15, 1),  // fail: red
+        SIMD4(0.55, 0.15, 0.65, 1),  // purple, repeats from here for extra bands
     ]
 
     private static func band(for value: Double, levels: [Double]) -> Int {
@@ -230,7 +247,9 @@ public enum ColorMap: Sendable, Equatable {
 
     // MARK: - Custom stops
 
-    private static func sampleCustomStops(_ stops: [(Double, SIMD4<Float>)], at value: Double) -> SIMD3<Double> {
+    private static func sampleCustomStops(_ stops: [(Double, SIMD4<Float>)], at value: Double)
+        -> SIMD3<Double>
+    {
         guard !stops.isEmpty else { return SIMD3(0, 0, 0) }
         let sorted = stops.sorted { $0.0 < $1.0 }
         guard value > sorted.first!.0 else {
@@ -252,7 +271,7 @@ public enum ColorMap: Sendable, Equatable {
     }
 }
 
-/// A single labeled point on a rendered legend — see `ScalarFieldLegend.stops`.
+/// A single labeled point on a rendered legend: see `ScalarFieldLegend.stops`.
 public struct LegendStop: Sendable, Equatable {
     public let value: Double
     public let color: SIMD4<Float>
@@ -265,7 +284,9 @@ public struct LegendStop: Sendable, Equatable {
 
 /// Everything a UI needs to render a scalar field's legend: the label, unit, range, and a
 /// sampled gradient (or discrete swatches, for `.threshold`) a caller can lay out as a
-/// color bar with tick labels. Returned by `CADViewportService.scalarFieldLegend`.
+/// color bar with tick labels.
+///
+/// Returned by `CADViewportService.scalarFieldLegend`.
 public struct ScalarFieldLegend: Sendable, Equatable {
     public let label: String
     public let unit: String?

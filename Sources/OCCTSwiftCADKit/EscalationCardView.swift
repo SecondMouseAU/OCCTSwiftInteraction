@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Presents an `EscalationRequest`'s question, candidates, and context, and reports how it
-/// was answered via closures — mirrors `CADViewportView`'s own style (explicit values +
-/// callbacks, no direct binding to `CADViewportService`) so the caller stays in control of
-/// composing it (a sheet, a sidebar inspector, a bottom card) rather than this view owning
-/// presentation chrome.
+/// Presents the question, candidates, and context of an `EscalationRequest`, and reports how
+/// it was answered via closures.
 ///
-/// Capped to a comfortable phone-width column rather than two separate macOS/iOS view types —
+/// Mirrors `CADViewportView`'s own style (explicit values + callbacks, no direct binding to
+/// `CADViewportService`) so the caller stays in control of composing it (a sheet, a sidebar
+/// inspector, a bottom card) rather than this view owning presentation chrome.
+///
+/// Capped to a comfortable phone-width column rather than two separate macOS/iOS view types:
 /// this single layout is usable as a floating panel on a larger surface too.
 ///
 /// ```swift

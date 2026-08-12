@@ -42,3 +42,4 @@ See [`references/`](references/index.md) for sibling repos and upstream links.
 - [Search before building](policies/search-before-building.md)
 - [Code structure](policies/code-structure.md)
 - [Issue labels and project-board tracking](policies/issue-tracking.md)
+- [Code style](policies/code-style.md)

@@ -1,19 +1,21 @@
 import Foundation
-import simd
 import OCCTSwift
+import simd
 
-/// A pick result, generalised over which kind of sub-shape was hit. Face picks carry the
-/// existing `PickedFaceInfo`; edge and vertex picks carry their own info types alongside it,
-/// all sharing the same durable-identity shape (`shape`/`uid`, plus an ephemeral render-path
-/// ordinal) established for faces in `PickedFaceInfo`.
+/// A pick result, generalised over which kind of sub-shape was hit.
+///
+/// Face picks carry the existing `PickedFaceInfo`; edge and vertex picks carry their own info
+/// types alongside it, all sharing the same durable-identity shape (`shape`/`uid`, plus an
+/// ephemeral render-path ordinal) established for faces in `PickedFaceInfo`.
 public enum PickedEntity: Sendable, Equatable {
     case face(PickedFaceInfo)
     case edge(PickedEdgeInfo)
     case vertex(PickedVertexInfo)
 
-    /// The id of the body this pick landed on, regardless of kind. With the multi-entity
-    /// loading API (`CADViewportService.load`/`loadFile(from:id:)`), pass this to
-    /// `entityID(forBodyID:)` to find which loaded entity was hit.
+    /// The id of the body this pick landed on, regardless of kind.
+    ///
+    /// With the multi-entity loading API (`CADViewportService.load`/`loadFile(from:id:)`),
+    /// pass this to `entityID(forBodyID:)` to find which loaded entity was hit.
     public var bodyID: String {
         switch self {
         case .face(let info): return info.bodyID
@@ -26,19 +28,22 @@ public enum PickedEntity: Sendable, Equatable {
 /// Information about an edge picked in the viewport.
 ///
 /// `shape` and `uid` are the durable identity of the pick, captured at pick time from the
-/// picked body's `EdgeIdentityTable`. `edgeIndex` is the ephemeral render-path ordinal —
+/// picked body's `EdgeIdentityTable`. `edgeIndex` is the ephemeral render-path ordinal,
 /// valid only against the `ViewportBody`/`edgeIndices` it was minted from.
 public struct PickedEdgeInfo: Sendable {
-    /// The picked edge, as the exact `Shape` (wrapping a `TopoDS_Edge`) it was extracted
-    /// from. Construct an `Edge` from it (`Edge(shape)`) for edge-specific queries.
+    /// The picked edge, as the exact `Shape` (wrapping a `TopoDS_Edge`) it was extracted from.
+    ///
+    /// Construct an `Edge` from it (`Edge(shape)`) for edge-specific queries.
     public let shape: OCCTSwift.Shape
 
     /// Durable handle into the picked body's `BRepGraph`, when the graph was available at
     /// pick time. `nil` if graph construction failed for this body.
     public let uid: BRepGraph.GraphUID?
 
-    /// Render-path ordinal into this body's `edgeIndices`. Ephemeral — do not use it to
-    /// re-derive the edge via `loadedShape.edges()[edgeIndex]`; use `shape` instead.
+    /// Render-path ordinal into this body's `edgeIndices`.
+    ///
+    /// Ephemeral: do not use it to re-derive the edge via `loadedShape.edges()[edgeIndex]`;
+    /// use `shape` instead.
     public let edgeIndex: Int
     public let bodyID: String
     public let curveType: OCCTSwift.Edge.CurveType
@@ -86,19 +91,22 @@ extension PickedEdgeInfo: Equatable {
 /// Information about a vertex picked in the viewport.
 ///
 /// `shape` and `uid` are the durable identity of the pick, captured at pick time from the
-/// picked body's `VertexIdentityTable`. `vertexIndex` is the ephemeral render-path ordinal —
+/// picked body's `VertexIdentityTable`. `vertexIndex` is the ephemeral render-path ordinal,
 /// valid only against the `ViewportBody`/`vertexIndices` it was minted from.
 public struct PickedVertexInfo: Sendable {
-    /// The picked vertex, as the exact `Shape` (wrapping a `TopoDS_Vertex`) it was
-    /// extracted from. OCCTSwift exposes vertices positionally rather than as their own
-    /// class — use `position`, or `shape.vertices().first`, for its world-space location.
+    /// The picked vertex, as the exact `Shape` (wrapping a `TopoDS_Vertex`) it was extracted from.
+    ///
+    /// OCCTSwift exposes vertices positionally rather than as their own class: use
+    /// `position`, or `shape.vertices().first`, for its world-space location.
     public let shape: OCCTSwift.Shape
 
     /// Durable handle into the picked body's `BRepGraph`, when the graph was available at
     /// pick time. `nil` if graph construction failed for this body.
     public let uid: BRepGraph.GraphUID?
 
-    /// Render-path ordinal into this body's `vertexIndices`. Ephemeral.
+    /// Render-path ordinal into this body's `vertexIndices`.
+    ///
+    /// Ephemeral.
     public let vertexIndex: Int
     public let bodyID: String
     public let position: SIMD3<Double>

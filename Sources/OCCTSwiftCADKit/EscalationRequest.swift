@@ -3,19 +3,22 @@ import Foundation
 /// A bounded question about specific geometry, presented via `CADViewportService.present(_:)`.
 /// Grounds the question in the viewport by highlighting `entities` when presented, and lets
 /// the human answer either by choosing one of `candidates` or by picking geometry directly
-/// (`CADViewportService.respondWithCurrentSelection()`) — the useful answer is often "none of
+/// (`CADViewportService.respondWithCurrentSelection()`): the useful answer is often "none of
 /// those, this one."
 public struct EscalationRequest: Sendable, Identifiable, Equatable {
     public let id: String
 
-    /// What the question is about — highlighted in the viewport when presented (mirrors
-    /// `CADViewportService.select(_:scheme:)`'s own multi-selection highlight).
+    /// What the question is about, highlighted in the viewport when presented.
+    ///
+    /// Mirrors `CADViewportService.select(_:scheme:)`'s own multi-selection highlight.
     public let entities: [PickedEntity]
 
     public let question: String
 
-    /// Candidate answers, if any. Empty when the only sensible answer is "pick the right
-    /// geometry yourself" — a candidate list isn't required.
+    /// Candidate answers, if any.
+    ///
+    /// Empty when the only sensible answer is "pick the right geometry yourself": a candidate
+    /// list isn't required.
     public let candidates: [EscalationCandidate]
 
     /// Free-form supporting context (measurements, gate output) for display alongside the
