@@ -1,7 +1,7 @@
-import SwiftUI
-import OCCTSwiftViewport
-import OCCTSwiftTools
 import OCCTSwift
+import OCCTSwiftTools
+import OCCTSwiftViewport
+import SwiftUI
 
 /// SwiftUI wrapper around the Metal viewport, with a selection-info banner
 /// and display-mode controls.
@@ -167,7 +167,8 @@ public struct CADViewportView: View {
                 controller.displayMode = .shadedWithEdges
             } label: {
                 Image(systemName: "cube.transparent")
-                    .foregroundStyle(controller.displayMode == .shadedWithEdges ? .blue : .secondary)
+                    .foregroundStyle(
+                        controller.displayMode == .shadedWithEdges ? .blue : .secondary)
             }
             .buttonStyle(.plain)
 

@@ -1,31 +1,33 @@
 import Foundation
-import simd
 import OCCTSwift
+import simd
 
 /// Information about a face picked in the viewport.
 ///
 /// `shape` and `uid` are the durable identity of the pick, captured once at pick time
 /// from the picked body's `FaceIdentityTable` rather than re-derived later. `faceIndex`
-/// is the ephemeral render-path ordinal that produced the pick — valid only against the
+/// is the ephemeral render-path ordinal that produced the pick, valid only against the
 /// `ViewportBody`/`CADBodyMetadata` it was minted from. Once a face is shared between two
 /// shells, `loadedShape.faces()[faceIndex]` and a `BRepGraph`'s node ordering diverge (the
 /// graph dedups the shared face to one node; the render-path traversal counts it once per
 /// shell), so re-deriving the face from `faceIndex` alone can silently name the wrong one.
-/// Use `shape` — construct a `Face` from it (`Face(info.shape)`) for face-specific queries
-/// — rather than subscripting `loadedShape.faces()`.
+/// Use `shape`, constructing a `Face` from it (`Face(info.shape)`) for face-specific queries,
+/// rather than subscripting `loadedShape.faces()`.
 public struct PickedFaceInfo: Sendable {
-    /// The picked face, as the exact `Shape` (wrapping a `TopoDS_Face`) it was tessellated
-    /// from. Construct a `Face` from it (`Face(shape)`) for face-specific queries such as
-    /// area or normal.
+    /// The picked face, as the exact `Shape` (wrapping a `TopoDS_Face`) it was tessellated from.
+    ///
+    /// Construct a `Face` from it (`Face(shape)`) for face-specific queries such as area or
+    /// normal.
     public let shape: OCCTSwift.Shape
 
     /// Durable handle into the picked body's `BRepGraph`, when the graph was available at
-    /// pick time. `nil` if graph construction failed for this body (a pathological shape)
-    /// — such a pick has nothing durable to resolve forward through a later rebuild.
+    /// pick time. `nil` if graph construction failed for this body (a pathological shape):
+    /// such a pick has nothing durable to resolve forward through a later rebuild.
     public let uid: BRepGraph.GraphUID?
 
     /// Render-path ordinal into this body's tessellation (`CADBodyMetadata.faceIndices`).
-    /// Ephemeral — do not use it to re-derive the face via `loadedShape.faces()[faceIndex]`;
+    ///
+    /// Ephemeral: do not use it to re-derive the face via `loadedShape.faces()[faceIndex]`;
     /// use `shape` instead.
     public let faceIndex: Int
     public let bodyID: String
@@ -37,7 +39,7 @@ public struct PickedFaceInfo: Sendable {
     public let description: String
 
     /// This face's value from the `ScalarField` set on its body (`setScalarField(_:forBody:)`),
-    /// if any — resolved at pick time from the field's own domain (`.perFace` by `faceIndex`,
+    /// if any: resolved at pick time from the field's own domain (`.perFace` by `faceIndex`,
     /// `.perTriangle` by the picked triangle). `nil` when no field is set on this body.
     public let scalarValue: Double?
 
@@ -70,13 +72,14 @@ public struct PickedFaceInfo: Sendable {
 
 extension PickedFaceInfo: Equatable {
     /// Hand-written: `OCCTSwift.Shape` has no `IsSame`-respecting `Equatable` conformance to
-    /// piggyback on, so `shape` is excluded. Identity follows `uid` when both sides have
-    /// one — the durable handle, which two picks of the same shared face can carry even
-    /// with different `faceIndex`/`bodyID` ordinals (see the shared-face-between-shells
-    /// regression test) — falling back to `faceIndex` + `bodyID` only when neither side has
-    /// a `uid`. Mirrors `OCCTSwiftAIS.SubShapeRef.==` exactly; the descriptive fields
-    /// (`bounds`, `area`, etc.) are derived deterministically from the same face and so
-    /// don't need to participate.
+    /// piggyback on, so `shape` is excluded.
+    ///
+    /// Identity follows `uid` when both sides have one (the durable handle, which two picks
+    /// of the same shared face can carry even with different `faceIndex`/`bodyID` ordinals,
+    /// see the shared-face-between-shells regression test), falling back to `faceIndex` +
+    /// `bodyID` only when neither side has a `uid`. Mirrors `OCCTSwiftAIS.SubShapeRef.==`
+    /// exactly; the descriptive fields (`bounds`, `area`, etc.) are derived deterministically
+    /// from the same face and so don't need to participate.
     public static func == (lhs: PickedFaceInfo, rhs: PickedFaceInfo) -> Bool {
         switch (lhs.uid, rhs.uid) {
         case (let l?, let r?): return l == r

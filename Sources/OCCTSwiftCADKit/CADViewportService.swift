@@ -1,11 +1,11 @@
-import Foundation
-import SwiftUI
 import Combine
-import simd
+import Foundation
 import OCCTSwift
-import OCCTSwiftViewport
-import OCCTSwiftTools
 import OCCTSwiftAIS
+import OCCTSwiftTools
+import OCCTSwiftViewport
+import SwiftUI
+import simd
 
 /// Manages a loaded B-Rep `Shape`, drives the Metal viewport, and routes
 /// face-picking results back to the caller.
@@ -22,50 +22,56 @@ import OCCTSwiftAIS
 @MainActor
 @Observable
 public final class CADViewportService {
-    /// Viewport controller — exposes camera, display mode, picking config,
-    /// etc. Construct with custom configuration via `init(configuration:)`.
+    /// Viewport controller: exposes camera, display mode, picking config, etc.
+    ///
+    /// Construct with custom configuration via `init(configuration:)`.
     public let controller: _ViewportController
 
-    /// AIS interactive context backed by this service's viewport. Use to
-    /// install `ManipulatorWidget`, add dimensions, or display extra
-    /// `InteractiveObject`s. Bodies appended via `display(_:)` /
-    /// `appendInternalBody(_:)` are composited with the CADKit-owned bodies
-    /// (model + overlays + selection highlight) and rendered through the
-    /// same array that `CADViewportView` binds to.
+    /// AIS interactive context backed by this service's viewport.
+    ///
+    /// Use to install `ManipulatorWidget`, add dimensions, or display extra
+    /// `InteractiveObject`s. Bodies appended via `display(_:)` / `appendInternalBody(_:)` are
+    /// composited with the CADKit-owned bodies (model + overlays + selection highlight) and
+    /// rendered through the same array that `CADViewportView` binds to.
     public let interactiveContext: InteractiveContext
 
-    /// All bodies currently displayed in the viewport. Composed of: model
-    /// bodies (from imported file) + overlay layers (caller-managed) +
-    /// selection highlight (managed internally on pick) + AIS-owned bodies
-    /// (manipulator handles, displayed shapes, dimensions). Mirrors
-    /// `interactiveContext.bodies`.
+    /// All bodies currently displayed in the viewport.
+    ///
+    /// Composed of: model bodies (from imported file) + overlay layers (caller-managed) +
+    /// selection highlight (managed internally on pick) + AIS-owned bodies (manipulator
+    /// handles, displayed shapes, dimensions). Mirrors `interactiveContext.bodies`.
     public private(set) var bodies: [_ViewportBody] = []
 
     /// The loaded OCCTSwift shape, or `nil` until something is loaded.
     ///
     /// Set by the deprecated single-shape `loadFile(from:progress:)`/`loadShape(_:id:)`.
     /// The multi-entity API (`load(_:id:transform:)`/`loadFile(from:id:progress:)`) doesn't
-    /// set it directly — the public `loadedShape` getter falls back to it when exactly one
+    /// set it directly; the public `loadedShape` getter falls back to it when exactly one
     /// entity is loaded that way, matching this property's "single-shape convenience"
     /// contract either way.
     private var legacyLoadedShape: OCCTSwift.Shape?
 
     /// The entity id `legacyLoadedShape` corresponds to (the given `id` for `loadShape`;
     /// the first resulting body's id for `loadFile(from:progress:)`, since that's what it
-    /// also registers as its own entity). Lets `remove(id:)` invalidate `legacyLoadedShape`
-    /// precisely when *that* entity is removed or replaced — e.g. `loadShape(box, id:
-    /// "model")` followed by `load(otherBox, id: "model")` must stop `loadedShape` from
-    /// still reporting the first `box` — without wrongly clearing it when a *different*
-    /// entity is removed.
+    /// also registers as its own entity).
+    ///
+    /// Lets `remove(id:)` invalidate `legacyLoadedShape` precisely when *that* entity is
+    /// removed or replaced, e.g. `loadShape(box, id: "model")` followed by
+    /// `load(otherBox, id: "model")` must stop `loadedShape` from still reporting the first
+    /// `box`, without wrongly clearing it when a *different* entity is removed.
     private var legacyLoadedShapeEntityID: String?
 
     /// The loaded shape, when exactly one is loaded (however it was loaded). `nil` if
     /// nothing is loaded, or if more than one entity is loaded via the multi-entity API.
-    @available(*, deprecated, message: "Use `loadedShapes`/`shape(id:)` instead — returns non-nil only when exactly one entity is loaded.")
+    @available(
+        *, deprecated,
+        message:
+            "Use `loadedShapes`/`shape(id:)` instead: returns non-nil only when exactly one entity is loaded."
+    )
     public var loadedShape: OCCTSwift.Shape? { currentSingleShape }
 
-    /// Non-deprecated backing for `loadedShape`'s fallback logic, so `shapeBounds` and
-    /// `focusOnLoadedShape()` can use the same lookup without tripping the deprecation
+    /// Non-deprecated backing for the fallback logic behind `loadedShape`, so `shapeBounds`
+    /// and `focusOnLoadedShape()` can use the same lookup without tripping the deprecation
     /// warning on every internal read.
     private var currentSingleShape: OCCTSwift.Shape? {
         if let legacyLoadedShape { return legacyLoadedShape }
@@ -73,36 +79,47 @@ public final class CADViewportService {
         return shape(id: onlyID)
     }
 
-    /// Every currently selected sub-shape (face, edge, or vertex), gated by
-    /// `selectionModes`. Empty if nothing is selected. A real viewport pick always
-    /// replaces the whole selection (matching `OCCTSwiftAIS`'s own point-pick behavior —
-    /// scheme-based combination is for programmatic `select(_:scheme:)` calls, e.g. area
-    /// selection); build multi-selection by calling `select(_:scheme:)` yourself.
+    /// Every currently selected sub-shape (face, edge, or vertex), gated by `selectionModes`.
+    ///
+    /// Empty if nothing is selected. A real viewport pick always replaces the whole selection
+    /// (matching the point-pick behavior of `OCCTSwiftAIS` itself: scheme-based combination is
+    /// for programmatic `select(_:scheme:)` calls, e.g. area selection); build multi-selection
+    /// by calling `select(_:scheme:)` yourself.
     public private(set) var selection: [PickedEntity] = []
 
     /// The single selected entity, when the selection is exactly one. `nil` if nothing is
     /// selected, or more than one entity is selected.
-    @available(*, deprecated, message: "Use `selection` instead — returns non-nil only when exactly one entity is selected.")
+    @available(
+        *, deprecated,
+        message:
+            "Use `selection` instead: returns non-nil only when exactly one entity is selected."
+    )
     public var selected: PickedEntity? {
         selection.count == 1 ? selection.first : nil
     }
 
-    /// Which sub-shape kinds picking resolves. Defaults to `[.face]`, matching this
-    /// service's behavior before edge/vertex picking existed — add `.edge`/`.vertex` to
-    /// opt in. `.body` has no effect here (there is no whole-body `PickedEntity` case);
-    /// it exists on `SelectionMode` for `OCCTSwiftAIS.InteractiveContext.selectionMode`,
-    /// a separate, independent selection system this service does not share state with.
+    /// Which sub-shape kinds picking resolves.
+    ///
+    /// Defaults to `[.face]`, matching this service's behavior before edge/vertex picking
+    /// existed; add `.edge`/`.vertex` to opt in. `.body` has no effect here (there is no
+    /// whole-body `PickedEntity` case); it exists on `SelectionMode` for
+    /// `OCCTSwiftAIS.InteractiveContext.selectionMode`, a separate, independent selection
+    /// system this service does not share state with.
     public var selectionModes: Set<SelectionMode> = [.face]
 
     /// Currently selected face, or `nil` if nothing is picked or the current pick is an
     /// edge or vertex.
-    @available(*, deprecated, message: "Use `selection` instead — returns non-nil only when the selection is exactly one face.")
+    @available(
+        *, deprecated,
+        message:
+            "Use `selection` instead: returns non-nil only when the selection is exactly one face."
+    )
     public var selectedFace: PickedFaceInfo? {
         if case .face(let info)? = selected { return info }
         return nil
     }
 
-    /// Internal rather than private so tests can seed it directly — e.g. a synthetic body
+    /// Internal rather than private so tests can seed it directly, e.g. a synthetic body
     /// with empty `edgeIndices`/`vertices` to exercise the "not edge/vertex-pickable"
     /// degrade-gracefully path without a real non-pickable file on disk.
     var modelBodies: [_ViewportBody] = []
@@ -111,7 +128,7 @@ public final class CADViewportService {
     /// a real multi-body file on disk.
     var metadata: [String: CADBodyMetadata] = [:]
     private var overlays: [String: [_ViewportBody]] = [:]
-    /// Up to three highlight bodies — one per kind present in `selection` — since each
+    /// Up to three highlight bodies, one per kind present in `selection`, since each
     /// kind renders with a different primitive (translucent triangle patch / polyline /
     /// point sprite) that can't share one `_ViewportBody`.
     private var selectionBodies: [_ViewportBody] = []
@@ -123,20 +140,21 @@ public final class CADViewportService {
     /// The raw shape each model body was tessellated from, keyed by body id.
     private var bodyShapes: [String: OCCTSwift.Shape] = [:]
 
-    /// One `BRepGraph` per loaded body, retained for its shape's lifetime — this is what
+    /// One `BRepGraph` per loaded body, retained for its shape's lifetime: this is what
     /// makes `PickedFaceInfo.uid` populatable, and what a later absorb-history mechanic
     /// (mirroring `InteractiveContext.update(_:to:absorbing:operationName:)`) would need.
+    ///
     /// Absent for a body whose graph failed to construct (a pathological shape); such a
     /// body's picks mint `uid == nil`.
     private var bodyGraphs: [String: BRepGraph] = [:]
 
-    /// Face-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
+    /// Maps each face ordinal to (`Shape`, `GraphUID`?), keyed by body id.
     private var faceIdentity: [String: FaceIdentityTable] = [:]
 
-    /// Edge-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
+    /// Maps each edge ordinal to (`Shape`, `GraphUID`?), keyed by body id.
     private var edgeIdentity: [String: EdgeIdentityTable] = [:]
 
-    /// Vertex-ordinal → (`Shape`, `GraphUID`?) table per loaded body, keyed by body id.
+    /// Maps each vertex ordinal to (`Shape`, `GraphUID`?), keyed by body id.
     private var vertexIdentity: [String: VertexIdentityTable] = [:]
 
     // MARK: - Scalar fields
@@ -144,17 +162,20 @@ public final class CADViewportService {
     /// The scalar field currently painted on each body, keyed by body id.
     private var scalarFields: [String: ScalarField] = [:]
 
-    /// The body id `scalarFieldLegend` reports on — the most recent `setScalarField(_:forBody:)`
-    /// call that set a non-nil field. When THAT body's field is cleared or removed, falls
-    /// back to another still-active entry in `scalarFields` (via `dropLastScalarFieldBodyID`)
-    /// rather than going `nil` outright — `nil` only once `scalarFields` is entirely empty.
+    /// The body id `scalarFieldLegend` reports on: the most recent `setScalarField(_:forBody:)`
+    /// call that set a non-nil field.
+    ///
+    /// When THAT body's field is cleared or removed, falls back to another still-active entry
+    /// in `scalarFields` (via `dropLastScalarFieldBodyID`) rather than going `nil` outright;
+    /// `nil` only once `scalarFields` is entirely empty.
     private var lastScalarFieldBodyID: String?
 
     /// Clears `lastScalarFieldBodyID` if it currently points at `bodyID`, falling back to
-    /// another remaining entry in `scalarFields` (an arbitrary choice among ties — dictionary
-    /// order isn't meaningful) rather than unconditionally going `nil`. Callers must remove
-    /// `bodyID` from `scalarFields` BEFORE calling this, so a fallback never re-selects the
-    /// very body whose field is being cleared.
+    /// another remaining entry in `scalarFields` (an arbitrary choice among ties: dictionary
+    /// order isn't meaningful) rather than unconditionally going `nil`.
+    ///
+    /// Callers must remove `bodyID` from `scalarFields` BEFORE calling this, so a fallback
+    /// never re-selects the very body whose field is being cleared.
     private func dropLastScalarFieldBodyID(ifCurrently bodyID: String) {
         guard lastScalarFieldBodyID == bodyID else { return }
         lastScalarFieldBodyID = scalarFields.keys.first
@@ -166,71 +187,78 @@ public final class CADViewportService {
     public private(set) var comparison: ComparisonView?
 
     /// Bodies as they were immediately before the active comparison's `.overlay`/`.sideBySide`/
-    /// `.wipe` mutated them, keyed by body id — lets `setComparison` restore geometry exactly on
-    /// clear or mode switch without reloading. `.deviation` doesn't use this; it's undone via
-    /// `setScalarField`'s own clear path instead.
+    /// `.wipe` mutated them, keyed by body id: lets `setComparison` restore geometry exactly on
+    /// clear or mode switch without reloading.
+    ///
+    /// `.deviation` doesn't use this; it's undone via `setScalarField`'s own clear path instead.
     private var comparisonBackup: [String: _ViewportBody] = [:]
 
     // MARK: - Clipping
 
-    /// Every currently configured clipping plane. Backing for the public `clippingPlanes`
-    /// property.
+    /// Every currently configured clipping plane.
+    ///
+    /// Backing for the public `clippingPlanes` property.
     private var clippingPlaneStorage: [ClippingPlane] = []
 
     /// The plane id `sectionSweep(axis:position:)` owns, so repeated calls move the same
     /// plane rather than accumulating a new one each time. `nil` until the first call.
     private var sectionSweepPlaneID: String?
 
-    /// Each body's ORIGINAL shape (before any cap-plane split), keyed by body id — populated
+    /// Each body's ORIGINAL shape (before any cap-plane split), keyed by body id: populated
     /// lazily from `bodyShapes` the first time `updateCapSurfaces()` sees a body, and then
     /// always read from here afterward instead of `bodyShapes` (which `updateCapSurfaces`
     /// itself overwrites with the CAPPED shape, so capping stays correct/non-compounding
-    /// across repeated calls — e.g. a scrubbed `sectionSweep` — rather than re-cutting an
+    /// across repeated calls, e.g. a scrubbed `sectionSweep`, rather than re-cutting an
     /// already-cut shape).
     private var clippingSourceShapes: [String: OCCTSwift.Shape] = [:]
 
     /// Bodies as they were immediately before `updateCapSurfaces()` last replaced them with a
-    /// capped (or hidden) version, keyed by body id — restored at the START of every
-    /// `updateCapSurfaces()` call before recomputing, mirroring `comparisonBackup`'s pattern.
+    /// capped (or hidden) version, keyed by body id.
+    ///
+    /// Restored at the START of every `updateCapSurfaces()` call before recomputing, mirroring
+    /// `comparisonBackup`'s pattern.
     private var clippingCapBackup: [String: _ViewportBody] = [:]
 
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
 
-    /// A distinct, addressable entity loaded via the multi-entity API — the model-body
+    /// A distinct, addressable entity loaded via the multi-entity API: the model-body
     /// ids it owns (more than one for a multi-body file loaded under one entity id) and
     /// its own visibility flag.
     ///
     /// Internal rather than private, like `modelBodies`/`metadata`, so tests can seed a
-    /// synthetic multi-body entity directly — this package's tests don't ship a multi-body
+    /// synthetic multi-body entity directly: this package's tests don't ship a multi-body
     /// file on disk, and `load(_:id:transform:)` only ever produces a single-body entity.
     struct Entity {
         var bodyIDs: [String]
         var isVisible: Bool = true
     }
 
-    /// Every currently loaded entity, keyed by entity id — whether loaded via
+    /// Every currently loaded entity, keyed by entity id: whether loaded via
     /// `load(_:id:transform:)`/`loadFile(from:id:progress:)`, or via the deprecated
     /// single-shape `loadFile(from:progress:)`/`loadShape(_:id:)` (each of which registers
     /// its own resulting body/bodies here too, one entity per body, since it has no
-    /// caller-supplied grouping concept of its own). This is the single source of truth
-    /// `remove(id:)`/`loadedShapes`/`visibility`/etc. read — kept accurate regardless of
-    /// which loading API was used is what makes mixing the two APIs in one session safe
-    /// (e.g. `loadShape(_:id:"model")` then `load(_:id:"model")` correctly replaces the
-    /// first load rather than leaving a stray duplicate body).
+    /// caller-supplied grouping concept of its own).
+    ///
+    /// This is the single source of truth `remove(id:)`/`loadedShapes`/`visibility`/etc. read:
+    /// kept accurate regardless of which loading API was used is what makes mixing the two
+    /// APIs in one session safe (e.g. `loadShape(_:id:"model")` then `load(_:id:"model")`
+    /// correctly replaces the first load rather than leaving a stray duplicate body).
     ///
     /// Internal rather than private so tests can seed a multi-body entity directly (see
     /// `Entity`'s own doc comment).
     var entities: [String: Entity] = [:]
 
-    public init(configuration: _ViewportConfiguration = .init(
-        rotationStyle: .turntable,
-        displayMode: .shadedWithEdges,
-        lightingConfiguration: .threePoint,
-        showViewCube: true,
-        showAxes: true,
-        showGrid: true,
-        pickingConfiguration: _PickingConfiguration(isEnabled: true)
-    )) {
+    public init(
+        configuration: _ViewportConfiguration = .init(
+            rotationStyle: .turntable,
+            displayMode: .shadedWithEdges,
+            lightingConfiguration: .threePoint,
+            showViewCube: true,
+            showAxes: true,
+            showGrid: true,
+            pickingConfiguration: _PickingConfiguration(isEnabled: true)
+        )
+    ) {
         let controller = _ViewportController(configuration: configuration)
         self.controller = controller
         self.interactiveContext = InteractiveContext(viewport: controller)
@@ -249,18 +277,22 @@ public final class CADViewportService {
     // MARK: - File Import
 
     /// Load a CAD file (STEP/.stp, STL, BREP) from disk into the viewport.
-    /// Returns the loaded `Shape`. Camera is automatically focused on the
-    /// shape's bounding box.
+    ///
+    /// Returns the loaded `Shape`. Camera is automatically focused on the shape's bounding box.
     ///
     /// Pass an `ImportProgress` (e.g. `ImportProgressClosure`) to observe
     /// STEP/IGES import progress and/or request cooperative cancellation;
     /// cancellation surfaces as `ImportError.cancelled`.
     ///
     /// Single-shape convenience: replaces every model body, including any loaded via
-    /// `load(_:id:transform:)`/`loadFile(from:id:progress:)` — registers each resulting
+    /// `load(_:id:transform:)`/`loadFile(from:id:progress:)`. Registers each resulting
     /// body as its own entity (see `entities`' own documentation), so `remove(id:)`/
     /// `loadedShapes`/etc. see it too.
-    @available(*, deprecated, message: "Use loadFile(from:id:progress:) instead for multi-entity loading. This overload still replaces every model body.")
+    @available(
+        *, deprecated,
+        message:
+            "Use loadFile(from:id:progress:) instead for multi-entity loading. This overload still replaces every model body."
+    )
     @discardableResult
     public func loadFile(
         from url: URL,
@@ -290,7 +322,7 @@ public final class CADViewportService {
             entities[body.id] = Entity(bodyIDs: [body.id])
         }
         clearSelection()
-        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
+        updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
         focusOnLoadedShape()
         return firstShape
     }
@@ -299,21 +331,26 @@ public final class CADViewportService {
     /// OCCTSwift) without going through the file loader.
     ///
     /// Single-shape convenience: replaces every model body, including any loaded via
-    /// `load(_:id:transform:)`/`loadFile(from:id:progress:)` — registers as its own entity
+    /// `load(_:id:transform:)`/`loadFile(from:id:progress:)`. Registers as its own entity
     /// under `id` (see `entities`' own documentation), so `remove(id:)`/`loadedShapes`/etc.
     /// see it too.
-    @available(*, deprecated, message: "Use load(_:id:transform:) instead for multi-entity loading. This overload still replaces every model body.")
+    @available(
+        *, deprecated,
+        message:
+            "Use load(_:id:transform:) instead for multi-entity loading. This overload still replaces every model body."
+    )
     public func loadShape(_ shape: OCCTSwift.Shape, id: String = "model") {
         resetAllModelState()
         self.legacyLoadedShape = shape
         self.legacyLoadedShapeEntityID = id
         let graph = BRepGraph(shape: shape)
-        let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
-            shape,
-            id: id,
-            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
-            graph: graph
-        )
+        let (body, meta, faceTable, edgeTable, vertexTable) =
+            CADFileLoader.shapeToBodyMetadataAndIdentities(
+                shape,
+                id: id,
+                color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
+                graph: graph
+            )
         if let body {
             self.modelBodies = [body]
         }
@@ -335,17 +372,19 @@ public final class CADViewportService {
         }
         entities[id] = Entity(bodyIDs: [id])
         clearSelection()
-        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
+        updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
         focusOnLoadedShape()
     }
 
     /// Full clean slate for every collection a load populates, including `entities` and
-    /// `legacyLoadedShape`. Used by the deprecated single-shape `loadFile(from:progress:)`/
-    /// `loadShape(_:id:)` (which replace *everything*, not just their own prior load) and by
-    /// `removeAll()`. Centralising this is what makes it safe to mix the deprecated and
-    /// multi-entity APIs in one session — e.g. `loadShape(_:id:"model")` followed by
-    /// `load(_:id:"model")` correctly replaces the first load's body rather than leaving a
-    /// stray duplicate, since both register in the same `entities` registry.
+    /// `legacyLoadedShape`.
+    ///
+    /// Used by the deprecated single-shape `loadFile(from:progress:)`/`loadShape(_:id:)`
+    /// (which replace *everything*, not just their own prior load) and by `removeAll()`.
+    /// Centralising this is what makes it safe to mix the deprecated and multi-entity APIs
+    /// in one session, e.g. `loadShape(_:id:"model")` followed by `load(_:id:"model")`
+    /// correctly replaces the first load's body rather than leaving a stray duplicate,
+    /// since both register in the same `entities` registry.
     private func resetAllModelState() {
         modelBodies.removeAll()
         metadata.removeAll()
@@ -369,27 +408,28 @@ public final class CADViewportService {
     }
 
     /// Builds a `BRepGraph` and `FaceIdentityTable` per body from a multi-body file load's
-    /// raw shapes, keyed by body id. `CADFileLoader.load(from:format:)` has no
-    /// identity-table overload — it owns the STL/IGES robust-reload fallback, which this
-    /// package shouldn't reimplement just to get identity — so the table is built directly
-    /// from `shape.faces()` instead of re-tessellating each body through
-    /// `shapeToBodyMetadataAndIdentity`. Since OCCTSwift 2.0.0 (#541/#613), `shape.faces()`
-    /// is a 0-based, *deduplicated* enumeration (`TopExp::MapShapes`-backed), and
-    /// `Mesh.Triangle.faceIndex` — the value the mesher writes into
-    /// `CADBodyMetadata.faceIndices` — was converted onto that same deduplicated enumeration
-    /// in the same release. The two still name the identical ordinal for the identical
-    /// shape (see `FaceIdentityTable`'s own documentation), so ordinals still line up
-    /// without a second tessellation pass; only the underlying semantics moved, together,
+    /// raw shapes, keyed by body id.
+    ///
+    /// `CADFileLoader.load(from:format:)` has no identity-table overload: it owns the
+    /// STL/IGES robust-reload fallback, which this package shouldn't reimplement just to
+    /// get identity, so the table is built directly from `shape.faces()` instead of
+    /// re-tessellating each body through `shapeToBodyMetadataAndIdentity`. Since OCCTSwift
+    /// 2.0.0 (#541/#613), `shape.faces()` is a 0-based, *deduplicated* enumeration
+    /// (`TopExp::MapShapes`-backed), and `Mesh.Triangle.faceIndex` (the value the mesher
+    /// writes into `CADBodyMetadata.faceIndices`) was converted onto that same deduplicated
+    /// enumeration in the same release. The two still name the identical ordinal for the
+    /// identical shape (see `FaceIdentityTable`'s own documentation), so ordinals still line
+    /// up without a second tessellation pass; only the underlying semantics moved, together,
     /// from per-occurrence to per-distinct-face.
     ///
     /// Requires `bodies` and `shapes` to correspond positionally (`shapes[i]` is the shape
-    /// `bodies[i]` was tessellated from) — true for `CADFileLoader.load(from:format:)`'s
+    /// `bodies[i]` was tessellated from): true for `CADFileLoader.load(from:format:)`'s
     /// primary bridge, where both arrays are appended together only on tessellation success.
     /// Its STL/IGES robust-reload fallback (`reloadRobustAndBridge`) can violate this: it
     /// appends to `shapes` on every input even when that input's body tessellation fails, so
     /// a body-tessellation failure part-way through a multibody robust reload shifts `shapes`
     /// out of alignment with `bodies` for every subsequent entry. Detectable from the outside
-    /// only via the count mismatch it produces (`shapes.count > bodies.count`) — when that
+    /// only via the count mismatch it produces (`shapes.count > bodies.count`): when that
     /// happens, this method skips building identity entirely rather than risk pairing a body
     /// with the wrong shape, matching this pack's own rule that `uid`/`shape` should be
     /// absent rather than wrong.
@@ -428,11 +468,13 @@ public final class CADViewportService {
         self.vertexIdentity = newVertexIdentity
     }
 
-    /// Mirrors `OCCTSwiftTools.CADFileLoader`'s own (private) `makeFaceIdentityTable`: map
+    /// Mirrors the private `makeFaceIdentityTable` in `OCCTSwiftTools.CADFileLoader`: map
     /// every `shape.faces()` ordinal to its `Shape`, and, when a graph is available, to the
     /// `GraphUID` minted via `graph.findNode(for:)` on that same face `Shape` so `IsSame`
     /// semantics hold.
-    private static func makeFaceIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?) -> FaceIdentityTable {
+    private static func makeFaceIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?)
+        -> FaceIdentityTable
+    {
         let faceShapes = shape.faces().compactMap { OCCTSwift.Shape.fromFace($0) }
         guard let graph else {
             return FaceIdentityTable(shapes: faceShapes)
@@ -444,10 +486,12 @@ public final class CADViewportService {
         return FaceIdentityTable(shapes: faceShapes, uids: uids)
     }
 
-    /// Mirrors `OCCTSwiftTools.CADFileLoader`'s own (private) `makeEdgeIdentityTable`: map
+    /// Mirrors the private `makeEdgeIdentityTable` in `OCCTSwiftTools.CADFileLoader`: map
     /// every `shape.edges()` ordinal (the same `TopTools_IndexedMapOfShape` traversal
     /// `edgeIndices` is built from) to its `Shape` and, when available, `GraphUID`.
-    private static func makeEdgeIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?) -> EdgeIdentityTable {
+    private static func makeEdgeIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?)
+        -> EdgeIdentityTable
+    {
         let edgeShapes = shape.edges().compactMap { OCCTSwift.Shape.fromEdge($0) }
         guard let graph else {
             return EdgeIdentityTable(shapes: edgeShapes)
@@ -459,10 +503,12 @@ public final class CADViewportService {
         return EdgeIdentityTable(shapes: edgeShapes, uids: uids)
     }
 
-    /// Mirrors `OCCTSwiftTools.CADFileLoader`'s own (private) `makeVertexIdentityTable`: map
+    /// Mirrors the private `makeVertexIdentityTable` in `OCCTSwiftTools.CADFileLoader`: map
     /// every `shape.subShapes(ofType: .vertex)` ordinal (the same `TopTools_IndexedMapOfShape`
     /// traversal `vertexIndices` is built from) to its `Shape` and, when available, `GraphUID`.
-    private static func makeVertexIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?) -> VertexIdentityTable {
+    private static func makeVertexIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?)
+        -> VertexIdentityTable
+    {
         let vertexShapes = shape.subShapes(ofType: .vertex)
         guard let graph else {
             return VertexIdentityTable(shapes: vertexShapes)
@@ -476,7 +522,11 @@ public final class CADViewportService {
 
     /// Convenience for callers that have file `Data` rather than a URL
     /// (e.g. `.fileImporter` results, drag-and-drop on iOS).
-    @available(*, deprecated, message: "Use loadFromData(_:filename:id:progress:) instead for multi-entity loading. This overload still replaces every model body.")
+    @available(
+        *, deprecated,
+        message:
+            "Use loadFromData(_:filename:id:progress:) instead for multi-entity loading. This overload still replaces every model body."
+    )
     @discardableResult
     public func loadFromData(
         _ data: Data,
@@ -491,9 +541,11 @@ public final class CADViewportService {
     }
 
     /// Multi-entity counterpart to the deprecated `loadFromData(_:filename:progress:)`: for
-    /// callers that have file `Data` rather than a URL. See `loadFile(from:id:progress:)`.
+    /// callers that have file `Data` rather than a URL.
     ///
-    /// `id` is required — a defaulted one would make calls like
+    /// See `loadFile(from:id:progress:)`.
+    ///
+    /// `id` is required: a defaulted one would make calls like
     /// `loadFromData(data, filename: "part.step")` ambiguous against the deprecated
     /// 3-argument overload, since both would become callable with identical arguments.
     @discardableResult
@@ -512,13 +564,14 @@ public final class CADViewportService {
 
     // MARK: - Multi-body / Assembly
 
-    /// Load a CAD file as a distinct, addressable entity. Unlike the deprecated
-    /// `loadFile(from:progress:)`, this adds to the currently loaded entities rather than
-    /// replacing them, so multiple parts (or several of an assembly's occurrences) can
-    /// coexist. A file with several bodies (e.g. a multibody STEP/STL) registers one
-    /// entity whose body ids are `"<id>-0"`, `"<id>-1"`, etc.
+    /// Load a CAD file as a distinct, addressable entity.
     ///
-    /// Camera is **not** auto-focused (unlike the deprecated single-shape overload) — call
+    /// Unlike the deprecated `loadFile(from:progress:)`, this adds to the currently loaded
+    /// entities rather than replacing them, so multiple parts (or several of an assembly's
+    /// occurrences) can coexist. A file with several bodies (e.g. a multibody STEP/STL)
+    /// registers one entity whose body ids are `"<id>-0"`, `"<id>-1"`, etc.
+    ///
+    /// Camera is **not** auto-focused (unlike the deprecated single-shape overload); call
     /// `focus(on:)` once you've loaded what should be visible.
     ///
     /// - Parameters:
@@ -562,23 +615,26 @@ public final class CADViewportService {
             modelBodies.append(body)
             bodyIDs.append(bodyID)
         }
-        addIdentity(bodyIDs: bodyIDs, shapes: result.bodies.count == result.shapes.count ? result.shapes : [])
+        addIdentity(
+            bodyIDs: bodyIDs,
+            shapes: result.bodies.count == result.shapes.count ? result.shapes : [])
 
         entities[id] = Entity(bodyIDs: bodyIDs)
-        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
+        updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
         return id
     }
 
-    /// Display an in-memory shape as a distinct, addressable entity. Unlike the deprecated
-    /// `loadShape(_:id:)`, this adds to the currently loaded entities rather than replacing
-    /// them.
+    /// Display an in-memory shape as a distinct, addressable entity.
     ///
-    /// Pass `transform` to place the shape before tessellating it — e.g. an assembly
-    /// occurrence's location. Matches `OCCTSwift.Shape.transformed(matrix:)`'s layout: a
+    /// Unlike the deprecated `loadShape(_:id:)`, this adds to the currently loaded entities
+    /// rather than replacing them.
+    ///
+    /// Pass `transform` to place the shape before tessellating it, e.g. an assembly
+    /// occurrence's location. Matches the layout of `OCCTSwift.Shape.transformed(matrix:)`: a
     /// rigid 12-element affine matrix, `[r00,r01,r02, r10,r11,r12, r20,r21,r22, tx,ty,tz]`
     /// (row-major 3x3 rotation, then translation). `nil` (default) leaves the shape as-is.
     ///
-    /// Camera is **not** auto-focused — call `focus(on:)` once you've loaded what should
+    /// Camera is **not** auto-focused; call `focus(on:)` once you've loaded what should
     /// be visible.
     ///
     /// - Returns: `id`, echoed back.
@@ -589,16 +645,18 @@ public final class CADViewportService {
         remove(id: id)
 
         let graph = BRepGraph(shape: placedShape)
-        let (body, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
-            placedShape,
-            id: id,
-            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
-            graph: graph
-        )
+        let (body, meta, faceTable, edgeTable, vertexTable) =
+            CADFileLoader.shapeToBodyMetadataAndIdentities(
+                placedShape,
+                id: id,
+                color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
+                graph: graph
+            )
 
         guard let body else {
             entities[id] = Entity(bodyIDs: [])
-            updateCapSurfaces() // no-op for capping (nothing new to cut), but keeps this path consistent
+            // No-op for capping (nothing new to cut), but keeps this path consistent.
+            updateCapSurfaces()
             return id
         }
 
@@ -621,18 +679,20 @@ public final class CADViewportService {
         }
 
         entities[id] = Entity(bodyIDs: [id])
-        updateCapSurfaces() // picks up whatever clipping/capping is already active — also rebuilds
+        updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
         return id
     }
 
     /// Additive counterpart to `rebuildIdentity`: builds identity for one entity's bodies
     /// and merges it in with whatever other entities' identity already exists, rather than
     /// wiping everything (which is what `rebuildIdentity`, used by the deprecated
-    /// single-entity `loadFile(from:progress:)`, does). Same defensive count-mismatch
-    /// guard as `rebuildIdentity`: if `bodyIDs` and `shapes` don't correspond positionally
-    /// (or an empty `shapes` was passed because the caller already detected a mismatch),
-    /// identity is skipped for this batch — the bodies still display, without
-    /// durable-identity picks, rather than risk pairing a body with the wrong shape.
+    /// single-entity `loadFile(from:progress:)`, does).
+    ///
+    /// Same defensive count-mismatch guard as `rebuildIdentity`: if `bodyIDs` and `shapes`
+    /// don't correspond positionally (or an empty `shapes` was passed because the caller
+    /// already detected a mismatch), identity is skipped for this batch; the bodies still
+    /// display, without durable-identity picks, rather than risk pairing a body with the
+    /// wrong shape.
     private func addIdentity(bodyIDs: [String], shapes: [OCCTSwift.Shape]) {
         guard bodyIDs.count == shapes.count else { return }
         for (index, bodyID) in bodyIDs.enumerated() {
@@ -648,10 +708,12 @@ public final class CADViewportService {
         }
     }
 
-    /// Removes a loaded entity (and its bodies) from the viewport. No-op if `id` isn't
-    /// currently loaded. Clears the current selection if it referenced this entity.
+    /// Removes a loaded entity (and its bodies) from the viewport.
     ///
-    /// Also invalidates `legacyLoadedShape` if it was this entity's — otherwise the
+    /// No-op if `id` isn't currently loaded. Clears the current selection if it referenced
+    /// this entity.
+    ///
+    /// Also invalidates `legacyLoadedShape` if it was this entity's, otherwise the
     /// deprecated `loadedShape`/`shapeBounds` could keep reporting a shape whose entity was
     /// just removed or replaced (e.g. `loadShape(box, id: "model")` followed by
     /// `load(otherBox, id: "model")`, which calls this internally before adding the new
@@ -668,14 +730,16 @@ public final class CADViewportService {
         pruneEscalation(removingBodyIDs: entity.bodyIDs)
     }
 
-    /// Removes every currently loaded entity — whichever API loaded it (see `entities`'
-    /// own documentation) — and clears the deprecated single-shape `loadedShape`'s legacy
-    /// backing too. A full clean slate, equivalent to a fresh `CADViewportService`.
+    /// Removes every currently loaded entity, whichever API loaded it (see the documentation
+    /// on `entities`), and clears the legacy backing for the deprecated single-shape
+    /// `loadedShape` too.
+    ///
+    /// A full clean slate, equivalent to a fresh `CADViewportService`.
     public func removeAll() {
         let hadSelection = !selection.isEmpty
         resetAllModelState()
         if hadSelection {
-            clearSelection() // also calls rebuildBodies()
+            clearSelection()  // also calls rebuildBodies()
         } else {
             rebuildBodies()
         }
@@ -698,7 +762,7 @@ public final class CADViewportService {
     }
 
     /// Drops only the selection entries that referenced a removed body, leaving everything
-    /// else selected — the selection survives operations unrelated to it, and honestly
+    /// else selected: the selection survives operations unrelated to it, and accurately
     /// reports (by no longer containing them) the entries that didn't.
     private func pruneSelection(removingBodyIDs bodyIDs: [String]) {
         let removed = Set(bodyIDs)
@@ -707,40 +771,46 @@ public final class CADViewportService {
             return
         }
         selection.removeAll { removed.contains($0.bodyID) }
-        rebuildSelectionHighlights() // also calls rebuildBodies()
+        rebuildSelectionHighlights()  // also calls rebuildBodies()
     }
 
-    /// Clears the active comparison if it referenced one of the just-removed entities —
-    /// keeps `comparison` from silently going stale when either side of a comparison is
+    /// Clears the active comparison if it referenced one of the just-removed entities.
+    ///
+    /// Keeps `comparison` from silently going stale when either side of a comparison is
     /// removed or reloaded (`load`/`loadFile(from:id:)` both call `remove(id:)` before
     /// re-adding, so reloading either entity also goes through here).
     ///
     /// Routes through `undoComparison` rather than just dropping `comparisonBackup`: only
     /// the JUST-REMOVED entity's bodies are actually gone from `modelBodies` by the time this
-    /// runs — the OTHER (surviving) side of a `.overlay`/`.sideBySide`/`.wipe` comparison was
+    /// runs; the OTHER (surviving) side of a `.overlay`/`.sideBySide`/`.wipe` comparison was
     /// independently mutated (ghosted opacity, offset transform, or wipe-filtered triangles)
     /// and would otherwise stay that way forever with no active `comparison` to explain it.
     /// `undoComparison`'s restore loop already no-ops gracefully for the removed side (its
     /// body ids no longer match anything in `modelBodies`), so this is safe either way.
     private func pruneComparison(removingEntityIDs ids: [String]) {
         guard let current = comparison,
-              ids.contains(current.referenceID) || ids.contains(current.candidateID) else { return }
+            ids.contains(current.referenceID) || ids.contains(current.candidateID)
+        else { return }
         undoComparison(current)
         comparison = nil
-        updateCapSurfaces() // re-applies an active cap to the just-restored surviving side; also rebuilds
+        // Re-applies an active cap to the just-restored surviving side; also rebuilds.
+        updateCapSurfaces()
     }
 
-    /// Currently loaded entities' shapes, keyed by entity id — see `entities`' own
-    /// documentation for why this reflects every loading API, not just the multi-entity one.
+    /// Currently loaded entities' shapes, keyed by entity id.
+    ///
+    /// See `entities`' own documentation for why this reflects every loading API, not just
+    /// the multi-entity one.
     public var loadedShapes: [String: OCCTSwift.Shape] {
         entities.keys.reduce(into: [:]) { result, id in
             result[id] = shape(id: id)
         }
     }
 
-    /// The shape a loaded entity owns — its first body's shape, for a multi-body entity
-    /// (e.g. a multibody file loaded under one id). `nil` if `id` isn't currently loaded,
-    /// or its shape failed to tessellate.
+    /// The shape a loaded entity owns: its first body's shape, for a multi-body entity
+    /// (e.g. a multibody file loaded under one id).
+    ///
+    /// `nil` if `id` isn't currently loaded, or its shape failed to tessellate.
     public func shape(id: String) -> OCCTSwift.Shape? {
         guard let entity = entities[id], let firstBodyID = entity.bodyIDs.first else { return nil }
         return bodyShapes[firstBodyID]
@@ -752,8 +822,10 @@ public final class CADViewportService {
         entities.first { $0.value.bodyIDs.contains(bodyID) }?.key
     }
 
-    /// Per-entity visibility. Reading returns every loaded entity's current flag; setting
-    /// applies each given key's value (a key not currently loaded is ignored).
+    /// Per-entity visibility.
+    ///
+    /// Reading returns every loaded entity's current flag; setting applies each given key's
+    /// value (a key not currently loaded is ignored).
     public var visibility: [String: Bool] {
         get { entities.mapValues(\.isVisible) }
         set {
@@ -773,8 +845,9 @@ public final class CADViewportService {
         rebuildBodies()
     }
 
-    /// Frames the camera on the union of bounds of the given entities. No-op if none of
-    /// `ids` are currently loaded.
+    /// Frames the camera on the union of bounds of the given entities.
+    ///
+    /// No-op if none of `ids` are currently loaded.
     public func focus(on ids: [String]) {
         let shapes = ids.compactMap { shape(id: $0) }
         guard !shapes.isEmpty else { return }
@@ -797,14 +870,15 @@ public final class CADViewportService {
 
     // MARK: - Scalar Fields
 
-    /// Paints (or clears, with `nil`) a scalar field over a loaded body — rebuilds that
-    /// body's `TriangleStyle` buffer to reflect it. Currently rebuilds the whole body (a
-    /// fresh `generation`, so a full vertex/index/edge re-upload alongside the style
-    /// buffer) rather than mutating `triangleStyles` in place, because `OCCTSwiftViewport`
-    /// (pinned floor 1.1.26) doesn't actually apply an in-place style-only mutation to an
-    /// already-rendered body — its renderer only rebuilds a body's GPU buffers when
-    /// `generation` changes, which an in-place mutation never does. See
-    /// `applyTriangleStyles`'s own doc comment for how this was confirmed.
+    /// Paints (or clears, with `nil`) a scalar field over a loaded body: rebuilds that
+    /// body's `TriangleStyle` buffer to reflect it.
+    ///
+    /// Currently rebuilds the whole body (a fresh `generation`, so a full vertex/index/edge
+    /// re-upload alongside the style buffer) rather than mutating `triangleStyles` in place,
+    /// because `OCCTSwiftViewport` (pinned floor 1.1.26) doesn't actually apply an in-place
+    /// style-only mutation to an already-rendered body: its renderer only rebuilds a body's
+    /// GPU buffers when `generation` changes, which an in-place mutation never does. See the
+    /// doc comment on `applyTriangleStyles` for how this was confirmed.
     public func setScalarField(_ field: ScalarField?, forBody id: String) {
         guard let field else {
             scalarFields.removeValue(forKey: id)
@@ -822,12 +896,15 @@ public final class CADViewportService {
         scalarFields[id]
     }
 
-    /// Legend for the most recently set (still-active) scalar field — label, unit, range,
+    /// Legend for the most recently set (still-active) scalar field: label, unit, range,
     /// and evenly-spaced color stops a UI can lay out as a gradient bar or discrete
-    /// swatches. `nil` if no field is currently set on any body.
+    /// swatches.
+    ///
+    /// `nil` if no field is currently set on any body.
     public var scalarFieldLegend: ScalarFieldLegend? {
         guard let bodyID = lastScalarFieldBodyID, let field = scalarFields[bodyID],
-              let range = field.effectiveRange else {
+            let range = field.effectiveRange
+        else {
             return nil
         }
         let stopCount = 9
@@ -839,13 +916,15 @@ public final class CADViewportService {
         return ScalarFieldLegend(label: field.label, unit: field.unit, range: range, stops: stops)
     }
 
-    /// Builds a `TriangleStyle` per triangle from `field` (`nil`, or a field whose
-    /// `effectiveRange` is `nil`, clears every style back to empty — not a full array of
-    /// `.none`; `ViewportBody.triangleStyles`'s own contract distinguishes "empty" (skips
-    /// the highlight pass for this body entirely) from "populated but all zero-alpha"
-    /// (still builds a style buffer and runs the pass, just compositing nothing) — and
-    /// writes it into `id`'s body. See this method's implementation comment below for why
-    /// that's a full body reconstruction rather than an in-place `triangleStyles` mutation.
+    /// Builds a `TriangleStyle` per triangle from `field`.
+    ///
+    /// `nil`, or a field whose `effectiveRange` is `nil`, clears every style back to empty
+    /// (not a full array of `.none`; `ViewportBody.triangleStyles`'s own contract
+    /// distinguishes "empty" (skips the highlight pass for this body entirely) from
+    /// "populated but all zero-alpha" (still builds a style buffer and runs the pass, just
+    /// compositing nothing)) and writes it into `id`'s body. See this method's
+    /// implementation comment below for why that's a full body reconstruction rather than
+    /// an in-place `triangleStyles` mutation.
     private func applyTriangleStyles(_ field: ScalarField?, forBody id: String) {
         guard let index = modelBodies.firstIndex(where: { $0.id == id }) else { return }
         let body = modelBodies[index]
@@ -879,12 +958,12 @@ public final class CADViewportService {
         // OCCTSwiftViewport's pinned 1.1.26 via its OffscreenRenderer, on an
         // already-rendered body) that this isn't actually true today:
         // `ViewportRenderer`/`OffscreenRenderer.ensureBuffers(for:)` gate ALL buffer
-        // work — including the triangle-style buffer — behind a check that only looks
+        // work (including the triangle-style buffer) behind a check that only looks
         // at `body.generation`, which an in-place `triangleStyles` mutation never
         // changes (`generation` is a `let`, fixed at `init`). A body already on screen
         // when this ran would silently keep whatever style buffer it had before,
         // regardless of the new styles just computed above. Reconstructing the body
-        // mints a fresh `generation`, which does force a real rebuild — at the cost of
+        // mints a fresh `generation`, which does force a real rebuild, at the cost of
         // a full vertex/index/edge re-upload alongside the style buffer, since
         // OCCTSwiftViewport has no coarser-than-"whole body" cache key to target. This
         // is a workaround for what looks like an upstream bug, not a design choice; once
@@ -920,23 +999,27 @@ public final class CADViewportService {
         rebuildBodies()
     }
 
-    /// The scalar value at a resolved face pick, if a field is set on that body — `nil`
-    /// domain matches `PickedFaceInfo.faceIndex`/`triangleIndex` per `ScalarField.Domain`.
-    private func scalarValue(forBody bodyID: String, faceIndex: Int, triangleIndex: Int) -> Double? {
+    /// The scalar value at a resolved face pick, if a field is set on that body.
+    ///
+    /// `nil` domain matches `PickedFaceInfo.faceIndex`/`triangleIndex` per `ScalarField.Domain`.
+    private func scalarValue(forBody bodyID: String, faceIndex: Int, triangleIndex: Int) -> Double?
+    {
         guard let field = scalarFields[bodyID] else { return nil }
         switch field.domain {
         case .perFace:
             return faceIndex >= 0 && faceIndex < field.values.count ? field.values[faceIndex] : nil
         case .perTriangle:
-            return triangleIndex >= 0 && triangleIndex < field.values.count ? field.values[triangleIndex] : nil
+            return triangleIndex >= 0 && triangleIndex < field.values.count
+                ? field.values[triangleIndex] : nil
         }
     }
 
     // MARK: - Comparison
 
     /// Sets (or, with `nil`, clears) a comparison view between two already-loaded entities.
-    /// Safe to call repeatedly — including with a different mode, or different `position`/
-    /// `referenceOpacity` for the same mode — without reloading either entity; each call
+    ///
+    /// Safe to call repeatedly (including with a different mode, or different `position`/
+    /// `referenceOpacity` for the same mode) without reloading either entity; each call
     /// first undoes whatever the previous comparison did before applying the new one (or
     /// nothing, if clearing). No-op for an entity id that isn't currently loaded.
     public func setComparison(_ comparison: ComparisonView?) {
@@ -950,7 +1033,8 @@ public final class CADViewportService {
             // redundantly undo-then-reapply it a second time right before this method's own
             // code does the real work below.
             self.comparison = nil
-            updateCapSurfaces() // re-applies an active cap to the just-restored body; also rebuilds
+            // Re-applies an active cap to the just-restored body; also rebuilds.
+            updateCapSurfaces()
         }
         self.comparison = comparison
         guard let comparison else {
@@ -982,7 +1066,7 @@ public final class CADViewportService {
     private func undoComparison(_ previous: ComparisonView) {
         switch previous.mode {
         case .deviation:
-            setScalarField(nil, forBody: previous.candidateID) // rebuilds bodies itself
+            setScalarField(nil, forBody: previous.candidateID)  // rebuilds bodies itself
         case .overlay, .sideBySide, .wipe:
             for (bodyID, original) in comparisonBackup {
                 if let index = modelBodies.firstIndex(where: { $0.id == bodyID }) {
@@ -998,19 +1082,24 @@ public final class CADViewportService {
         case .overlay(let opacity):
             applyOverlay(referenceID: comparison.referenceID, opacity: opacity)
         case .deviation:
-            break // caller drives this via setScalarField(_:forBody:) on the candidate
+            break  // caller drives this via setScalarField(_:forBody:) on the candidate
         case .sideBySide:
-            applySideBySide(referenceID: comparison.referenceID, candidateID: comparison.candidateID)
+            applySideBySide(
+                referenceID: comparison.referenceID, candidateID: comparison.candidateID)
         case .wipe(let axis, let position):
-            applyWipe(referenceID: comparison.referenceID, candidateID: comparison.candidateID, axis: axis, position: position)
+            applyWipe(
+                referenceID: comparison.referenceID, candidateID: comparison.candidateID,
+                axis: axis, position: position)
         }
     }
 
-    /// Ghosts the reference entity by lowering its bodies' alpha. Safe as an in-place mutation
-    /// (unlike `triangleStyles`, `ViewportBody.color` is read fresh into `BodyUniforms` every
-    /// frame rather than baked into a cached buffer — confirmed via `ViewportRenderer`'s
-    /// `BodyUniforms(body:)`, which always reads `body.effectiveMaterial` live), and bodies
-    /// below full opacity are already routed through the renderer's sorted transparent pass.
+    /// Ghosts the reference entity by lowering its bodies' alpha.
+    ///
+    /// Safe as an in-place mutation (unlike `triangleStyles`, `ViewportBody.color` is read
+    /// fresh into `BodyUniforms` every frame rather than baked into a cached buffer,
+    /// confirmed via `BodyUniforms(body:)` on `ViewportRenderer`, which always reads
+    /// `body.effectiveMaterial` live), and bodies below full opacity are already routed
+    /// through the renderer's sorted transparent pass.
     private func applyOverlay(referenceID: String, opacity: Double) {
         let alpha = Float(max(0, min(1, opacity)))
         for bodyID in entityBodyIDs(referenceID) {
@@ -1019,10 +1108,12 @@ public final class CADViewportService {
         }
     }
 
-    /// Union of bounds across every body of an entity. Unlike `shape(id:)` (which
-    /// deliberately returns only the entity's first body's shape — fine for `focus(on:)`'s
-    /// "roughly frame the camera" use), `applySideBySide` needs the offset to actually clear
-    /// every body of a multi-body entity, not just whichever one happens to be first.
+    /// Union of bounds across every body of an entity.
+    ///
+    /// Unlike `shape(id:)` (which deliberately returns only the entity's first body's shape,
+    /// fine for the "roughly frame the camera" use in `focus(on:)`), `applySideBySide` needs
+    /// the offset to actually clear every body of a multi-body entity, not just whichever
+    /// one happens to be first.
     private func entityBounds(_ entityID: String) -> (min: SIMD3<Double>, max: SIMD3<Double>)? {
         let shapes = entityBodyIDs(entityID).compactMap { bodyShapes[$0] }
         guard !shapes.isEmpty else { return nil }
@@ -1037,11 +1128,15 @@ public final class CADViewportService {
     }
 
     /// Offsets the candidate's bodies along X so it sits beside the reference rather than
-    /// overlapping it. A single shared camera/viewport means "linked cameras" is automatic.
-    /// Via `ViewportBody.transform`, also read live per frame (not cache-gated), so this is a
-    /// cheap in-place update — no re-tessellation.
+    /// overlapping it.
+    ///
+    /// A single shared camera/viewport means "linked cameras" is automatic. Via
+    /// `ViewportBody.transform`, also read live per frame (not cache-gated), so this is a
+    /// cheap in-place update, no re-tessellation.
     private func applySideBySide(referenceID: String, candidateID: String) {
-        guard let referenceBounds = entityBounds(referenceID), let candidateBounds = entityBounds(candidateID) else { return }
+        guard let referenceBounds = entityBounds(referenceID),
+            let candidateBounds = entityBounds(candidateID)
+        else { return }
         let referenceSizeX = referenceBounds.max.x - referenceBounds.min.x
         let candidateSizeX = candidateBounds.max.x - candidateBounds.min.x
         let gap = max(referenceSizeX, candidateSizeX) * 0.15
@@ -1056,8 +1151,10 @@ public final class CADViewportService {
 
     /// Splits reference and candidate at a shared world-space plane (`axis`/`position`),
     /// keeping the reference's bodies on the lower side and the candidate's on the higher
-    /// side. `OCCTSwiftViewport`'s `ViewportController.clipPlanes` clips the whole scene
-    /// uniformly (confirmed via `ViewportRenderer` — there's no per-body clip-plane field on
+    /// side.
+    ///
+    /// `ViewportController.clipPlanes` in `OCCTSwiftViewport` clips the whole scene uniformly
+    /// (confirmed via `ViewportRenderer`: there's no per-body clip-plane field on
     /// `ViewportBody`), so it can't show reference and candidate on opposite sides of the same
     /// plane; this filters each body's own triangles instead. See `wipeFiltered` for what that
     /// drops.
@@ -1066,29 +1163,39 @@ public final class CADViewportService {
         let planePosition = Float(position)
         for bodyID in entityBodyIDs(referenceID) {
             guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
-            modelBodies[index] = wipeFiltered(modelBodies[index], axisVector: axisVector, position: planePosition, keepBelow: true)
+            modelBodies[index] = wipeFiltered(
+                modelBodies[index], axisVector: axisVector, position: planePosition, keepBelow: true
+            )
         }
         for bodyID in entityBodyIDs(candidateID) {
             guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
-            modelBodies[index] = wipeFiltered(modelBodies[index], axisVector: axisVector, position: planePosition, keepBelow: false)
+            modelBodies[index] = wipeFiltered(
+                modelBodies[index], axisVector: axisVector, position: planePosition,
+                keepBelow: false)
         }
     }
 
     /// Rebuilds `body` keeping only the triangles whose centroid falls on one side of a
-    /// world-space plane (unit `axisVector`, offset `position` along it) — the mechanism
-    /// behind `.wipe`. Filters `indices`/`faceIndices`/`triangleStyles` in lockstep by
+    /// world-space plane (unit `axisVector`, offset `position` along it): the mechanism
+    /// behind `.wipe`.
+    ///
+    /// Filters `indices`/`faceIndices`/`triangleStyles` in lockstep by
     /// triangle; `vertexData` (or `meshPositions`/`meshNormals` for a direct-mesh body) is
     /// passed through unfiltered since the filtered `indices` simply reference fewer of its
-    /// entries — no vertex remapping needed. Drops `edges`/`arcs`/`vertices`/`vertexIndices`/
+    /// entries, no vertex remapping needed. Drops `edges`/`arcs`/`vertices`/`vertexIndices`/
     /// `vertexColors`: wireframe overlay and vertex-picking aren't preserved on a wiped body,
-    /// only the shaded triangle mesh — filtering polylines/points against the same cut is
+    /// only the shaded triangle mesh; filtering polylines/points against the same cut is
     /// unneeded complexity for a review affordance whose point is the shaded-surface split.
     /// A body with no triangles (e.g. `.point` primitive) passes through unchanged.
-    private func wipeFiltered(_ body: _ViewportBody, axisVector: SIMD3<Float>, position: Float, keepBelow: Bool) -> _ViewportBody {
+    private func wipeFiltered(
+        _ body: _ViewportBody, axisVector: SIMD3<Float>, position: Float, keepBelow: Bool
+    ) -> _ViewportBody {
         let triangleCount = body.indices.count / 3
         guard triangleCount > 0 else { return body }
         let direct = body.usesDirectMesh
-        guard direct ? body.meshPositions.count >= 3 : body.vertexData.count >= 6 else { return body }
+        guard direct ? body.meshPositions.count >= 3 : body.vertexData.count >= 6 else {
+            return body
+        }
 
         func vertexPosition(_ vertexIndex: Int) -> SIMD3<Float> {
             if direct {
@@ -1157,12 +1264,13 @@ public final class CADViewportService {
 
     // MARK: - Clipping
 
-    /// Every currently configured clipping plane. Setting replaces the whole array (a plane
-    /// dropped from the new value is implicitly removed; add via `addClippingPlane`/
-    /// `sectionSweep` to get an auto-generated `id` instead of inventing your own).
-    /// `OCCTSwiftViewport`'s `ViewportController.clipPlanes` only honors the first 4
-    /// *enabled* planes per frame — this property can hold more, but only the first 4
-    /// enabled ones actually clip.
+    /// Every currently configured clipping plane.
+    ///
+    /// Setting replaces the whole array (a plane dropped from the new value is implicitly
+    /// removed; add via `addClippingPlane`/`sectionSweep` to get an auto-generated `id`
+    /// instead of inventing your own). `ViewportController.clipPlanes` in `OCCTSwiftViewport`
+    /// only honors the first 4 *enabled* planes per frame; this property can hold more, but
+    /// only the first 4 enabled ones actually clip.
     public var clippingPlanes: [ClippingPlane] {
         get { clippingPlaneStorage }
         set {
@@ -1174,14 +1282,19 @@ public final class CADViewportService {
     /// Adds a clipping plane and returns its `id` (pass to `removeClippingPlane(id:)` or look
     /// up in `clippingPlanes` to adjust it later).
     @discardableResult
-    public func addClippingPlane(origin: SIMD3<Double>, normal: SIMD3<Double>, showCapSurface: Bool = true) -> String {
+    public func addClippingPlane(
+        origin: SIMD3<Double>, normal: SIMD3<Double>, showCapSurface: Bool = true
+    ) -> String {
         let id = UUID().uuidString
-        clippingPlaneStorage.append(ClippingPlane(id: id, origin: origin, normal: normal, showCapSurface: showCapSurface))
+        clippingPlaneStorage.append(
+            ClippingPlane(id: id, origin: origin, normal: normal, showCapSurface: showCapSurface))
         syncClippingPlanes()
         return id
     }
 
-    /// Removes a clipping plane. No-op if `id` isn't currently configured.
+    /// Removes a clipping plane.
+    ///
+    /// No-op if `id` isn't currently configured.
     public func removeClippingPlane(id: String) {
         guard clippingPlaneStorage.contains(where: { $0.id == id }) else { return }
         clippingPlaneStorage.removeAll { $0.id == id }
@@ -1192,15 +1305,18 @@ public final class CADViewportService {
     }
 
     /// Convenience for the prismatic-axis inspection case: steps a single, dedicated plane
-    /// along `axis` (need not be pre-normalized) to world coordinate `position`. The first
-    /// call creates the plane (capping on by default); later calls move that SAME plane
-    /// (preserving whatever `isEnabled`/`showCapSurface` it's since been set to) rather than
-    /// accumulating a new one per call — call `removeClippingPlane` with the id this method
-    /// first returned via `clippingPlanes` if you need to stop sweeping and remove it.
+    /// along `axis` (need not be pre-normalized) to world coordinate `position`.
+    ///
+    /// The first call creates the plane (capping on by default); later calls move that SAME
+    /// plane (preserving whatever `isEnabled`/`showCapSurface` it's since been set to) rather
+    /// than accumulating a new one per call. Call `removeClippingPlane` with the id this
+    /// method first returned via `clippingPlanes` if you need to stop sweeping and remove it.
     public func sectionSweep(axis: SIMD3<Double>, position: Double) {
         let unitAxis = simd_length(axis) > 0 ? simd_normalize(axis) : SIMD3<Double>(0, 0, 1)
         let origin = unitAxis * position
-        if let id = sectionSweepPlaneID, let index = clippingPlaneStorage.firstIndex(where: { $0.id == id }) {
+        if let id = sectionSweepPlaneID,
+            let index = clippingPlaneStorage.firstIndex(where: { $0.id == id })
+        {
             clippingPlaneStorage[index].origin = origin
             clippingPlaneStorage[index].normal = unitAxis
         } else {
@@ -1212,8 +1328,8 @@ public final class CADViewportService {
     }
 
     /// Pushes `clippingPlaneStorage` to the viewport's global, GPU-only clip mechanism
-    /// (`controller.clipPlanes` — hides geometry on one side, interactively, with no
-    /// per-body scoping; confirmed via `OCCTSwiftViewport`'s `ViewportRenderer`, which
+    /// (`controller.clipPlanes`: hides geometry on one side, interactively, with no
+    /// per-body scoping; confirmed via `ViewportRenderer` in `OCCTSwiftViewport`, which
     /// applies the first 4 *enabled* planes uniformly to every body in the scene every
     /// frame) and recomputes capping.
     private func syncClippingPlanes() {
@@ -1223,14 +1339,15 @@ public final class CADViewportService {
         controller.clipPlanes = clippingPlaneStorage.map { plane in
             let unitNormal = safeUnitNormal(plane.normal)
             let distance = Float(-simd_dot(unitNormal, plane.origin))
-            return ClipPlane(normal: SIMD3<Float>(unitNormal), distance: distance, isEnabled: plane.isEnabled)
+            return ClipPlane(
+                normal: SIMD3<Float>(unitNormal), distance: distance, isEnabled: plane.isEnabled)
         }
         updateCapSurfaces()
     }
 
     /// A plane's normal normalized to unit length, falling back to a sensible default
     /// direction for a degenerate (zero-length) normal rather than propagating NaN through
-    /// `simd_normalize` — which would otherwise make every bounds-center test in
+    /// `simd_normalize`, which would otherwise make every bounds-center test in
     /// `cappedShape`/`isPointClipped` silently evaluate to false, treating the whole body as
     /// clipped away. Mirrors `sectionSweep`'s own guard on its `axis` parameter.
     private func safeUnitNormal(_ normal: SIMD3<Double>) -> SIMD3<Double> {
@@ -1239,7 +1356,7 @@ public final class CADViewportService {
 
     /// What a single body's cap recomputation determined, from `cappedShape`.
     private enum CapOutcome {
-        /// No cap-enabled plane actually intersects this body — leave `modelBodies`/
+        /// No cap-enabled plane actually intersects this body: leave `modelBodies`/
         /// `bodyShapes`/identity tables untouched entirely, rather than needlessly
         /// retessellating (and, via `replaceBody`'s fresh `BRepGraph`, invalidating every
         /// durable `GraphUID` this body's pristine geometry had ever minted) a body no
@@ -1251,13 +1368,13 @@ public final class CADViewportService {
 
     /// Whether an active `ComparisonView`'s mode mutates bodies in a way `updateCapSurfaces`
     /// needs to undo-and-reapply around its own recompute. `.overlay`/`.sideBySide`/`.wipe`
-    /// all mutate `modelBodies` directly; `.deviation` doesn't — it's a marker over a
+    /// all mutate `modelBodies` directly; `.deviation` doesn't: it's a marker over a
     /// `ScalarField` the caller manages via `setScalarField(_:forBody:)`, independent of
     /// anything `updateCapSurfaces` touches. Treating `.deviation` as "nothing to preserve"
-    /// (rather than routing it through `undoComparison`'s destructive
-    /// `setScalarField(nil, forBody:)` "undo", which has no corresponding restore in
+    /// (rather than routing it through the destructive `setScalarField(nil, forBody:)`
+    /// "undo" of `undoComparison`, which has no corresponding restore in
     /// `applyComparison`) is what keeps an active deviation heatmap from being silently wiped
-    /// by a clipping-plane change that has nothing to do with it — see the fix for #46.
+    /// by a clipping-plane change that has nothing to do with it; see the fix for #46.
     private func comparisonNeedsBodyPreservation(_ comparison: ComparisonView) -> Bool {
         switch comparison.mode {
         case .overlay, .sideBySide, .wipe: return true
@@ -1267,15 +1384,16 @@ public final class CADViewportService {
 
     /// Rebuilds bodies actually intersected by the currently enabled `showCapSurface` planes,
     /// so a clipped solid shows real material at the cut instead of looking hollow.
+    ///
     /// `OCCTSwiftViewport` has no shader-level capping (confirmed: no capping/stencil logic
-    /// in its `Shaders.metal`, unlike the clip-plane discard it does have) — so this is a
+    /// in its `Shaders.metal`, unlike the clip-plane discard it does have), so this is a
     /// genuine B-Rep split (`OCCTSwift.Shape.split(atPlane:normal:)`) and retessellation per
     /// affected body, not a cheap GPU trick. `showCapSurface: false` planes still clip (via
-    /// `syncClippingPlanes`'s GPU path above) but stay hollow and don't hit this cost — and
+    /// `syncClippingPlanes`'s GPU path above) but stay hollow and don't hit this cost, and
     /// nor does a body no enabled cap plane actually touches, OR a body that's already
-    /// showing exactly the cap outcome it should (see the `.capped` case below — #45's fix):
+    /// showing exactly the cap outcome it should (see the `.capped` case below, #45's fix):
     /// only a body whose outcome ACTUALLY changes since the last call goes through
-    /// `replaceBody` (a fresh `BRepGraph`/`generation`, and — per #43/#45 — a durable
+    /// `replaceBody` (a fresh `BRepGraph`/`generation`, and, per #43/#45, a durable
     /// `GraphUID` any caller was holding for it stops resolving). An earlier version
     /// unconditionally restored-then-recapped every body already in `clippingCapBackup` on
     /// every call, so an actively-capped body whose relationship to every plane hadn't
@@ -1285,12 +1403,12 @@ public final class CADViewportService {
     ///
     /// Considers the union of every body already tracked in `clippingCapBackup` (so one that
     /// no longer needs capping gets restored) and every currently loaded body (so a body
-    /// that's newly in range of a plane — including one just loaded, per issue #44's fix in
-    /// the loaders — gets capped for the first time), rather than the previous two-pass
+    /// that's newly in range of a plane, including one just loaded, per issue #44's fix in
+    /// the loaders, gets capped for the first time), rather than the previous two-pass
     /// "restore everything, then re-cap everything" structure.
     ///
     /// Also undoes, then re-applies, an independently active BODY-MUTATING `comparison`
-    /// (`comparisonNeedsBodyPreservation`) around its own restore/recompute — without this, a
+    /// (`comparisonNeedsBodyPreservation`) around its own restore/recompute. Without this, a
     /// `.overlay`/`.sideBySide`/`.wipe` mutation on a body this method also touches would be
     /// silently discarded (color/transform reset, or wipe-filtering undone) the moment an
     /// UNRELATED clipping-plane change ran, since this method's own backup only knows about
@@ -1311,11 +1429,14 @@ public final class CADViewportService {
 
         for bodyID in bodyIDsToConsider {
             guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
-            guard let sourceShape = clippingSourceShapes[bodyID] ?? bodyShapes[bodyID] else { continue }
+            guard let sourceShape = clippingSourceShapes[bodyID] ?? bodyShapes[bodyID] else {
+                continue
+            }
             clippingSourceShapes[bodyID] = sourceShape
 
             let wasCapped = clippingCapBackup[bodyID] != nil
-            let outcome: CapOutcome = capPlanes.isEmpty ? .unchanged : cappedShape(sourceShape, cutBy: capPlanes)
+            let outcome: CapOutcome =
+                capPlanes.isEmpty ? .unchanged : cappedShape(sourceShape, cutBy: capPlanes)
 
             switch outcome {
             case .unchanged:
@@ -1332,17 +1453,20 @@ public final class CADViewportService {
 
             case .capped(let capped):
                 // Skip the retessellation entirely when this body is already showing exactly
-                // this outcome — visibly (not left hidden by a since-reverted full clip,
+                // this outcome, visibly (not left hidden by a since-reverted full clip,
                 // which always needs a real transition back to visible regardless of bounds).
                 if wasCapped, modelBodies[index].isVisible,
-                   let currentlyDisplayed = bodyShapes[bodyID],
-                   boundsPracticallyEqual(capped, currentlyDisplayed) {
+                    let currentlyDisplayed = bodyShapes[bodyID],
+                    boundsPracticallyEqual(capped, currentlyDisplayed)
+                {
                     continue
                 }
-                let original = wasCapped ? (clippingCapBackup[bodyID] ?? modelBodies[index]) : modelBodies[index]
+                let original =
+                    wasCapped
+                    ? (clippingCapBackup[bodyID] ?? modelBodies[index]) : modelBodies[index]
                 clippingCapBackup[bodyID] = original
                 if !replaceBody(bodyID: bodyID, withCappedShape: capped, preserving: original) {
-                    // Retessellation failed — leave the original in place rather than show nothing.
+                    // Retessellation failed: leave the original in place rather than show nothing.
                     modelBodies[index] = original
                     clippingCapBackup.removeValue(forKey: bodyID)
                 }
@@ -1360,7 +1484,7 @@ public final class CADViewportService {
     /// the side the plane's normal points toward each time.
     ///
     /// Which returned `split(atPlane:normal:)` piece is "kept" is determined by testing each
-    /// piece's OWN bounds-center against the plane equation — `Shape.split` documents no
+    /// piece's OWN bounds-center against the plane equation: `Shape.split` documents no
     /// return-order guarantee. This is a bounds-center heuristic, not an exact interior-point
     /// test: a piece whose true bulk sits on the kept side but whose bounding-box center
     /// happens to fall just past the plane (an unusual, non-convex shape) could be
@@ -1368,23 +1492,25 @@ public final class CADViewportService {
     /// point-containment query if that ever proves necessary.
     ///
     /// Returns `.unchanged` (rather than `.capped(shape)`) when the result's bounds are
-    /// practically identical to `shape`'s own — i.e. no plane in `planes` actually removed
+    /// practically identical to `shape`'s own, i.e. no plane in `planes` actually removed
     /// anything. Determined by comparing bounds rather than by whether `split` returned
     /// `nil`: empirically, `split(atPlane:normal:)` does NOT reliably return `nil` for a
-    /// plane that doesn't intersect the shape — it can come back with a single-element
+    /// plane that doesn't intersect the shape; it can come back with a single-element
     /// array containing the shape geometrically unchanged, which a naive "any non-nil result
     /// means a real cut happened" check would misread as a cut. This inherits the same
     /// bounds-based approximation as the "kept piece" test above (a cut that removes material
-    /// without changing the axis-aligned bounding box — e.g. a chunk that isn't at the
-    /// shape's extremal point along any axis — would be missed and reported `.unchanged`);
+    /// without changing the axis-aligned bounding box, e.g. a chunk that isn't at the
+    /// shape's extremal point along any axis, would be missed and reported `.unchanged`);
     /// accepted for the same reason.
-    private func cappedShape(_ shape: OCCTSwift.Shape, cutBy planes: [ClippingPlane]) -> CapOutcome {
+    private func cappedShape(_ shape: OCCTSwift.Shape, cutBy planes: [ClippingPlane]) -> CapOutcome
+    {
         var current = shape
         for plane in planes {
             let unitNormal = safeUnitNormal(plane.normal)
             func isKept(_ candidate: OCCTSwift.Shape) -> Bool {
                 let b = candidate.bounds
-                let center = SIMD3<Double>((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2)
+                let center = SIMD3<Double>(
+                    (b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2)
                 return simd_dot(unitNormal, center - plane.origin) >= 0
             }
             guard let pieces = current.split(atPlane: plane.origin, normal: unitNormal) else {
@@ -1399,33 +1525,38 @@ public final class CADViewportService {
     }
 
     private func boundsPracticallyEqual(_ a: OCCTSwift.Shape, _ b: OCCTSwift.Shape) -> Bool {
-        let ab = a.bounds, bb = b.bounds
+        let ab = a.bounds
+        let bb = b.bounds
         let epsilon = 1e-6
         return simd_length(ab.min - bb.min) < epsilon && simd_length(ab.max - bb.max) < epsilon
     }
 
-    /// Re-tessellates `bodyID` from `shape` — a capped shape from `cappedShape`, or the
-    /// pristine `clippingSourceShapes` entry when `updateCapSurfaces` is restoring — preserving
-    /// `original`'s caller-configurable state (visibility, pickability, material, transform)
-    /// that `CADFileLoader.shapeToBodyMetadataAndIdentities` would otherwise reset to its own
-    /// defaults, and updates identity tables to match the new geometry (so picking the
-    /// surviving faces — and the new cut face — resolves correctly, per the same identity
-    /// contract `load(_:id:transform:)` maintains). Returns `false` (leaving `modelBodies`
-    /// untouched) if retessellation fails.
+    /// Re-tessellates `bodyID` from `shape` (a capped shape from `cappedShape`, or the
+    /// pristine `clippingSourceShapes` entry when `updateCapSurfaces` is restoring).
     ///
-    /// Also clears any `ScalarField` set on this body: a cut (in either direction — capping
+    /// Preserves the caller-configurable state of `original` (visibility, pickability,
+    /// material, transform) that `CADFileLoader.shapeToBodyMetadataAndIdentities` would
+    /// otherwise reset to its own defaults, and updates identity tables to match the new
+    /// geometry (so picking the surviving faces, and the new cut face, resolves correctly,
+    /// per the same identity contract `load(_:id:transform:)` maintains). Returns `false`
+    /// (leaving `modelBodies` untouched) if retessellation fails.
+    ///
+    /// Also clears any `ScalarField` set on this body: a cut (in either direction, capping
     /// or restoring to pristine) inserts/removes faces and renumbers the rest, so the OLD
     /// field's values have no defined correspondence to the NEW tessellation's face/triangle
     /// ordinals. Leaving it in place would silently paint (or report via
     /// `scalarValue(forBody:faceIndex:triangleIndex:)`) values against geometry they were
-    /// never computed for — the same failure mode `removeBodies`/`resetAllModelState` already
+    /// never computed for: the same failure mode `removeBodies`/`resetAllModelState` already
     /// guard against for a removed body.
-    private func replaceBody(bodyID: String, withCappedShape shape: OCCTSwift.Shape, preserving original: _ViewportBody) -> Bool {
+    private func replaceBody(
+        bodyID: String, withCappedShape shape: OCCTSwift.Shape, preserving original: _ViewportBody
+    ) -> Bool {
         guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { return false }
         let graph = BRepGraph(shape: shape)
-        let (freshBody, meta, faceTable, edgeTable, vertexTable) = CADFileLoader.shapeToBodyMetadataAndIdentities(
-            shape, id: bodyID, color: original.color, graph: graph
-        )
+        let (freshBody, meta, faceTable, edgeTable, vertexTable) =
+            CADFileLoader.shapeToBodyMetadataAndIdentities(
+                shape, id: bodyID, color: original.color, graph: graph
+            )
         guard var body = freshBody else { return false }
         body.isVisible = original.isVisible
         body.isPickable = original.isPickable
@@ -1440,9 +1571,21 @@ public final class CADViewportService {
         if let meta { metadata[bodyID] = meta } else { metadata.removeValue(forKey: bodyID) }
         bodyShapes[bodyID] = shape
         if let graph { bodyGraphs[bodyID] = graph } else { bodyGraphs.removeValue(forKey: bodyID) }
-        if let faceTable { faceIdentity[bodyID] = faceTable } else { faceIdentity.removeValue(forKey: bodyID) }
-        if let edgeTable { edgeIdentity[bodyID] = edgeTable } else { edgeIdentity.removeValue(forKey: bodyID) }
-        if let vertexTable { vertexIdentity[bodyID] = vertexTable } else { vertexIdentity.removeValue(forKey: bodyID) }
+        if let faceTable {
+            faceIdentity[bodyID] = faceTable
+        } else {
+            faceIdentity.removeValue(forKey: bodyID)
+        }
+        if let edgeTable {
+            edgeIdentity[bodyID] = edgeTable
+        } else {
+            edgeIdentity.removeValue(forKey: bodyID)
+        }
+        if let vertexTable {
+            vertexIdentity[bodyID] = vertexTable
+        } else {
+            vertexIdentity.removeValue(forKey: bodyID)
+        }
         scalarFields.removeValue(forKey: bodyID)
         dropLastScalarFieldBodyID(ifCurrently: bodyID)
         return true
@@ -1450,20 +1593,21 @@ public final class CADViewportService {
 
     // MARK: - Clip-aware picking
 
-    /// Whether `worldPoint` is hidden by an active clipping plane. The dedicated GPU pick
-    /// shaders (`pick_fragment`/`pick_line_fragment`/`pick_arc_fragment`/point-pick) don't
-    /// discard against `clipPlanes` the way the main shaded pass does (confirmed via
-    /// `OCCTSwiftViewport`'s `Shaders.metal` — the clip-plane discard loop only appears in
-    /// the shaded fragment function), so a raw GPU pick can hit geometry that's invisible on
-    /// screen. Resolvers test the picked primitive's own position against this rather than
-    /// trusting the pick pass to have already excluded it.
+    /// Whether `worldPoint` is hidden by an active clipping plane.
+    ///
+    /// The dedicated GPU pick shaders (`pick_fragment`/`pick_line_fragment`/
+    /// `pick_arc_fragment`/point-pick) don't discard against `clipPlanes` the way the main
+    /// shaded pass does (confirmed via `Shaders.metal` in `OCCTSwiftViewport`: the clip-plane
+    /// discard loop only appears in the shaded fragment function), so a raw GPU pick can hit
+    /// geometry that's invisible on screen. Resolvers test the picked primitive's own
+    /// position against this rather than trusting the pick pass to have already excluded it.
     ///
     /// Limited to the first 4 *enabled* planes, matching `ViewportRenderer`'s own
-    /// `Array(controller.clipPlanes.filter { $0.isEnabled }.prefix(4))` — with more than 4
+    /// `Array(controller.clipPlanes.filter { $0.isEnabled }.prefix(4))`: with more than 4
     /// enabled hollow-clip planes, a 5th+ plane isn't actually applied by the renderer, so
     /// testing against it here would reject a pick the geometry is still visibly showing.
-    /// (A body already geometrically truncated by capping has no such limit — see
-    /// `cappedShape` — since that path doesn't go through the GPU clip-plane uniform at all.)
+    /// (A body already geometrically truncated by capping has no such limit, see
+    /// `cappedShape`, since that path doesn't go through the GPU clip-plane uniform at all.)
     private func isPointClipped(_ worldPoint: SIMD3<Float>) -> Bool {
         guard !clippingPlaneStorage.isEmpty else { return false }
         for plane in clippingPlaneStorage.filter({ $0.isEnabled }).prefix(4) {
@@ -1477,38 +1621,54 @@ public final class CADViewportService {
     }
 
     /// World-space centroid of a picked triangle (interleaved or direct-mesh body), for
-    /// `isPointClipped`. `nil` on any out-of-bounds index rather than guessing — callers
+    /// `isPointClipped`. `nil` on any out-of-bounds index rather than guessing; callers
     /// treat that as "couldn't determine, don't filter" rather than "clipped".
     private func triangleWorldCentroid(bodyID: String, triangleIndex: Int) -> SIMD3<Float>? {
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
-              triangleIndex >= 0, triangleIndex * 3 + 2 < body.indices.count else { return nil }
+            triangleIndex >= 0, triangleIndex * 3 + 2 < body.indices.count
+        else { return nil }
         let i0 = Int(body.indices[triangleIndex * 3])
         let i1 = Int(body.indices[triangleIndex * 3 + 1])
         let i2 = Int(body.indices[triangleIndex * 3 + 2])
         let local: SIMD3<Float>
         if body.usesDirectMesh {
             guard i0 * 3 + 2 < body.meshPositions.count, i1 * 3 + 2 < body.meshPositions.count,
-                  i2 * 3 + 2 < body.meshPositions.count else { return nil }
-            let p0 = SIMD3<Float>(body.meshPositions[i0 * 3], body.meshPositions[i0 * 3 + 1], body.meshPositions[i0 * 3 + 2])
-            let p1 = SIMD3<Float>(body.meshPositions[i1 * 3], body.meshPositions[i1 * 3 + 1], body.meshPositions[i1 * 3 + 2])
-            let p2 = SIMD3<Float>(body.meshPositions[i2 * 3], body.meshPositions[i2 * 3 + 1], body.meshPositions[i2 * 3 + 2])
+                i2 * 3 + 2 < body.meshPositions.count
+            else { return nil }
+            let p0 = SIMD3<Float>(
+                body.meshPositions[i0 * 3], body.meshPositions[i0 * 3 + 1],
+                body.meshPositions[i0 * 3 + 2])
+            let p1 = SIMD3<Float>(
+                body.meshPositions[i1 * 3], body.meshPositions[i1 * 3 + 1],
+                body.meshPositions[i1 * 3 + 2])
+            let p2 = SIMD3<Float>(
+                body.meshPositions[i2 * 3], body.meshPositions[i2 * 3 + 1],
+                body.meshPositions[i2 * 3 + 2])
             local = (p0 + p1 + p2) / 3
         } else {
             guard i0 * 6 + 2 < body.vertexData.count, i1 * 6 + 2 < body.vertexData.count,
-                  i2 * 6 + 2 < body.vertexData.count else { return nil }
-            let p0 = SIMD3<Float>(body.vertexData[i0 * 6], body.vertexData[i0 * 6 + 1], body.vertexData[i0 * 6 + 2])
-            let p1 = SIMD3<Float>(body.vertexData[i1 * 6], body.vertexData[i1 * 6 + 1], body.vertexData[i1 * 6 + 2])
-            let p2 = SIMD3<Float>(body.vertexData[i2 * 6], body.vertexData[i2 * 6 + 1], body.vertexData[i2 * 6 + 2])
+                i2 * 6 + 2 < body.vertexData.count
+            else { return nil }
+            let p0 = SIMD3<Float>(
+                body.vertexData[i0 * 6], body.vertexData[i0 * 6 + 1], body.vertexData[i0 * 6 + 2])
+            let p1 = SIMD3<Float>(
+                body.vertexData[i1 * 6], body.vertexData[i1 * 6 + 1], body.vertexData[i1 * 6 + 2])
+            let p2 = SIMD3<Float>(
+                body.vertexData[i2 * 6], body.vertexData[i2 * 6 + 1], body.vertexData[i2 * 6 + 2])
             local = (p0 + p1 + p2) / 3
         }
         let world = body.transform * SIMD4<Float>(local, 1)
         return SIMD3<Float>(world.x, world.y, world.z)
     }
 
-    /// World-space midpoint of a picked edge segment, for `isPointClipped`. `segmentIndex`
-    /// walks `body.edges`' polylines in the same flattened order `edgeIndices` documents.
+    /// World-space midpoint of a picked edge segment, for `isPointClipped`.
+    ///
+    /// `segmentIndex` walks the polylines of `body.edges` in the same flattened order
+    /// `edgeIndices` documents.
     private func edgeSegmentWorldMidpoint(bodyID: String, segmentIndex: Int) -> SIMD3<Float>? {
-        guard let body = modelBodies.first(where: { $0.id == bodyID }), segmentIndex >= 0 else { return nil }
+        guard let body = modelBodies.first(where: { $0.id == bodyID }), segmentIndex >= 0 else {
+            return nil
+        }
         var remaining = segmentIndex
         for polyline in body.edges {
             let segmentCount = max(0, polyline.count - 1)
@@ -1525,7 +1685,8 @@ public final class CADViewportService {
     /// World-space position of a picked vertex, for `isPointClipped`.
     private func vertexWorldPosition(bodyID: String, pointIndex: Int) -> SIMD3<Float>? {
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
-              pointIndex >= 0, pointIndex < body.vertices.count else { return nil }
+            pointIndex >= 0, pointIndex < body.vertices.count
+        else { return nil }
         let world = body.transform * SIMD4<Float>(body.vertices[pointIndex], 1)
         return SIMD3<Float>(world.x, world.y, world.z)
     }
@@ -1563,11 +1724,11 @@ public final class CADViewportService {
 
     // MARK: - Overlay Layers
 
-    /// Add or replace a named overlay layer. The bodies are composited with
-    /// the model + selection highlight on every viewport rebuild. Use this
-    /// for stock boxes, toolpath polylines, flat-pattern outlines, bend
-    /// strips, custom annotations — anything that isn't part of the imported
-    /// model.
+    /// Add or replace a named overlay layer.
+    ///
+    /// The bodies are composited with the model + selection highlight on every viewport
+    /// rebuild. Use this for stock boxes, toolpath polylines, flat-pattern outlines, bend
+    /// strips, custom annotations: anything that isn't part of the imported model.
     public func setOverlay(id: String, bodies: [_ViewportBody]) {
         overlays[id] = bodies
         rebuildBodies()
@@ -1579,7 +1740,9 @@ public final class CADViewportService {
         rebuildBodies()
     }
 
-    /// Remove every overlay layer. Model bodies and selection are unaffected.
+    /// Remove every overlay layer.
+    ///
+    /// Model bodies and selection are unaffected.
     public func clearAllOverlays() {
         overlays.removeAll()
         rebuildBodies()
@@ -1597,12 +1760,14 @@ public final class CADViewportService {
         rebuildBodies()
     }
 
-    /// Adds, removes, or replaces `entity` in `selection` per `scheme` — mirrors
-    /// `OCCTSwiftAIS.SelectionScheme`'s exact combination semantics (`.replace` assigns,
-    /// `.add`/`.remove`/`.xor` combine against the current selection), just applied to one
-    /// entity here rather than a batch region match. Membership uses `PickedEntity`'s own
-    /// `Equatable` (`uid`-preferring, so the same durable face/edge/vertex is recognized as
-    /// already-selected regardless of which ephemeral ordinal it was picked at).
+    /// Adds, removes, or replaces `entity` in `selection` per `scheme`.
+    ///
+    /// Mirrors the exact combination semantics of `OCCTSwiftAIS.SelectionScheme`
+    /// (`.replace` assigns, `.add`/`.remove`/`.xor` combine against the current selection),
+    /// just applied to one entity here rather than a batch region match. Membership uses the
+    /// `Equatable` of `PickedEntity` itself (`uid`-preferring, so the same durable
+    /// face/edge/vertex is recognized as already-selected regardless of which ephemeral
+    /// ordinal it was picked at).
     public func select(_ entity: PickedEntity, scheme: SelectionScheme = .replace) {
         switch scheme {
         case .replace:
@@ -1623,19 +1788,26 @@ public final class CADViewportService {
         rebuildSelectionHighlights()
     }
 
-    /// Aggregate measures over `selection` — count by kind, total face area, total edge
-    /// length, and combined bounds. `nil` when nothing is selected.
+    /// Aggregate measures over `selection`: count by kind, total face area, total edge
+    /// length, and combined bounds.
+    ///
+    /// `nil` when nothing is selected.
     public var selectionSummary: SelectionSummary? {
         guard !selection.isEmpty else { return nil }
 
-        var faceCount = 0, edgeCount = 0, vertexCount = 0
-        var totalArea = 0.0, totalLength = 0.0
+        var faceCount = 0
+        var edgeCount = 0
+        var vertexCount = 0
+        var totalArea = 0.0
+        var totalLength = 0.0
         var minPt = SIMD3<Double>(repeating: .infinity)
         var maxPt = SIMD3<Double>(repeating: -.infinity)
 
         func absorb(_ bounds: (min: SIMD3<Double>, max: SIMD3<Double>)) {
-            minPt = SIMD3(min(minPt.x, bounds.min.x), min(minPt.y, bounds.min.y), min(minPt.z, bounds.min.z))
-            maxPt = SIMD3(max(maxPt.x, bounds.max.x), max(maxPt.y, bounds.max.y), max(maxPt.z, bounds.max.z))
+            minPt = SIMD3(
+                min(minPt.x, bounds.min.x), min(minPt.y, bounds.min.y), min(minPt.z, bounds.min.z))
+            maxPt = SIMD3(
+                max(maxPt.x, bounds.max.x), max(maxPt.y, bounds.max.y), max(maxPt.z, bounds.max.z))
         }
 
         for entity in selection {
@@ -1650,24 +1822,33 @@ public final class CADViewportService {
                 edgeCount += 1
                 totalLength += info.length
                 // Uses the endpoints already captured on PickedEdgeInfo at pick time,
-                // rather than re-deriving via Edge(info.shape) — cheaper, and immune to
+                // rather than re-deriving via Edge(info.shape): cheaper, and immune to
                 // that conversion failing for a straight line (bounds is exact either way;
                 // a curved edge's true bounds can bow slightly outside its endpoints, but
                 // this is a selection-level aggregate, not a precision measurement).
-                absorb((
-                    min: SIMD3(min(info.startPoint.x, info.endPoint.x), min(info.startPoint.y, info.endPoint.y), min(info.startPoint.z, info.endPoint.z)),
-                    max: SIMD3(max(info.startPoint.x, info.endPoint.x), max(info.startPoint.y, info.endPoint.y), max(info.startPoint.z, info.endPoint.z))
-                ))
+                absorb(
+                    (
+                        min: SIMD3(
+                            min(info.startPoint.x, info.endPoint.x),
+                            min(info.startPoint.y, info.endPoint.y),
+                            min(info.startPoint.z, info.endPoint.z)),
+                        max: SIMD3(
+                            max(info.startPoint.x, info.endPoint.x),
+                            max(info.startPoint.y, info.endPoint.y),
+                            max(info.startPoint.z, info.endPoint.z))
+                    ))
             case .vertex(let info):
                 vertexCount += 1
                 absorb((min: info.position, max: info.position))
             }
         }
 
-        let bounds: ShapeBounds? = minPt.x.isFinite ? ShapeBounds(
-            minX: minPt.x, minY: minPt.y, minZ: minPt.z,
-            maxX: maxPt.x, maxY: maxPt.y, maxZ: maxPt.z
-        ) : nil
+        let bounds: ShapeBounds? =
+            minPt.x.isFinite
+            ? ShapeBounds(
+                minX: minPt.x, minY: minPt.y, minZ: minPt.z,
+                maxX: maxPt.x, maxY: maxPt.y, maxZ: maxPt.z
+            ) : nil
 
         return SelectionSummary(
             faceCount: faceCount,
@@ -1685,7 +1866,7 @@ public final class CADViewportService {
             return
         }
 
-        // A real viewport pick always replaces — matches OCCTSwiftAIS's own point-pick
+        // A real viewport pick always replaces, matching OCCTSwiftAIS's own point-pick
         // behavior. `select(_:scheme:)` is how a caller builds a multi-selection
         // programmatically (there's no modifier-key state in a GPU pick result to infer a
         // scheme from).
@@ -1696,25 +1877,31 @@ public final class CADViewportService {
     private func resolveEntityPick(_ result: _PickResult) -> PickedEntity? {
         switch result.kind {
         case .face:
-            return resolveFacePick(bodyID: result.bodyID, triangleIndex: result.triangleIndex).map(PickedEntity.face)
+            return resolveFacePick(bodyID: result.bodyID, triangleIndex: result.triangleIndex).map(
+                PickedEntity.face)
         case .edge:
-            return resolveEdgePick(bodyID: result.bodyID, segmentIndex: result.triangleIndex).map(PickedEntity.edge)
+            return resolveEdgePick(bodyID: result.bodyID, segmentIndex: result.triangleIndex).map(
+                PickedEntity.edge)
         case .vertex:
-            return resolveVertexPick(bodyID: result.bodyID, pointIndex: result.triangleIndex).map(PickedEntity.vertex)
+            return resolveVertexPick(bodyID: result.bodyID, pointIndex: result.triangleIndex).map(
+                PickedEntity.vertex)
         }
     }
 
     /// Resolves a triangle-level GPU pick to durable face identity via the picked body's
     /// `FaceIdentityTable`. `internal` rather than `private` so it can be exercised
     /// directly in tests without round-tripping through the viewport's async pick
-    /// callback — `handlePick` is the only production caller.
+    /// callback; `handlePick` is the only production caller.
     func resolveFacePick(bodyID: String, triangleIndex: Int) -> PickedFaceInfo? {
         guard selectionModes.contains(.face) else { return nil }
-        if let centroid = triangleWorldCentroid(bodyID: bodyID, triangleIndex: triangleIndex), isPointClipped(centroid) {
+        if let centroid = triangleWorldCentroid(bodyID: bodyID, triangleIndex: triangleIndex),
+            isPointClipped(centroid)
+        {
             return nil
         }
         guard let meta = metadata[bodyID],
-              triangleIndex >= 0, triangleIndex < meta.faceIndices.count else {
+            triangleIndex >= 0, triangleIndex < meta.faceIndices.count
+        else {
             return nil
         }
 
@@ -1758,23 +1945,29 @@ public final class CADViewportService {
             zLevel: zLevel,
             area: faceArea,
             description: desc,
-            scalarValue: scalarValue(forBody: bodyID, faceIndex: faceIndex, triangleIndex: triangleIndex)
+            scalarValue: scalarValue(
+                forBody: bodyID, faceIndex: faceIndex, triangleIndex: triangleIndex)
         )
     }
 
     /// Resolves a line-segment-level GPU pick to durable edge identity via the picked
-    /// body's `EdgeIdentityTable`. Reads `edgeIndices` off the `_ViewportBody` itself
-    /// (unlike faces, `CADBodyMetadata` carries edge data as per-polyline groups, not a
-    /// flat per-segment array) — a body with no `edgeIndices` populated (not edge-pickable,
-    /// per `ViewportBody`'s own documentation) degrades to `nil` here rather than
-    /// mis-picking. `internal` for the same testability reason as `resolveFacePick`.
+    /// body's `EdgeIdentityTable`.
+    ///
+    /// Reads `edgeIndices` off the `_ViewportBody` itself (unlike faces, `CADBodyMetadata`
+    /// carries edge data as per-polyline groups, not a flat per-segment array); a body with
+    /// no `edgeIndices` populated (not edge-pickable, per the documentation on
+    /// `ViewportBody` itself) degrades to `nil` here rather than mis-picking. `internal` for
+    /// the same testability reason as `resolveFacePick`.
     func resolveEdgePick(bodyID: String, segmentIndex: Int) -> PickedEdgeInfo? {
         guard selectionModes.contains(.edge) else { return nil }
-        if let midpoint = edgeSegmentWorldMidpoint(bodyID: bodyID, segmentIndex: segmentIndex), isPointClipped(midpoint) {
+        if let midpoint = edgeSegmentWorldMidpoint(bodyID: bodyID, segmentIndex: segmentIndex),
+            isPointClipped(midpoint)
+        {
             return nil
         }
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
-              segmentIndex >= 0, segmentIndex < body.edgeIndices.count else {
+            segmentIndex >= 0, segmentIndex < body.edgeIndices.count
+        else {
             return nil
         }
 
@@ -1818,42 +2011,52 @@ public final class CADViewportService {
     }
 
     /// Resolves a point-sprite-level GPU pick to durable vertex identity via the picked
-    /// body's `VertexIdentityTable`. A body with no `vertices` populated (not
-    /// vertex-pickable) degrades to `nil` here rather than mis-picking. `internal` for the
-    /// same testability reason as `resolveFacePick`.
+    /// body's `VertexIdentityTable`.
+    ///
+    /// A body with no `vertices` populated (not vertex-pickable) degrades to `nil` here
+    /// rather than mis-picking. `internal` for the same testability reason as
+    /// `resolveFacePick`.
     func resolveVertexPick(bodyID: String, pointIndex: Int) -> PickedVertexInfo? {
         guard selectionModes.contains(.vertex) else { return nil }
-        if let position = vertexWorldPosition(bodyID: bodyID, pointIndex: pointIndex), isPointClipped(position) {
+        if let position = vertexWorldPosition(bodyID: bodyID, pointIndex: pointIndex),
+            isPointClipped(position)
+        {
             return nil
         }
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
-              pointIndex >= 0, pointIndex < body.vertices.count else {
+            pointIndex >= 0, pointIndex < body.vertices.count
+        else {
             return nil
         }
 
         // `vertexIndices` empty means identity mapping (pointIndex is the ordinal itself),
         // per ViewportBody's own documentation. Deliberately more complete here than
         // OCCTSwiftAIS's own resolveVertexSubShape, which bounds-checks against
-        // `vertexIndices.count` directly and so never resolves a pick when it's empty —
+        // `vertexIndices.count` directly and so never resolves a pick when it's empty;
         // unreached in practice since CADFileLoader always populates both arrays in
         // lockstep for a real body, but this implements the documented fallback in full.
-        let vertexIndex = pointIndex < body.vertexIndices.count ? Int(body.vertexIndices[pointIndex]) : pointIndex
+        let vertexIndex =
+            pointIndex < body.vertexIndices.count ? Int(body.vertexIndices[pointIndex]) : pointIndex
         guard vertexIndex >= 0 else { return nil }
 
         let identity = vertexIdentity[bodyID]
         var vertexShape = identity?.shape(forOrdinal: vertexIndex)
         if vertexShape == nil, let vertices = bodyShapes[bodyID]?.subShapes(ofType: .vertex),
-           vertexIndex < vertices.count {
+            vertexIndex < vertices.count
+        {
             vertexShape = vertices[vertexIndex]
         }
         guard let vertexShape else { return nil }
         let uid = identity?.uid(forOrdinal: vertexIndex)
 
         let renderPosition = body.vertices[pointIndex]
-        let position = vertexShape.vertices().first ?? SIMD3<Double>(
-            Double(renderPosition.x), Double(renderPosition.y), Double(renderPosition.z)
-        )
-        let desc = String(format: "Vertex at (%.1f, %.1f, %.1f)mm", position.x, position.y, position.z)
+        let position =
+            vertexShape.vertices().first
+            ?? SIMD3<Double>(
+                Double(renderPosition.x), Double(renderPosition.y), Double(renderPosition.z)
+            )
+        let desc = String(
+            format: "Vertex at (%.1f, %.1f, %.1f)mm", position.x, position.y, position.z)
 
         return PickedVertexInfo(
             shape: vertexShape,
@@ -1866,15 +2069,17 @@ public final class CADViewportService {
     }
 
     /// Rebuilds the highlight bodies from the whole `selection` (not just the latest
-    /// pick), grouped by kind — up to three bodies: a translucent yellow triangle patch
+    /// pick), grouped by kind: up to three bodies, a translucent yellow triangle patch
     /// aggregating every selected face's own triangles, a bright cyan polyline aggregating
     /// every selected edge's own segments, and a bright magenta point sprite body for every
-    /// selected vertex's own position. Bodies loaded via `load(_:id:transform:)` are always
-    /// in world-space already (the transform is baked into the shape before tessellation,
-    /// not applied as a separate `_ViewportBody.transform`), so combining geometry gathered
-    /// from different source bodies into one aggregate highlight body is safe.
+    /// selected vertex's own position.
+    ///
+    /// Bodies loaded via `load(_:id:transform:)` are always in world-space already (the
+    /// transform is baked into the shape before tessellation, not applied as a separate
+    /// `_ViewportBody.transform`), so combining geometry gathered from different source
+    /// bodies into one aggregate highlight body is safe.
     private func rebuildSelectionHighlights() {
-        let stride = 6 // interleaved [px,py,pz,nx,ny,nz]
+        let stride = 6  // interleaved [px,py,pz,nx,ny,nz]
         var faceVerts: [Float] = []
         var faceIndices: [UInt32] = []
         var faceVertCount: UInt32 = 0
@@ -1885,11 +2090,14 @@ public final class CADViewportService {
             switch entity {
             case .face(let info):
                 guard let body = modelBodies.first(where: { $0.id == info.bodyID }),
-                      let meta = metadata[info.bodyID] else { continue }
+                    let meta = metadata[info.bodyID]
+                else { continue }
                 let faceIndex = Int32(info.faceIndex)
                 let triCount = body.indices.count / 3
                 for tri in 0..<triCount {
-                    guard tri < meta.faceIndices.count, meta.faceIndices[tri] == faceIndex else { continue }
+                    guard tri < meta.faceIndices.count, meta.faceIndices[tri] == faceIndex else {
+                        continue
+                    }
                     let i0 = Int(body.indices[tri * 3])
                     let i1 = Int(body.indices[tri * 3 + 1])
                     let i2 = Int(body.indices[tri * 3 + 2])
@@ -1903,7 +2111,9 @@ public final class CADViewportService {
                 }
 
             case .edge(let info):
-                guard let body = modelBodies.first(where: { $0.id == info.bodyID }) else { continue }
+                guard let body = modelBodies.first(where: { $0.id == info.bodyID }) else {
+                    continue
+                }
                 let edgeIndex = Int32(info.edgeIndex)
                 var segmentCursor = 0
                 for polyline in body.edges {
@@ -1912,49 +2122,54 @@ public final class CADViewportService {
                     for s in 0..<segmentCount {
                         defer { segmentCursor += 1 }
                         guard segmentCursor < body.edgeIndices.count,
-                              body.edgeIndices[segmentCursor] == edgeIndex else { continue }
+                            body.edgeIndices[segmentCursor] == edgeIndex
+                        else { continue }
                         edgeSegments.append([polyline[s], polyline[s + 1]])
                     }
                 }
 
             case .vertex(let info):
-                vertexPoints.append(SIMD3<Float>(
-                    Float(info.position.x), Float(info.position.y), Float(info.position.z)
-                ))
+                vertexPoints.append(
+                    SIMD3<Float>(
+                        Float(info.position.x), Float(info.position.y), Float(info.position.z)
+                    ))
             }
         }
 
         var bodies: [_ViewportBody] = []
         if !faceIndices.isEmpty {
-            bodies.append(_ViewportBody(
-                id: "selection_highlight_face",
-                vertexData: faceVerts,
-                indices: faceIndices,
-                edges: [],
-                color: SIMD4<Float>(1.0, 0.9, 0.0, 0.5)
-            ))
+            bodies.append(
+                _ViewportBody(
+                    id: "selection_highlight_face",
+                    vertexData: faceVerts,
+                    indices: faceIndices,
+                    edges: [],
+                    color: SIMD4<Float>(1.0, 0.9, 0.0, 0.5)
+                ))
         }
         if !edgeSegments.isEmpty {
-            bodies.append(_ViewportBody(
-                id: "selection_highlight_edge",
-                vertexData: [],
-                indices: [],
-                edges: edgeSegments,
-                color: SIMD4<Float>(0.1, 0.9, 1.0, 1.0)
-            ))
+            bodies.append(
+                _ViewportBody(
+                    id: "selection_highlight_edge",
+                    vertexData: [],
+                    indices: [],
+                    edges: edgeSegments,
+                    color: SIMD4<Float>(0.1, 0.9, 1.0, 1.0)
+                ))
         }
         if !vertexPoints.isEmpty {
-            bodies.append(_ViewportBody(
-                id: "selection_highlight_vertex",
-                vertexData: [],
-                indices: [],
-                edges: [],
-                vertices: vertexPoints,
-                vertexIndices: (0..<vertexPoints.count).map(Int32.init),
-                color: SIMD4<Float>(1.0, 0.15, 0.9, 1.0),
-                pointRadius: 6,
-                primitiveKind: .point
-            ))
+            bodies.append(
+                _ViewportBody(
+                    id: "selection_highlight_vertex",
+                    vertexData: [],
+                    indices: [],
+                    edges: [],
+                    vertices: vertexPoints,
+                    vertexIndices: (0..<vertexPoints.count).map(Int32.init),
+                    color: SIMD4<Float>(1.0, 0.15, 0.9, 1.0),
+                    pointRadius: 6,
+                    primitiveKind: .point
+                ))
         }
 
         selectionBodies = bodies
@@ -1963,42 +2178,45 @@ public final class CADViewportService {
 
     // MARK: - Escalation
 
-    /// The escalation currently awaiting a response, or `nil`. Set by `present(_:)`, cleared
-    /// by `respond(_:)` (or auto-resolved via `pruneEscalation`/`resetAllModelState` if the
-    /// geometry it's about disappears first).
+    /// The escalation currently awaiting a response, or `nil`.
+    ///
+    /// Set by `present(_:)`, cleared by `respond(_:)` (or auto-resolved via
+    /// `pruneEscalation`/`resetAllModelState` if the geometry it's about disappears first).
     public private(set) var pendingEscalation: EscalationRequest?
 
     private var escalationContinuation: CheckedContinuation<EscalationResponse, Never>?
 
     /// Presents a bounded question about specific geometry and suspends until it's answered.
+    ///
     /// Highlights `request.entities` (replacing the current `selection`, exactly like a real
     /// pick would) so the question is grounded in visible geometry, and makes any supplied
     /// `EscalationCandidate.previewBodyID` visible. If a PREVIOUS escalation is still pending,
-    /// it's resolved `.deferred` first — mirrors `setComparison`'s "undo the previous one
-    /// before applying the new one" pattern, so a continuation never leaks.
+    /// it's resolved `.deferred` first, mirroring the "undo the previous one before applying
+    /// the new one" pattern of `setComparison`, so a continuation never leaks.
     ///
-    /// The caller answers via `respond(_:)` (typically from a SwiftUI action — see
+    /// The caller answers via `respond(_:)` (typically from a SwiftUI action, see
     /// `EscalationCardView`) or `respondWithCurrentSelection()` for "the human picked
     /// something instead of choosing a candidate." If the calling `Task` is cancelled while
-    /// this is suspended — a SwiftUI `.task` whose view disappears, an agent racing this
-    /// against its own timeout — resolves `.deferred` on its own rather than leaving
+    /// this is suspended (a SwiftUI `.task` whose view disappears, an agent racing this
+    /// against its own timeout), resolves `.deferred` on its own rather than leaving
     /// `pendingEscalation`/the continuation stuck forever with nothing left to cancel it.
-    /// `withTaskCancellationHandler`'s `onCancel` isn't guaranteed to run on `MainActor`, so it
-    /// hops via an unstructured `Task` into `respondIfStillPending(_:with:)`, which is safe to
-    /// call from there even if that happens before `escalationContinuation` is set (it just
-    /// no-ops) — `@MainActor`'s cooperative, non-preemptive scheduling means that hop can't
-    /// actually run until this method's own synchronous continuation-setup completes, so the
-    /// ordering that matters (`escalationContinuation` set before any cancellation response
-    /// can fire) always holds in practice.
+    /// The `onCancel` of `withTaskCancellationHandler` isn't guaranteed to run on
+    /// `MainActor`, so it hops via an unstructured `Task` into
+    /// `respondIfStillPending(_:with:)`, which is safe to call from there even if that
+    /// happens before `escalationContinuation` is set (it just no-ops): `@MainActor`'s
+    /// cooperative, non-preemptive scheduling means that hop can't actually run until this
+    /// method's own synchronous continuation-setup completes, so the ordering that matters
+    /// (`escalationContinuation` set before any cancellation response can fire) always holds
+    /// in practice.
     ///
-    /// The `onCancel` hop captures `request.id`, not just "resolve whatever's pending" —
+    /// The `onCancel` hop captures `request.id`, not just "resolve whatever's pending",
     /// otherwise a STALE cancellation (this exact request already superseded by a newer
     /// `present(_:)` call before the hop got a chance to run) would wrongly resolve the NEWER,
     /// still-legitimately-pending request instead of being a no-op. Concretely: task A is
     /// cancelled, its `onCancel` hop is merely enqueued (not yet run); before it runs, a
     /// caller legitimately calls `present(requestB)`, which itself supersedes A (correctly,
     /// via the `respond(.deferred)` above) and installs B's own continuation; THEN A's queued
-    /// hop finally executes — without the id check, it would silently resolve B as `.deferred`
+    /// hop finally executes: without the id check, it would silently resolve B as `.deferred`
     /// even though nothing about B was ever cancelled.
     @discardableResult
     public func present(_ request: EscalationRequest) async -> EscalationResponse {
@@ -2043,20 +2261,21 @@ public final class CADViewportService {
         continuation.resume(returning: response)
     }
 
-    /// Resolves the pending escalation only if it's still the one named by `requestID` —
-    /// guards against a STALE resolution (from `present(_:)`'s `onCancel` hop, which captures
-    /// a request id rather than running synchronously at the moment of cancellation) wrongly
-    /// terminating a newer, still-legitimately-pending escalation that has already superseded
-    /// the one actually being cancelled. Direct callers of `respond(_:)` (a SwiftUI action, an
-    /// agent) don't need this: they're always resolving whatever `pendingEscalation` currently
-    /// is, which is exactly what's on screen.
+    /// Resolves the pending escalation only if it's still the one named by `requestID`.
     ///
-    /// `internal` rather than `private` — like `resolveFacePick`/`resolveEdgePick`/
-    /// `resolveVertexPick` — so a test can exercise the exact stale-hop scenario directly
-    /// (call this with a superseded id and assert it's a no-op) rather than only through
-    /// `present(_:)`'s real `Task` cancellation, whose `onCancel` hop and a superseding
+    /// Guards against a STALE resolution (from the `onCancel` hop of `present(_:)`, which
+    /// captures a request id rather than running synchronously at the moment of cancellation)
+    /// wrongly terminating a newer, still-legitimately-pending escalation that has already
+    /// superseded the one actually being cancelled. Direct callers of `respond(_:)` (a
+    /// SwiftUI action, an agent) don't need this: they're always resolving whatever
+    /// `pendingEscalation` currently is, which is exactly what's on screen.
+    ///
+    /// `internal` rather than `private`, like `resolveFacePick`/`resolveEdgePick`/
+    /// `resolveVertexPick`, so a test can exercise the exact stale-hop scenario directly
+    /// (call this with a superseded id and assert it's a no-op) rather than only through the
+    /// real `Task` cancellation of `present(_:)`, whose `onCancel` hop and a superseding
     /// `present(_:)` call both racing on the SAME `@MainActor` serial executor don't actually
-    /// force the "hop resolves after supersession" ordering this guards against — confirmed
+    /// force the "hop resolves after supersession" ordering this guards against. Confirmed
     /// empirically (a temporary probe) that a scheduling-only test of this passes identically
     /// with or without the guard, since the hop always finishes before a newly-spawned
     /// superseding `Task` gets a turn.
@@ -2065,7 +2284,7 @@ public final class CADViewportService {
         respond(response)
     }
 
-    /// Convenience for "the human answered by picking geometry" — resolves with the CURRENT
+    /// Convenience for "the human answered by picking geometry": resolves with the CURRENT
     /// `selection` rather than requiring the caller to read and wrap it themselves.
     public func respondWithCurrentSelection() {
         respond(.picked(selection))
@@ -2081,7 +2300,7 @@ public final class CADViewportService {
         respond(.rejected(reason: "referenced geometry was removed"))
     }
 
-    /// Sets a body's visibility by id, searching model bodies then every overlay layer —
+    /// Sets a body's visibility by id, searching model bodies then every overlay layer:
     /// `EscalationCandidate.previewBodyID` isn't scoped to either, so `present(_:)` doesn't
     /// know in advance which one a given candidate's preview lives in.
     private func setBodyVisible(_ isVisible: Bool, bodyID: String) {

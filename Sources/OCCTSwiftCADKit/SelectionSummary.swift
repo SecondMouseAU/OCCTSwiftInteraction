@@ -1,9 +1,9 @@
 import Foundation
-import simd
 import OCCTSwift
+import simd
 
 /// Aggregate measures over a multi-selection (`CADViewportService.selection`). `nil` when
-/// the selection is empty — there's nothing to summarize.
+/// the selection is empty: there's nothing to summarize.
 public struct SelectionSummary: Sendable, Equatable {
     public let faceCount: Int
     public let edgeCount: Int
