@@ -3,9 +3,9 @@
 //
 // Converts OCCTSwift Curve2D/Curve3D objects to ViewportBody for rendering.
 
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import simd
 
 /// Converts OCCTSwift curve objects to edge-only ViewportBody values.
 public enum CurveConverter {

@@ -3,8 +3,8 @@
 //
 // Utility functions for creating and transforming ViewportBody values.
 
-import simd
 import OCCTSwiftViewport
+import simd
 
 /// Utility functions for creating and transforming ViewportBody values.
 public enum BodyUtilities {
@@ -17,6 +17,7 @@ public enum BodyUtilities {
     ///   - color: RGBA color.
     ///   - segments: Number of longitudinal segments (default 8).
     ///   - rings: Number of latitudinal rings (default 4).
+    /// - Returns: A sphere `ViewportBody` centered at `position`.
     public static func makeMarkerSphere(
         at position: SIMD3<Float>,
         radius: Float,

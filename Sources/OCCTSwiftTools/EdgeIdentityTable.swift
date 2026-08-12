@@ -23,15 +23,17 @@ import OCCTSwift
 /// resolution `FaceIdentityTable` already does for faces. It also means edge identity keeps working
 /// even if OCCT's edge traversal ever stopped deduplicating the way it does today.
 public struct EdgeIdentityTable: Sendable {
-    /// Indexed by the ordinal stored in `ViewportBody.edgeIndices`. Built from `Shape.edges()`,
-    /// the same `TopTools_IndexedMapOfShape` traversal `Shape.edge(at:)` and the bulk edge-polyline
-    /// extractor use, so `shapes[ordinal]` is always the exact edge behind the segments carrying
-    /// that ordinal.
+    /// Indexed by the ordinal stored in `ViewportBody.edgeIndices`.
+    ///
+    /// Built from `Shape.edges()`, the same `TopTools_IndexedMapOfShape` traversal
+    /// `Shape.edge(at:)` and the bulk edge-polyline extractor use, so `shapes[ordinal]` is always
+    /// the exact edge behind the segments carrying that ordinal.
     public let shapes: [Shape]
 
-    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was
-    /// built. `nil` when no graph was supplied. When present, an individual element is `nil`
-    /// only if that ordinal's edge could not be resolved in the graph.
+    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was built.
+    ///
+    /// `nil` when no graph was supplied. When present, an individual element is `nil` only if
+    /// that ordinal's edge could not be resolved in the graph.
     public let uids: [BRepGraph.GraphUID?]?
 
     public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil) {

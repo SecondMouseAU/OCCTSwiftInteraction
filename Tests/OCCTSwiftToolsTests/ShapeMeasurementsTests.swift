@@ -1,5 +1,6 @@
-import Testing
 import OCCTSwift
+import Testing
+
 @testable import OCCTSwiftTools
 
 @Suite("ShapeMeasurements")

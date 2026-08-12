@@ -3,9 +3,9 @@
 //
 // Converts OCCTSwift Surface objects to ViewportBody grid visualizations.
 
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import simd
 
 /// Converts OCCTSwift Surface objects to UV isoparametric grid ViewportBody values.
 public enum SurfaceConverter {
@@ -19,6 +19,8 @@ public enum SurfaceConverter {
     ///   - vColor: Color for V-direction isoparametric lines.
     ///   - uLines: Number of U-direction lines (default 10).
     ///   - vLines: Number of V-direction lines (default 10).
+    /// - Returns: Up to two edge-only bodies, one per direction with at least one 2-point
+    ///   polyline; a direction with no such polyline is omitted.
     public static func surfaceToGridBodies(
         _ surface: Surface,
         idPrefix: String,
@@ -58,17 +60,19 @@ public enum SurfaceConverter {
         var bodies: [ViewportBody] = []
 
         if !uEdges.isEmpty {
-            bodies.append(ViewportBody(
-                id: "\(idPrefix)-u", vertexData: [], indices: [],
-                edges: uEdges, color: uColor
-            ))
+            bodies.append(
+                ViewportBody(
+                    id: "\(idPrefix)-u", vertexData: [], indices: [],
+                    edges: uEdges, color: uColor
+                ))
         }
 
         if !vEdges.isEmpty {
-            bodies.append(ViewportBody(
-                id: "\(idPrefix)-v", vertexData: [], indices: [],
-                edges: vEdges, color: vColor
-            ))
+            bodies.append(
+                ViewportBody(
+                    id: "\(idPrefix)-v", vertexData: [], indices: [],
+                    edges: vEdges, color: vColor
+                ))
         }
 
         return bodies

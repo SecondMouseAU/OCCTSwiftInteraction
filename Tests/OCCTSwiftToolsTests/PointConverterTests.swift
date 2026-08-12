@@ -1,6 +1,7 @@
+import OCCTSwiftViewport
 import Testing
 import simd
-import OCCTSwiftViewport
+
 @testable import OCCTSwiftTools
 
 @Suite("PointConverter")
@@ -19,7 +20,7 @@ struct PointConverterTests {
     }
 
     @Test func t_tenThousandPointCloud() {
-        // Stress-size — the existing pre-PointConverter workaround capped at
+        // Stress-size: the existing pre-PointConverter workaround capped at
         // ~256 because compounding spheres blew up vertex counts; this shape
         // has to handle 10k cleanly.
         var pts: [SIMD3<Float>] = []
@@ -94,8 +95,9 @@ struct PointConverterTests {
 
     @Test func t_primitiveKindIsPoint() {
         let body = PointConverter.pointsToBody([SIMD3(0, 0, 0)], id: "kind")
-        #expect(body?.primitiveKind == .point,
-                "PointConverter must mark the body so the renderer dispatches to the point pass")
+        #expect(
+            body?.primitiveKind == .point,
+            "PointConverter must mark the body so the renderer dispatches to the point pass")
     }
 
     @Test func t_pointRadiusRoundTrips() {
@@ -104,13 +106,15 @@ struct PointConverterTests {
             id: "radius",
             pointRadius: 0.42
         )
-        #expect(body?.pointRadius == 0.42, "explicit pointRadius must be carried through to the body")
+        #expect(
+            body?.pointRadius == 0.42, "explicit pointRadius must be carried through to the body")
     }
 
     @Test func t_defaultPointRadiusMatchesSignature() {
         let body = PointConverter.pointsToBody([SIMD3(0, 0, 0)], id: "default-radius")
-        #expect(body?.pointRadius == 0.05,
-                "default pointRadius must match the signature's documented default")
+        #expect(
+            body?.pointRadius == 0.05,
+            "default pointRadius must match the signature's documented default")
     }
 
     @Test func t_perPointColorsRoundTrip() {
@@ -130,7 +134,9 @@ struct PointConverterTests {
             [SIMD3(0, 0, 0), SIMD3(1, 0, 0)],
             id: "no-colors"
         )
-        #expect(body?.vertexColors.isEmpty == true,
-                "nil perPointColors must leave vertexColors empty so the renderer falls back to body.color")
+        #expect(
+            body?.vertexColors.isEmpty == true,
+            "nil perPointColors must leave vertexColors empty so the renderer falls back to body.color"
+        )
     }
 }

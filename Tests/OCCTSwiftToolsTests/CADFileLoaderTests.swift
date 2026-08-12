@@ -1,7 +1,8 @@
-import Testing
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import Testing
+import simd
+
 @testable import OCCTSwiftTools
 
 @Suite("CADFileLoader.shapeToBodyAndMetadata")
@@ -23,10 +24,12 @@ struct CADFileLoaderTests {
         #expect(body.vertexData.count % 6 == 0, "interleaved stride 6 (px,py,pz,nx,ny,nz)")
         #expect(body.indices.count % 3 == 0, "indices form triangles")
         #expect(body.indices.count > 0)
-        #expect(body.faceIndices.count == body.indices.count / 3,
-                "one source-face index per triangle")
-        #expect(meta.faceIndices == body.faceIndices,
-                "metadata.faceIndices mirrors body.faceIndices")
+        #expect(
+            body.faceIndices.count == body.indices.count / 3,
+            "one source-face index per triangle")
+        #expect(
+            meta.faceIndices == body.faceIndices,
+            "metadata.faceIndices mirrors body.faceIndices")
     }
 
     @Test func t_cylinderFaceCoverage() {
@@ -43,8 +46,9 @@ struct CADFileLoaderTests {
         }
         let uniqueFaces = Set(body.faceIndices)
         // OCCT cylinder = 3 faces (top cap, bottom cap, lateral surface).
-        #expect(uniqueFaces.count >= 3,
-                "cylinder triangulation should cover all 3 faces, got \(uniqueFaces.count)")
+        #expect(
+            uniqueFaces.count >= 3,
+            "cylinder triangulation should cover all 3 faces, got \(uniqueFaces.count)")
         #expect(meta.edgePolylines.count > 0, "cylinder has edges (circles + seam)")
     }
 
@@ -100,8 +104,9 @@ struct CADFileLoaderTests {
         #expect(directMeta.faceIndices == direct.faceIndices, "metadata mirrors body face ids")
 
         // Same vertex COUNT: interleaved stride-6 → direct stride-3 positions.
-        #expect(direct.meshPositions.count == interleaved.vertexData.count / 2,
-                "de-interleaved positions = half the interleaved float count")
+        #expect(
+            direct.meshPositions.count == interleaved.vertexData.count / 2,
+            "de-interleaved positions = half the interleaved float count")
 
         // Same POSITIONS: the direct path forwards the exact mesh positions (normals differ
         // because the interleaved path runs NormalSmoothing, which the direct path skips).
@@ -110,12 +115,18 @@ struct CADFileLoaderTests {
         var i = 0
         while i + 2 < n {
             let vi = i / 3
-            maxPosDelta = max(maxPosDelta, abs(direct.meshPositions[i]     - interleaved.vertexData[vi * 6]))
-            maxPosDelta = max(maxPosDelta, abs(direct.meshPositions[i + 1] - interleaved.vertexData[vi * 6 + 1]))
-            maxPosDelta = max(maxPosDelta, abs(direct.meshPositions[i + 2] - interleaved.vertexData[vi * 6 + 2]))
+            maxPosDelta = max(
+                maxPosDelta, abs(direct.meshPositions[i] - interleaved.vertexData[vi * 6]))
+            maxPosDelta = max(
+                maxPosDelta, abs(direct.meshPositions[i + 1] - interleaved.vertexData[vi * 6 + 1]))
+            maxPosDelta = max(
+                maxPosDelta, abs(direct.meshPositions[i + 2] - interleaved.vertexData[vi * 6 + 2]))
             i += 3
         }
-        #expect(maxPosDelta == 0, "direct positions must be byte-identical to the interleaved positions, got \(maxPosDelta)")
+        #expect(
+            maxPosDelta == 0,
+            "direct positions must be byte-identical to the interleaved positions, got \(maxPosDelta)"
+        )
 
         // The direct body is still bbox/raycast-ready (derived mesh vertices), and the
         // metadata still exposes the full pick vertices for app-side picking.
@@ -135,7 +146,7 @@ struct CADFileLoaderTests {
             Issue.record("conversion returned nil")
             return
         }
-        // Default (directMesh omitted) is unchanged — interleaved stride-6, not direct.
+        // Default (directMesh omitted) is unchanged: interleaved stride-6, not direct.
         #expect(!body.usesDirectMesh, "default path must remain interleaved")
         #expect(!body.vertexData.isEmpty)
         #expect(body.vertexData.count % 6 == 0)
@@ -160,21 +171,24 @@ struct CADFileLoaderTests {
         let expectedSegments = meta.edgePolylines.reduce(0) { acc, poly in
             acc + max(poly.points.count - 1, 0)
         }
-        #expect(body.edgeIndices.count == expectedSegments,
-                "edgeIndices.count (\(body.edgeIndices.count)) should equal sum of (poly.count - 1) = \(expectedSegments)")
+        #expect(
+            body.edgeIndices.count == expectedSegments,
+            "edgeIndices.count (\(body.edgeIndices.count)) should equal sum of (poly.count - 1) = \(expectedSegments)"
+        )
 
         // Every value in edgeIndices must be a valid source-edge index from the
         // metadata (i.e. round-trippable to a TopoDS_Edge handle).
         let validEdgeIndices = Set(meta.edgePolylines.map { Int32($0.edgeIndex) })
         for ei in body.edgeIndices {
-            #expect(validEdgeIndices.contains(ei),
-                    "edgeIndex \(ei) on body is not present in source edge enumeration")
+            #expect(
+                validEdgeIndices.contains(ei),
+                "edgeIndex \(ei) on body is not present in source edge enumeration")
         }
     }
 
     // Since v1.3.1, edge polylines come from the bulk allEdgePolylinesIndexed
     // pass (OCCTSwift#275) instead of a per-index loop. A sphere has degenerate
-    // pole edges the discretizer skips — the surviving polylines must still
+    // pole edges the discretizer skips; the surviving polylines must still
     // carry their ORIGINAL edge(at:) indices, matching the per-index accessor
     // point-for-point, or edge picking silently mis-maps from the first skip.
     @Test func t_edgePolylineIndicesSurviveDegenerateSkips() {
@@ -189,8 +203,9 @@ struct CADFileLoaderTests {
             Issue.record("sphere conversion produced no metadata")
             return
         }
-        #expect(meta.edgePolylines.count < sphere.edgeCount,
-                "sphere fixture no longer skips a degenerate edge — pick a new fixture")
+        #expect(
+            meta.edgePolylines.count < sphere.edgeCount,
+            "sphere fixture no longer skips a degenerate edge; pick a new fixture")
         for (edgeIndex, points) in meta.edgePolylines {
             let single = sphere.edgePolyline(
                 at: edgeIndex,
@@ -198,8 +213,9 @@ struct CADFileLoaderTests {
                 maxPoints: CADFileLoader.defaultMaxPointsPerEdge
             )
             #expect(single != nil, "edge \(edgeIndex) not resolvable per-index")
-            #expect(single?.count == points.count,
-                    "edge \(edgeIndex) point count drifted between bulk and per-index paths")
+            #expect(
+                single?.count == points.count,
+                "edge \(edgeIndex) point count drifted between bulk and per-index paths")
         }
     }
 
@@ -221,8 +237,9 @@ struct CADFileLoaderTests {
         let sourceVerts = box.vertices()
 
         // body.vertices count and order match shape.vertices().
-        #expect(body.vertices.count == sourceVerts.count,
-                "body.vertices.count must equal shape.vertices().count for the source-shape convention")
+        #expect(
+            body.vertices.count == sourceVerts.count,
+            "body.vertices.count must equal shape.vertices().count for the source-shape convention")
         #expect(body.vertices.count > 0, "box has corner vertices")
         for i in 0..<body.vertices.count {
             let bv = body.vertices[i]
@@ -232,7 +249,7 @@ struct CADFileLoaderTests {
             #expect(abs(Double(bv.z) - sv.z) < 1e-5, "vertex \(i) Z drift")
         }
 
-        // vertexIndices is now an explicit identity array, not empty —
+        // vertexIndices is now an explicit identity array, not empty;
         // protects against future renderer changes that drop the
         // empty-as-identity interpretation.
         #expect(body.vertexIndices.count == sourceVerts.count)
@@ -242,8 +259,9 @@ struct CADFileLoaderTests {
 
         // metadata.vertices converged to the same source-shape convention.
         #expect(meta.vertices.count == sourceVerts.count)
-        #expect(meta.vertices == body.vertices,
-                "metadata.vertices and body.vertices must agree post-v0.5.0")
+        #expect(
+            meta.vertices == body.vertices,
+            "metadata.vertices and body.vertices must agree post-v0.5.0")
     }
 
     // MARK: - #24: tunable wireframe edge deflection / point cap
@@ -268,10 +286,13 @@ struct CADFileLoaderTests {
             Issue.record("cylinder conversion produced no body")
             return
         }
-        #expect(fine.edges.count == coarse.edges.count,
-                "edge count is unchanged — only the per-edge sampling density differs")
-        #expect(Self.totalEdgePoints(coarse) < Self.totalEdgePoints(fine),
-                "coarser edgeDeflection must shed points: coarse \(Self.totalEdgePoints(coarse)) vs fine \(Self.totalEdgePoints(fine))")
+        #expect(
+            fine.edges.count == coarse.edges.count,
+            "edge count is unchanged; only the per-edge sampling density differs")
+        #expect(
+            Self.totalEdgePoints(coarse) < Self.totalEdgePoints(fine),
+            "coarser edgeDeflection must shed points: coarse \(Self.totalEdgePoints(coarse)) vs fine \(Self.totalEdgePoints(fine))"
+        )
     }
 
     @Test func t_maxPointsPerEdgeCapsPolylineLength() {
@@ -289,8 +310,9 @@ struct CADFileLoaderTests {
             return
         }
         for poly in body.edges {
-            #expect(poly.count <= cap,
-                    "polyline of \(poly.count) points exceeds maxPointsPerEdge \(cap)")
+            #expect(
+                poly.count <= cap,
+                "polyline of \(poly.count) points exceeds maxPointsPerEdge \(cap)")
         }
     }
 
@@ -325,17 +347,21 @@ struct CADFileLoaderTests {
         let a = Shape.box(origin: SIMD3<Double>(0, 0, 0), width: 1, height: 1, depth: 1)
         let b = Shape.box(origin: SIMD3<Double>(5, 0, 0), width: 1, height: 1, depth: 1)
         guard let a, let b, let compound = Shape.compound([a, b]) else {
-            Issue.record("failed to build two-body compound"); return
+            Issue.record("failed to build two-body compound")
+            return
         }
         let entries = CADFileLoader.bodyEntries(from: compound)
-        #expect(entries.count == 2, "compound of two solids should split into two entries, got \(entries.count)")
+        #expect(
+            entries.count == 2,
+            "compound of two solids should split into two entries, got \(entries.count)")
         #expect(entries.allSatisfy { $0.shape.shapeType == .solid }, "each entry should be a solid")
         #expect(entries.allSatisfy { $0.color == nil }, "robust reloads carry no colour")
     }
 
     @Test func t_bodyEntriesKeepsSingleSolidAsOneEntry() {
         guard let box = Shape.box(width: 2, height: 2, depth: 2) else {
-            Issue.record("Shape.box returned nil"); return
+            Issue.record("Shape.box returned nil")
+            return
         }
         let entries = CADFileLoader.bodyEntries(from: box)
         #expect(entries.count == 1, "a single solid stays one entry, got \(entries.count)")
@@ -343,13 +369,16 @@ struct CADFileLoaderTests {
 
     @Test func t_bodyEntriesFallsBackWhenNoSolids() {
         // A raw-mesh STL loads as loose faces (no solids). The split must not drop
-        // it to zero entries — it returns the whole shape as one.
+        // it to zero entries; it returns the whole shape as one.
         guard let box = Shape.box(width: 2, height: 2, depth: 2),
-              let faces = Shape.compound(box.subShapes(ofType: .face)) else {
-            Issue.record("failed to build faces-only compound"); return
+            let faces = Shape.compound(box.subShapes(ofType: .face))
+        else {
+            Issue.record("failed to build faces-only compound")
+            return
         }
         #expect(faces.subShapes(ofType: .solid).isEmpty, "precondition: no solids")
         let entries = CADFileLoader.bodyEntries(from: faces)
-        #expect(entries.count == 1, "no-solids shape stays one entry, never zero, got \(entries.count)")
+        #expect(
+            entries.count == 1, "no-solids shape stays one entry, never zero, got \(entries.count)")
     }
 }

@@ -30,15 +30,17 @@ import OCCTSwift
 ///
 /// See the durable identity cookbook (`topology-graph-uids.md`).
 public struct FaceIdentityTable: Sendable {
-    /// Indexed by the ordinal stored in `ViewportBody.faceIndices` /
-    /// `CADBodyMetadata.faceIndices`. Built from `Shape.faces()`, the same enumeration the
-    /// mesher uses to assign that ordinal, so `shapes[ordinal]` is always the exact face
-    /// tessellated into the triangles carrying that ordinal.
+    /// Indexed by the ordinal stored in `ViewportBody.faceIndices` / `CADBodyMetadata.faceIndices`.
+    ///
+    /// Built from `Shape.faces()`, the same enumeration the mesher uses to assign that ordinal,
+    /// so `shapes[ordinal]` is always the exact face tessellated into the triangles carrying that
+    /// ordinal.
     public let shapes: [Shape]
 
-    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was
-    /// built. `nil` when no graph was supplied. When present, an individual element is `nil`
-    /// only if that ordinal's face could not be resolved in the graph.
+    /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was built.
+    ///
+    /// `nil` when no graph was supplied. When present, an individual element is `nil` only if
+    /// that ordinal's face could not be resolved in the graph.
     public let uids: [BRepGraph.GraphUID?]?
 
     public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil) {

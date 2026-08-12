@@ -3,9 +3,9 @@
 //
 // Converts OCCTSwift Wire objects to ViewportBody for rendering.
 
-import simd
 import OCCTSwift
 import OCCTSwiftViewport
+import simd
 
 /// Converts OCCTSwift Wire objects to edge-only ViewportBody values.
 public enum WireConverter {
@@ -18,12 +18,18 @@ public enum WireConverter {
 
     /// Converts a Wire to an edge-only ViewportBody by extracting ordered edge polylines.
     ///
-    /// - Parameter maxPointsPerEdge: Hard cap on points per edge polyline. Lower it to
-    ///   coarsen dense curved edges (e.g. helical threads) that otherwise render as an
-    ///   illegible, slow grey haze. Defaults to `defaultMaxPointsPerEdge` (10000).
-    /// - Parameter edgeDeflection: Linear deflection used only by the Shape-based fallback
-    ///   path (when ordered-edge extraction yields nothing). Defaults to
-    ///   `defaultEdgeDeflection` (0.005); coarsen for dense geometry. See issue #24.
+    /// - Parameters:
+    ///   - wire: the source `Wire` to convert.
+    ///   - id: stable id for the resulting body.
+    ///   - color: RGBA color for the body's edges.
+    ///   - maxPointsPerEdge: Hard cap on points per edge polyline. Lower it to
+    ///     coarsen dense curved edges (e.g. helical threads) that otherwise render as an
+    ///     illegible, slow grey haze. Defaults to `defaultMaxPointsPerEdge` (10000).
+    ///   - edgeDeflection: Linear deflection used only by the Shape-based fallback
+    ///     path (when ordered-edge extraction yields nothing). Defaults to
+    ///     `defaultEdgeDeflection` (0.005); coarsen for dense geometry. See issue #24.
+    /// - Returns: An edge-only body built from ordered-edge polylines, falling back to
+    ///   Shape-based edge extraction if the wire yields no ordered-edge polylines.
     public static func wireToBody(
         _ wire: Wire,
         id: String,
