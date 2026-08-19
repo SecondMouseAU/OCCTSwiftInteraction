@@ -20,7 +20,9 @@ and SPEC.md):
 - **`FaceIdentityTable`** / **`EdgeIdentityTable`** / **`VertexIdentityTable`**: resolve a
   render-path face/edge/vertex ordinal (as stored in `ViewportBody.faceIndices` /
   `edgeIndices` / `vertexIndices`) back to its `Shape` and, when a `BRepGraph` is supplied, its
-  durable `GraphUID`.
+  durable `GraphUID`. Each table's index space is the ordinal space, which is why the two built
+  through a failable conversion hold `[Shape?]` and the vertex table holds `[Shape]`
+  (OCCTSwiftInteraction#9).
 - **`ShapeIdentity`**: the one place a `Shape` becomes those three tables (OCCTSwiftInteraction#7),
   holding the shape, its `BRepGraph` and all three. `init(shape:graph:)` takes a graph the caller
   holds (`nil` gives shapes without uids); `init(shape:)` mints one. A file load returns one per

@@ -4,6 +4,20 @@ Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the 
 
 ## Unreleased
 
+### A failed sub-shape conversion no longer shifts every later ordinal
+
+Closes [OCCTSwiftInteraction#9](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/9). A 1.0.0 blocker.
+
+`ShapeIdentity` built its face and edge tables with `compactMap`, so a failed `Shape.fromFace` / `Shape.fromEdge` was dropped rather than held in place. The ordinals in `ViewportBody.faceIndices` index the **full** `faces()` enumeration, because that is what the mesher walks, so one failure at ordinal `k` moved every later face down one: `shapes[ordinal]` returned the face *after* the one the pick hit, and `uid(forOrdinal:)` minted a durable identity for it. No error, no assertion, no diagnostic. The pick resolved and highlighted confidently on a neighbour.
+
+**Breaking, and the reason for it.** `FaceIdentityTable.shapes` and `EdgeIdentityTable.shapes` are now `[Shape?]` rather than `[Shape]`, built with `map`, so a failed conversion is a `nil` at its own ordinal and the index space is the ordinal space by construction. Reading an element now needs unwrapping; `shapes.count`, `shapes.indices`, `shape(forOrdinal:)` and `uid(forOrdinal:)` are unchanged in both spelling and meaning, and the initialisers still accept a `[Shape]` unchanged (Swift promotes it). Nothing outside this package referenced either type at the time of the change.
+
+**`VertexIdentityTable.shapes` stays `[Shape]`**, deliberately. `subShapes(ofType: .vertex)` returns `Shape` values directly, with no failable conversion in front of it, so its alignment holds for free. The asymmetry records that the hazard is the conversion rather than the enumeration.
+
+The failure now degrades instead of corrupting: the one ordinal that failed loses its captured shape and its durable uid, and no other ordinal moves. A pick landing on it still names the sub-shape it hit, because `SubShapePickResolver` reads a `nil` entry as a table miss and re-derives through `subShape(type:index:)`, which walks the same `TopTools_IndexedMapOfShape`. Refusing the whole table, and asserting on a count mismatch, were both considered and are recorded in [`docs/reference/ShapeIdentity.md`](reference/ShapeIdentity.md#ordinal-alignment-is-the-invariant).
+
+**Tests:** 3 new in the `ShapeIdentity` suite, 360 total. A genuine conversion failure cannot be provoked through the public API (every `Face` and `Edge` the enumerations hand back already holds a live handle), so they drive it through a new internal seam on `ShapeIdentity.init`, which takes the two conversions as parameters. Same treatment, and same reason, as `edgePolylineOnlyBridge`. Mutation-checked: reinstating `compactMap` fails all three and no others, which also confirms the issue's claim that the shared-face regression test does not catch this, since its fixture converts cleanly.
+
 ### One canonical identity-table builder, and a file load can finally return identity
 
 Closes [OCCTSwiftInteraction#7](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/7).

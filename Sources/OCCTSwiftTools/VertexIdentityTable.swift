@@ -25,6 +25,12 @@ public struct VertexIdentityTable: Sendable {
     /// Built from `Shape.subShapes(ofType: .vertex)`, the same `TopTools_IndexedMapOfShape`
     /// traversal `Shape.vertices()` / `Shape.vertex(at:)` use, so `shapes[ordinal]` is always the
     /// exact vertex behind the pick point carrying that ordinal.
+    ///
+    /// `[Shape]` rather than the `[Shape?]` its two siblings hold, and deliberately so: that
+    /// traversal returns `Shape` values directly, with no failable `Face`/`Edge` conversion in the
+    /// way, so there is no step here that could drop an element and shift every later ordinal
+    /// (OCCTSwiftInteraction#9). The asymmetry records that the hazard is the conversion, not the
+    /// enumeration.
     public let shapes: [Shape]
 
     /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was built.

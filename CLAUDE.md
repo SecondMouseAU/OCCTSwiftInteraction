@@ -70,7 +70,7 @@ OCCTSwiftIO built clean with zero errors while carrying three real breaks in its
 Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
 published URLs. No binary lives in this repo.
 
-**Expected baseline: 357 tests across 32 suites, all passing.**
+**Expected baseline: 360 tests across 32 suites, all passing.**
 
 ## Face identity is `IsSame`, and that decision is settled
 
@@ -142,10 +142,19 @@ down by geometry, not by index, and it was mutation-checked.
 shape to a BREP string: measured at 5.0ms against a 14-face solid whose mesh takes 9.6ms. Headless
 consumers of `load` (OCCTDesignLoop's reprojection, batch render and parts extraction) never pick.
 
+**A table's index space is the ordinal space, and that is load-bearing**
+([#9](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/9)). Ordinals index the *full*
+enumeration, because that is what the mesher walks, so the face and edge tables are built with
+`map`, never `compactMap`: a dropped element moves every later ordinal down one and the table then
+names the sub-shape after the one the pick hit, silently. That is why `FaceIdentityTable.shapes` and
+`EdgeIdentityTable.shapes` are `[Shape?]`. `VertexIdentityTable.shapes` is `[Shape]` because
+`subShapes(ofType: .vertex)` needs no failable conversion; keep that asymmetry, in both directions.
+
 The bridge's edge-polyline-only branch (`mesh(...)` returned nil) used to substitute an empty
 `FaceIdentityTable` and now builds the ordinary one. It is reachable from tests only through the
 internal `edgePolylineOnlyBridge` seam, because a wire, an edge and a lone vertex all mesh to an
-empty `Mesh` rather than to nil.
+empty `Mesh` rather than to nil. `ShapeIdentity.init` has an internal seam of the same kind, taking
+the two sub-shape conversions as parameters, because no public API can make one of them fail.
 
 ## One selection, held by `InteractiveContext`
 

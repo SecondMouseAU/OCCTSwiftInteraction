@@ -130,7 +130,8 @@ struct InteractiveContextMutationTests {
         // Locate the shared face by identity, not by position: an ordinal is an
         // artifact of enumeration order, `isSame` is the decision's own primitive
         // and is what makes this assertion survive a reordering of the fixture.
-        let sharedOrdinal = try #require(identity.shapes.firstIndex { $0.isSame(as: sharedFace) })
+        let sharedOrdinal = try #require(
+            identity.shapes.firstIndex { $0?.isSame(as: sharedFace) == true })
         let sharedUID = try #require(identity.uid(forOrdinal: sharedOrdinal))
         // Sanity: everything below is non-vacuous, no OTHER face carries that uid.
         for ordinal in identity.shapes.indices where ordinal != sharedOrdinal {
