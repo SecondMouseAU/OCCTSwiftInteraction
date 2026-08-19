@@ -9,6 +9,16 @@ The selection model: `InteractiveObject` (an erased scene handle), `SubShape` (a
 TopoDS sub-shapes), `SubShapeRef` (the durable handle a `.face`/`.edge`/`.vertex` carries),
 `SelectionMode` (what kinds of pick count), and `Selection` (a snapshot of picked sub-shapes).
 
+**Which target these live in.** `InteractiveObject`, `SubShapeRef` and `SubShape` moved down to
+`OCCTSwiftTools` in
+[OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2): the type
+naming a piece of topology belongs in the lowest layer that can produce it, which is the layer
+holding the identity tables and minting the `BRepGraph.GraphUID`. `OCCTSwiftAIS` keeps
+source-compatible typealiases for all three, so `import OCCTSwiftAIS` alone still resolves the
+names; new code should prefer naming them in `OCCTSwiftTools`. `SelectionMode` and `Selection` are
+still `OCCTSwiftAIS` types. Minting a `SubShapeRef` from a pick is
+[`SubShapePickResolver`](SubShapePickResolver)'s job.
+
 ## Topics
 
 - [SelectionMode](#selectionmode) · [InteractiveObject](#interactiveobject) · [SubShapeRef](#subshaperef) · [SubShape](#subshape) · [Selection](#selection)
@@ -40,7 +50,7 @@ ais.selectionMode = [.face, .edge]   // face and edge picks both produce a selec
 ## InteractiveObject
 
 An erased reference to something currently displayed in an `InteractiveContext`. Equality and hashing
-are by `id` only — two `InteractiveObject`s with the same id refer to the same logical scene entry
+are by `id` only: two `InteractiveObject`s with the same id refer to the same logical scene entry
 even if their `Shape` was rebuilt.
 
 ```swift
@@ -52,7 +62,7 @@ public struct InteractiveObject: Hashable, Sendable {
 }
 ```
 
-- **Parameters:** `id` — stable identity (defaults to a fresh UUID); `shape` — the source OCCTSwift `Shape`.
+- **Parameters:** `id`, stable identity (defaults to a fresh UUID); `shape`, the source OCCTSwift `Shape`.
 - **Example:** you usually get one back from `InteractiveContext.display(_:)` rather than constructing it:
 
 ```swift
@@ -78,13 +88,13 @@ public struct SubShapeRef: Hashable, Sendable {
 ```
 
 - **`shape`:** the resolved sub-shape itself, captured once at pick time. Use this for geometry
-  queries — `Selection.faces` / `.edges` / `.vertices` resolve from it directly, no re-derivation via
+  queries: `Selection.faces` / `.edges` / `.vertices` resolve from it directly, no re-derivation via
   `Shape.subShape(type:index:)` on `ordinal`.
 - **`uid`:** a `BRepGraph.GraphUID`, minted when a graph was in hand at pick time. This is what
-  `InteractiveContext.remap(_:using:rebindingTo:)` resolves through — it survives a mutation that
+  `InteractiveContext.remap(_:using:rebindingTo:)` resolves through, and it survives a mutation that
   `ordinal` alone does not. `nil` when no graph was available; such a sub-shape has nothing durable to
   remap by and is dropped.
-- **`ordinal`:** the tessellation-time render-path index. Ephemeral — valid only against the
+- **`ordinal`:** the tessellation-time render-path index. Ephemeral, valid only against the
   `ViewportBody` it was minted from (highlight overlays index per-triangle buffers by it). Never
   compare sub-shapes by `ordinal` alone; equality follows `uid` when both sides have one, falling back
   to `ordinal` only when neither does.

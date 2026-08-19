@@ -9,7 +9,40 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
-Migrate to OCCTSwift 3.0.0. Closes [#44](https://github.com/SecondMouseAU/OCCTSwiftAIS/issues/44).
+### Pick resolution moved to `OCCTSwiftTools`
+
+Closes [OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2),
+phase 2 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43).
+
+`InteractiveContext`'s `resolveFaceSubShape` / `resolveEdgeSubShape` / `resolveVertexSubShape` no
+longer resolve identity themselves; they gate on `selectionMode`, find the body, and hand off to
+`OCCTSwiftTools.SubShapePickResolver`, the one resolver now shared with `OCCTSwiftCADKit`. What
+stays here is what is genuinely this layer's: the mode gate, and the whole-body fallback on a face
+pick, which is a selection-mode decision rather than an identity one (OCCT draws the same line,
+carrying it as `SelectMgr_EntityOwner::ComesFromDecomposition()` on the owner).
+
+**Bug fix, no source change required of callers.** A vertex pick is now bounded by how many points
+the body renders rather than by `vertexIndices.count`. `ViewportBody` documents an empty
+`vertexIndices` as identity mapping, where the point index *is* the ordinal; this target used to
+bounds-check against `vertexIndices.count` and so never resolved a vertex pick on such a body.
+`OCCTSwiftCADKit` had fixed this in its own copy and left this one broken, which is the divergence
+the consolidation exists to end.
+
+**`InteractiveObject`, `SubShapeRef` and `SubShape` moved down to `OCCTSwiftTools`.** Source-compatible
+typealiases stay here, so `import OCCTSwiftAIS` alone still resolves all three names and no consumer
+changes. They are deliberately not marked deprecated: a same-module typealias shadows the imported
+type it aliases, so deprecating them would warn at every one of this target's own uses, not just at a
+consumer's.
+
+**Tests:** 2 new in `EdgeVertexSelection`, covering the empty-`vertexIndices` identity mapping end to
+end through `handlePick` (previously uncovered on this path) and the corollary that a body rendering
+no pick points is still not vertex-pickable. 1 more in the CADKit target's `Smoke` suite, which
+imports both targets and so is where the typealiases would show up as an ambiguous name if they
+ever stopped denoting the same types.
+
+### Migrate to OCCTSwift 3.0.0
+
+Closes [#44](https://github.com/SecondMouseAU/OCCTSwiftAIS/issues/44).
 
 There is no direct OCCTSwift pin in this repo: the kernel arrives through `OCCTSwiftTools`, and
 OCCTSwift 3.0.0 lands inside the existing `1.6.1..<2.0.0` Tools range. The source breaks are real

@@ -490,25 +490,21 @@ public final class InteractiveContext: ObservableObject {
         }
     }
 
+    /// Face picks are the one kind with a whole-body fallback.
+    ///
+    /// That fallback is why this stays here rather than moving into `SubShapePickResolver`
+    /// with the identity rules: "the pick names the object rather than one of its faces" is a
+    /// selection-mode decision, not an identity one. OCCT draws the same line, carrying it as
+    /// `SelectMgr_EntityOwner::ComesFromDecomposition()` on the owner.
     private func resolveFaceSubShape(from result: PickResult, entry: Entry) -> SubShape? {
-        if selectionMode.contains(.face),
-            let metadata = entry.metadata,
-            result.triangleIndex >= 0,
-            result.triangleIndex < metadata.faceIndices.count
+        if selectionMode.contains(.face), let metadata = entry.metadata,
+            let ref = SubShapePickResolver.resolveFace(
+                triangleIndex: result.triangleIndex,
+                faceIndices: metadata.faceIndices,
+                identity: entry.faceIdentity,
+                shape: entry.object.shape)
         {
-            let faceIdx = Int(metadata.faceIndices[result.triangleIndex])
-            // Prefer the FaceIdentityTable's Shape (captured at tessellation
-            // time, always the exact face that ordinal came from) over
-            // re-deriving it from the object's own sub-shape enumeration,
-            // which need not agree once a face is shared between shells.
-            if faceIdx >= 0,
-                let faceShape = entry.faceIdentity?.shape(forOrdinal: faceIdx)
-                    ?? entry.object.shape.subShape(type: .face, index: faceIdx)
-            {
-                let uid = entry.faceIdentity?.uid(forOrdinal: faceIdx)
-                return .face(
-                    entry.object, ref: SubShapeRef(shape: faceShape, uid: uid, ordinal: faceIdx))
-            }
+            return .face(entry.object, ref: ref)
         }
         if selectionMode.contains(.body) {
             return .body(entry.object)
@@ -517,33 +513,28 @@ public final class InteractiveContext: ObservableObject {
     }
 
     private func resolveEdgeSubShape(from result: PickResult, entry: Entry) -> SubShape? {
-        guard selectionMode.contains(.edge) else { return nil }
-        guard let body = bodies.first(where: { $0.id == entry.bodyID }) else { return nil }
-        guard result.triangleIndex >= 0,
-            result.triangleIndex < body.edgeIndices.count
+        guard selectionMode.contains(.edge),
+            let body = bodies.first(where: { $0.id == entry.bodyID }),
+            let ref = SubShapePickResolver.resolveEdge(
+                segmentIndex: result.triangleIndex,
+                edgeIndices: body.edgeIndices,
+                identity: entry.edgeIdentity,
+                shape: entry.object.shape)
         else { return nil }
-        let edgeIdx = Int(body.edgeIndices[result.triangleIndex])
-        guard edgeIdx >= 0,
-            let edgeShape = entry.edgeIdentity?.shape(forOrdinal: edgeIdx)
-                ?? entry.object.shape.subShape(type: .edge, index: edgeIdx)
-        else { return nil }
-        let uid = entry.edgeIdentity?.uid(forOrdinal: edgeIdx)
-        return .edge(entry.object, ref: SubShapeRef(shape: edgeShape, uid: uid, ordinal: edgeIdx))
+        return .edge(entry.object, ref: ref)
     }
 
     private func resolveVertexSubShape(from result: PickResult, entry: Entry) -> SubShape? {
-        guard selectionMode.contains(.vertex) else { return nil }
-        guard let body = bodies.first(where: { $0.id == entry.bodyID }) else { return nil }
-        guard result.triangleIndex >= 0,
-            result.triangleIndex < body.vertexIndices.count
+        guard selectionMode.contains(.vertex),
+            let body = bodies.first(where: { $0.id == entry.bodyID }),
+            let ref = SubShapePickResolver.resolveVertex(
+                pointIndex: result.triangleIndex,
+                pointCount: body.vertices.count,
+                vertexIndices: body.vertexIndices,
+                identity: entry.vertexIdentity,
+                shape: entry.object.shape)
         else { return nil }
-        let vIdx = Int(body.vertexIndices[result.triangleIndex])
-        guard vIdx >= 0,
-            let vertexShape = entry.vertexIdentity?.shape(forOrdinal: vIdx)
-                ?? entry.object.shape.subShape(type: .vertex, index: vIdx)
-        else { return nil }
-        let uid = entry.vertexIdentity?.uid(forOrdinal: vIdx)
-        return .vertex(entry.object, ref: SubShapeRef(shape: vertexShape, uid: uid, ordinal: vIdx))
+        return .vertex(entry.object, ref: ref)
     }
 
 }

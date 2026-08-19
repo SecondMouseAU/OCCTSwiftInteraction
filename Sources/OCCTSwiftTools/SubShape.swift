@@ -1,37 +1,30 @@
+// SubShape.swift
+// OCCTSwiftTools
+//
+// The types that name a piece of picked topology. Moved down from the OCCTSwiftAIS target in
+// OCCTSwiftInteraction#2 (phase 2 of ecosystem#43): the type naming a piece of topology belongs in
+// the lowest layer that can produce it, which is the layer holding the identity tables and minting
+// the `BRepGraph.GraphUID`. `OCCTSwiftAIS` keeps source-compatible aliases.
+
 import Foundation
 import OCCTSwift
-
-/// Erased reference to something currently displayed in an `InteractiveContext`.
-///
-/// Equality and hashing are by `id` only. Two `InteractiveObject`s with the same
-/// id refer to the same logical scene entry even if their `Shape` was rebuilt.
-public struct InteractiveObject: Hashable, Sendable {
-    public let id: UUID
-    public let shape: Shape
-
-    public init(id: UUID = UUID(), shape: Shape) {
-        self.id = id
-        self.shape = shape
-    }
-
-    public static func == (lhs: InteractiveObject, rhs: InteractiveObject) -> Bool {
-        lhs.id == rhs.id
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
 
 /// A durable handle to a picked sub-shape, carrying three things that answer
 /// different questions.
 ///
+/// This is our equivalent of OCCT's `StdSelect_BRepOwner`, which stores the picked
+/// `TopoDS_Shape` itself and is what `SelectMgr_ViewerSelector::OnePicked()` hands back.
+/// **The `shape` is the identity and the `ordinal` is advisory**, not the other way round
+/// (OCCTSwiftInteraction#1). OCCT can attach the shape to the sensitive entity because its
+/// selection data is a CPU-side structure; ours is a GPU buffer of triangles, so the
+/// attachment happens at tessellation time instead, in `FaceIdentityTable` and its siblings.
+///
 /// - `shape`: the concrete sub-shape resolved once at pick time. Use this for
 ///   geometry queries (`Face(ref.shape)`, `Edge(ref.shape)`, vertex position, …)
 ///   instead of re-deriving it from `ordinal` via `Shape.subShape(type:index:)`.
-///   That round-trip is exactly the coincidence SPEC.md warns about: a
+///   That round-trip is exactly the coincidence the spec warns about: a
 ///   render-path ordinal need not agree with `Shape`'s own sub-shape enumeration
-///   once a sub-shape is shared between shells (see OCCTSwiftTools#42).
+///   once a sub-shape is shared between shells.
 /// - `uid`: a `BRepGraph.GraphUID`, minted when a graph was in hand at pick
 ///   time. This is the durable identity: it survives `InteractiveContext.remap`
 ///   across a mutation via `BRepGraph.add(_:absorbing:inputRoots:operationName:)`.
@@ -40,6 +33,8 @@ public struct InteractiveObject: Hashable, Sendable {
 /// - `ordinal`: the tessellation-time render-path index. Ephemeral: valid only
 ///   against the `ViewportBody` it was minted from (highlight overlays index
 ///   per-triangle buffers by it). Never compare sub-shapes by ordinal alone.
+///
+/// `SubShapePickResolver` is the one supported way to mint one of these from a pick.
 public struct SubShapeRef: Sendable {
     public let shape: Shape
     public let uid: BRepGraph.GraphUID?
@@ -56,7 +51,7 @@ extension SubShapeRef: Hashable {
     /// Identity follows `uid` when both sides have one: the durable handle.
     /// Falls back to `ordinal` otherwise. `shape` never participates: OCCTSwift's
     /// `Shape` has no `IsSame`-respecting `Hashable` conformance to piggyback on
-    /// (same reasoning as `InteractiveObject`'s id-only equality, above).
+    /// (same reasoning as `InteractiveObject`'s id-only equality).
     public static func == (lhs: SubShapeRef, rhs: SubShapeRef) -> Bool {
         switch (lhs.uid, rhs.uid) {
         case (let l?, let r?): return l == r
@@ -74,7 +69,7 @@ extension SubShapeRef: Hashable {
 /// whole body. `.body` is identity-stable across mutations by construction
 /// (rebinds to the same `InteractiveObject.id`). `.face`/`.edge`/`.vertex` carry
 /// a `SubShapeRef`; see its documentation for what survives mutation and what
-/// doesn't, and SPEC.md §"Selection survival across mutation".
+/// doesn't, and the AIS spec's "Selection survival across mutation".
 public enum SubShape: Hashable, Sendable {
     case body(InteractiveObject)
     case face(InteractiveObject, ref: SubShapeRef)

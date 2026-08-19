@@ -12,7 +12,7 @@ concrete OCCTSwift `Face` / `Edge` handles from the `Selection`.
 
 ## Choosing what's pickable
 
-`selectionMode` is a `Set<SelectionMode>` — any combination of `.body`, `.face`, `.edge`, `.vertex`.
+`selectionMode` is a `Set<SelectionMode>`, any combination of `.body`, `.face`, `.edge`, `.vertex`.
 Changing it clears the current selection.
 
 ```swift
@@ -49,7 +49,7 @@ for p in sel.vertices {            // [SIMD3<Double>]
 ```
 
 `Selection.faces` / `.edges` resolve directly from each entry's `SubShapeRef.shape` (the concrete
-sub-shape captured at pick time) and wrap it in `Face` / `Edge` — no re-derivation via
+sub-shape captured at pick time) and wrap it in `Face` / `Edge`: no re-derivation via
 `shape.subShape(type:index:)` by index, which doesn't reliably agree with the render-path ordinal once
 a sub-shape is shared between shells. `Selection.vertices` returns world-space `SIMD3<Double>`
 coordinates (OCCTSwift exposes vertices positionally, not as a `Vertex` class).
@@ -67,13 +67,19 @@ public struct SubShapeRef: Hashable, Sendable {
 ```
 
 - **`shape`** is what geometry queries should use (`Face(ref.shape)`, `sel.faces`, …).
-- **`uid`** is what survives a mutation — see "Remapping a selection" below.
+- **`uid`** is what survives a mutation, see "Remapping a selection" below.
 - **`ordinal`** is render-path-only (highlight overlays index per-triangle buffers by it); never
   compare sub-shapes by ordinal alone.
 
+`SubShape`, `SubShapeRef` and `InteractiveObject` are `OCCTSwiftTools` types; `import OCCTSwiftAIS`
+alone still resolves all three via source-compatible typealiases. `handlePick` mints the ref through
+[`SubShapePickResolver`](../../reference/SubShapePickResolver), the one resolver shared by every
+layer above the bridge. Resolve a pick yourself only if you are not going through
+`InteractiveContext`, and then call that rather than indexing an enumeration by hand.
+
 ## Programmatic, additive selection
 
-`select(_:)` / `deselect(_:)` mutate the selection as a `Set` — adding the same `SubShape` twice is
+`select(_:)` / `deselect(_:)` mutate the selection as a `Set`: adding the same `SubShape` twice is
 idempotent. `clearSelection()` empties it.
 
 ```swift
@@ -93,7 +99,7 @@ for you) rather than being hand-built like this.
 
 A render-path ordinal only means "face 5" while the exact tessellation it came from is unchanged. To
 carry a selection across a modelling operation that rebuilds the shape (a boolean, a fillet), use
-`InteractiveContext.update(_:to:absorbing:operationName:)` — it absorbs the operation's history into
+`InteractiveContext.update(_:to:absorbing:operationName:)`: it absorbs the operation's history into
 the object's own living `BRepGraph` (built once at `display(_:style:)` and retained across every
 subsequent `update` call) and remaps `selection` / `hover` forward automatically:
 
@@ -104,15 +110,15 @@ ais.selectionMode = [.face]
 
 let (result, history) = baseShape.subtractedWithFullHistory(tool)!
 if let updated = ais.update(obj, to: result, absorbing: history, operationName: "cut") {
-    // ais.selection now references `updated` — split faces expand to all their
+    // ais.selection now references `updated`: split faces expand to all their
     // successors; a sub-shape the cut deleted is dropped, not silently pointed
     // at a coincidentally-adjacent neighbour.
 }
 ```
 
-`remap(_:using:rebindingTo:)` is the lower-level primitive `update` calls internally — resolve via
+`remap(_:using:rebindingTo:)` is the lower-level primitive `update` calls internally: resolve via
 each sub-shape's `uid` (`graph.node(forUID:)`, which rejects a uid minted by a different graph
 instance) and `graph.findDerivedOrSelf(of:)`. A sub-shape with no `uid` (no graph was in hand at pick
 time) is dropped: there's nothing durable to resolve it by. `.body(_)` always rebinds to the new
 object. `isDeleted(_:in:)` distinguishes "the operation consumed this sub-shape" from "it wasn't
-selected" — `remap` alone can't, since both just look like "absent from the result."
+selected": `remap` alone can't, since both just look like "absent from the result."

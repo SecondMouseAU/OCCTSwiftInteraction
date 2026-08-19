@@ -70,7 +70,7 @@ OCCTSwiftIO built clean with zero errors while carrying three real breaks in its
 Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
 published URLs. No binary lives in this repo.
 
-**Expected baseline: 314 tests across 27 suites, all passing.**
+**Expected baseline: 330 tests across 28 suites, all passing.**
 
 ## Face identity is `IsSame`, and that decision is settled
 
@@ -93,12 +93,29 @@ and both triangulations carry the one deduplicated ordinal. `InteractiveContextM
 holds that down: it asserts both shells' copies reach the mesh and that picks into either resolve to
 the same durable uid. If you change the tessellation or identity path, that test is the tripwire.
 
-## Active known duplication
+## One pick resolver, and where its neighbours belong
 
-Picking is resolved in more than one place across these targets, tracked as ecosystem#43. Before
-writing anything that maps a `PickResult` to topology, read that issue: there are already four
-implementations across the fleet and two have silently diverged. Prefer the `OCCTSwiftTools`
-identity tables as the source of durable identity over re-deriving from sub-shape enumeration.
+Phase 2 of ecosystem#43, done in
+[OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2).
+
+`OCCTSwiftTools.SubShapePickResolver` is the only place a render-path ordinal becomes a
+`SubShapeRef`. Both this repo's own targets call it; do not write a fourth copy. `SubShapeRef`,
+`SubShape` and `InteractiveObject` live in `OCCTSwiftTools` for the same reason, with
+source-compatible typealiases left in `OCCTSwiftAIS`.
+
+Three behaviours look like the resolver's job and are not, so they stayed where they were:
+
+- **Clip-plane awareness** is `OCCTSwiftCADKit`'s, a caller-side pre-filter. Clip planes are the
+  viewport service's state; the bridge target has no business knowing about them.
+- **Geometry enrichment** (curve type, area, z-level, description) is presentation and lives above.
+- **The whole-body fallback** is a selection-mode decision and lives in `OCCTSwiftAIS`.
+
+Pulling any of them down would drag presentation and viewport state into the bridge layer, which is
+the thing this consolidation exists to prevent.
+
+Still outstanding from the same epic: the two parallel selection systems (`select`,
+`clearSelection`, `remove`, `removeAll` in both `OCCTSwiftAIS` and `OCCTSwiftCADKit`) are issue #3,
+and each remaining collision gets its own behaviour matrix before either copy is deleted.
 
 ## Where things are
 

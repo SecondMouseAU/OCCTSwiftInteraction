@@ -64,9 +64,17 @@ See [`references/`](references/index.md).
 
 ## Known open work
 
-- **Picking is resolved in more than one place** across these targets and across the wider fleet
-  (ecosystem#43). Four implementations exist, and two have already diverged. Read that issue before
-  writing anything that maps a `PickResult` to topology.
+- **Pick resolution is consolidated inside this repo** as of
+  [#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2) (phase 2 of ecosystem#43):
+  `OCCTSwiftTools.SubShapePickResolver` is the only place a render-path ordinal becomes a
+  `SubShapeRef`, and both this repo's targets call it. Clip-plane awareness, geometry enrichment and
+  the whole-body fallback deliberately stayed in their own layers. The wider fleet still carries two
+  more implementations (OCCTSwiftUX#29, OCCTMCP#182); read ecosystem#43 before writing anything that
+  maps a `PickResult` to topology.
+- **The two parallel selection systems** (`select` / `clearSelection` / `remove` / `removeAll` in
+  both `OCCTSwiftAIS` and `OCCTSwiftCADKit`) are still separate, tracked as
+  [#3](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/3), and need their own behaviour
+  matrix before either copy goes.
 - **Face identity is decided and settled**: OCCT's `IsSame` semantics, so `faces()` (deduplicated)
   is the enumeration behind `FaceIdentityTable` and a face shared between two shells is one identity
   ([#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1), phase 0 of ecosystem#43).

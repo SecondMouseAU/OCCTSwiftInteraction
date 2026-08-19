@@ -147,6 +147,49 @@ struct EdgeVertexSelectionTests {
         _ = obj
     }
 
+    // MARK: - The empty-vertexIndices identity mapping (OCCTSwiftInteraction#2)
+
+    /// Regression for the bug the resolver consolidation fixed.
+    ///
+    /// `ViewportBody` documents an empty `vertexIndices` as identity mapping, where the point
+    /// index *is* the ordinal. This target's own resolver used to bounds-check the pick against
+    /// `vertexIndices.count`, so on such a body it never resolved a vertex pick at all; only the
+    /// `OCCTSwiftCADKit` copy implemented the documented fallback, which left this path with no
+    /// coverage here.
+    @Test func t_handlePick_vertexWithEmptyVertexIndices_identityMaps() throws {
+        let ctx = makeContext()
+        ctx.selectionMode = [.vertex]
+        let obj = ctx.display(try makeBox())
+        try #require(!ctx.bodies.isEmpty)
+        try #require(!ctx.bodies[0].vertices.isEmpty)
+        ctx.bodies[0].vertexIndices = []
+
+        let primIdx = 3
+        let pick = try makePick(
+            bodyID: ctx.bodies[0].id, primitiveIndex: primIdx, kind: .vertex)
+        ctx.handlePick(pick)
+
+        #expect(ctx.selection.count == 1)
+        #expect(containsVertex(ctx.selection.subshapes, obj, ordinal: primIdx))
+    }
+
+    /// The corollary: bounding by the rendered point count rather than by `vertexIndices.count`
+    /// must not turn a body that is genuinely not vertex-pickable into one that is.
+    @Test func t_handlePick_vertexWithNoRenderedPoints_isIgnored() throws {
+        let ctx = makeContext()
+        ctx.selectionMode = [.vertex]
+        let obj = ctx.display(try makeBox())
+        try #require(!ctx.bodies.isEmpty)
+        ctx.bodies[0].vertices = []
+        ctx.bodies[0].vertexIndices = []
+
+        let pick = try makePick(bodyID: ctx.bodies[0].id, primitiveIndex: 0, kind: .vertex)
+        ctx.handlePick(pick)
+
+        #expect(ctx.selection.isEmpty)
+        _ = obj
+    }
+
     // MARK: - Selection.vertices accessor
 
     @Test func t_selectionVertices_resolvesToWorldPositions() throws {

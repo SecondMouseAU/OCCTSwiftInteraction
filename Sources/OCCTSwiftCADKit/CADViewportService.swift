@@ -1908,6 +1908,12 @@ public final class CADViewportService {
     /// `FaceIdentityTable`. `internal` rather than `private` so it can be exercised
     /// directly in tests without round-tripping through the viewport's async pick
     /// callback; `handlePick` is the only production caller.
+    ///
+    /// Identity resolution itself is `OCCTSwiftTools.SubShapePickResolver`'s, shared with
+    /// `OCCTSwiftAIS` since OCCTSwiftInteraction#2. What stays here is what the resolver
+    /// deliberately does not own: the mode gate, the clip-plane pre-filter (clip planes are this
+    /// service's state, not the bridge layer's), and the geometry enrichment below, which is
+    /// presentation.
     func resolveFacePick(bodyID: String, triangleIndex: Int) -> PickedFaceInfo? {
         guard selectionModes.contains(.face) else { return nil }
         if let centroid = triangleWorldCentroid(bodyID: bodyID, triangleIndex: triangleIndex),
@@ -1916,21 +1922,19 @@ public final class CADViewportService {
             return nil
         }
         guard let meta = metadata[bodyID],
-            triangleIndex >= 0, triangleIndex < meta.faceIndices.count
+            let ref = SubShapePickResolver.resolveFace(
+                triangleIndex: triangleIndex,
+                faceIndices: meta.faceIndices,
+                identity: faceIdentity[bodyID],
+                shape: bodyShapes[bodyID])
         else {
             return nil
         }
 
-        let faceIndex = Int(meta.faceIndices[triangleIndex])
-        guard faceIndex >= 0 else { return nil }
-
-        let identity = faceIdentity[bodyID]
-        var faceShape = identity?.shape(forOrdinal: faceIndex)
-        if faceShape == nil, let faces = bodyShapes[bodyID]?.faces(), faceIndex < faces.count {
-            faceShape = OCCTSwift.Shape.fromFace(faces[faceIndex])
-        }
-        guard let faceShape, let face = Face(faceShape) else { return nil }
-        let uid = identity?.uid(forOrdinal: faceIndex)
+        let faceShape = ref.shape
+        let faceIndex = ref.ordinal
+        let uid = ref.uid
+        guard let face = Face(faceShape) else { return nil }
 
         let isHoriz = face.isHorizontal()
         let isVert = face.isVertical()
@@ -1976,7 +1980,8 @@ public final class CADViewportService {
     /// carries edge data as per-polyline groups, not a flat per-segment array); a body with
     /// no `edgeIndices` populated (not edge-pickable, per the documentation on
     /// `ViewportBody` itself) degrades to `nil` here rather than mis-picking. `internal` for
-    /// the same testability reason as `resolveFacePick`.
+    /// the same testability reason as `resolveFacePick`, and split the same way against
+    /// `SubShapePickResolver`.
     func resolveEdgePick(bodyID: String, segmentIndex: Int) -> PickedEdgeInfo? {
         guard selectionModes.contains(.edge) else { return nil }
         if let midpoint = edgeSegmentWorldMidpoint(bodyID: bodyID, segmentIndex: segmentIndex),
@@ -1985,21 +1990,19 @@ public final class CADViewportService {
             return nil
         }
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
-            segmentIndex >= 0, segmentIndex < body.edgeIndices.count
+            let ref = SubShapePickResolver.resolveEdge(
+                segmentIndex: segmentIndex,
+                edgeIndices: body.edgeIndices,
+                identity: edgeIdentity[bodyID],
+                shape: bodyShapes[bodyID])
         else {
             return nil
         }
 
-        let edgeIndex = Int(body.edgeIndices[segmentIndex])
-        guard edgeIndex >= 0 else { return nil }
-
-        let identity = edgeIdentity[bodyID]
-        var edgeShape = identity?.shape(forOrdinal: edgeIndex)
-        if edgeShape == nil, let edges = bodyShapes[bodyID]?.edges(), edgeIndex < edges.count {
-            edgeShape = OCCTSwift.Shape.fromEdge(edges[edgeIndex])
-        }
-        guard let edgeShape, let edge = Edge(edgeShape) else { return nil }
-        let uid = identity?.uid(forOrdinal: edgeIndex)
+        let edgeShape = ref.shape
+        let edgeIndex = ref.ordinal
+        let uid = ref.uid
+        guard let edge = Edge(edgeShape) else { return nil }
 
         let endpoints = edge.endpoints
         let typeStr: String
@@ -2035,6 +2038,11 @@ public final class CADViewportService {
     /// A body with no `vertices` populated (not vertex-pickable) degrades to `nil` here
     /// rather than mis-picking. `internal` for the same testability reason as
     /// `resolveFacePick`.
+    ///
+    /// The empty-`vertexIndices` identity mapping this copy used to implement alone is now
+    /// `SubShapePickResolver.resolveVertex`'s, so `OCCTSwiftAIS` gets it too: that divergence
+    /// (documented here as "deliberately more complete than OCCTSwiftAIS's own") is what
+    /// OCCTSwiftInteraction#2 consolidated.
     func resolveVertexPick(bodyID: String, pointIndex: Int) -> PickedVertexInfo? {
         guard selectionModes.contains(.vertex) else { return nil }
         if let position = vertexWorldPosition(bodyID: bodyID, pointIndex: pointIndex),
@@ -2043,31 +2051,22 @@ public final class CADViewportService {
             return nil
         }
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
-            pointIndex >= 0, pointIndex < body.vertices.count
+            let ref = SubShapePickResolver.resolveVertex(
+                pointIndex: pointIndex,
+                pointCount: body.vertices.count,
+                vertexIndices: body.vertexIndices,
+                identity: vertexIdentity[bodyID],
+                shape: bodyShapes[bodyID])
         else {
             return nil
         }
 
-        // `vertexIndices` empty means identity mapping (pointIndex is the ordinal itself),
-        // per ViewportBody's own documentation. Deliberately more complete here than
-        // OCCTSwiftAIS's own resolveVertexSubShape, which bounds-checks against
-        // `vertexIndices.count` directly and so never resolves a pick when it's empty;
-        // unreached in practice since CADFileLoader always populates both arrays in
-        // lockstep for a real body, but this implements the documented fallback in full.
-        let vertexIndex =
-            pointIndex < body.vertexIndices.count ? Int(body.vertexIndices[pointIndex]) : pointIndex
-        guard vertexIndex >= 0 else { return nil }
+        let vertexShape = ref.shape
+        let vertexIndex = ref.ordinal
+        let uid = ref.uid
 
-        let identity = vertexIdentity[bodyID]
-        var vertexShape = identity?.shape(forOrdinal: vertexIndex)
-        if vertexShape == nil, let vertices = bodyShapes[bodyID]?.subShapes(ofType: .vertex),
-            vertexIndex < vertices.count
-        {
-            vertexShape = vertices[vertexIndex]
-        }
-        guard let vertexShape else { return nil }
-        let uid = identity?.uid(forOrdinal: vertexIndex)
-
+        // In range whenever the resolver returned a ref: it bounds `pointIndex` by the
+        // `pointCount` passed above, which is this array's own count.
         let renderPosition = body.vertices[pointIndex]
         let position =
             vertexShape.vertices().first

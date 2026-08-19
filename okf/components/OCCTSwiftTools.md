@@ -12,9 +12,9 @@ timestamp: 2026-07-20
 The library exposes a single product/target, `OCCTSwiftTools`. Its public surface (from the README
 and SPEC.md):
 
-- **`CADFileLoader`** — `Shape` → `ViewportBody` conversion (`shapeToBodyAndMetadata`) and STEP/STL/
+- **`CADFileLoader`**: `Shape` → `ViewportBody` conversion (`shapeToBodyAndMetadata`) and STEP/STL/
   OBJ/BREP loading; produces triangulated meshes plus picking metadata.
-- **`CADBodyMetadata`** / **`CADLoadResult`** / **`CADFileFormat`** — face/edge/vertex indices for
+- **`CADBodyMetadata`** / **`CADLoadResult`** / **`CADFileFormat`**: face/edge/vertex indices for
   sub-body selection, the aggregated load result (bodies + metadata + shapes + GD&T), and the
   input-format enum (`.step`, `.stl`, `.obj`, `.brep`).
 - **`FaceIdentityTable`** / **`EdgeIdentityTable`** / **`VertexIdentityTable`**: resolve a
@@ -22,9 +22,17 @@ and SPEC.md):
   `edgeIndices` / `vertexIndices`) back to its `Shape` and, when a `BRepGraph` is supplied, its
   durable `GraphUID`. Obtained from `CADFileLoader.shapeToBodyMetadataAndIdentity` (face only) or
   `shapeToBodyMetadataAndIdentities` (all three).
-- **`ExportManager`** / **`ExportFormat`** — shape export to OBJ / PLY / STEP / BREP.
-- **Per-domain converters** — `CurveConverter` (`curve2DToBody` / `curve3DToBody`),
+- **`SubShapePickResolver`**: the one canonical pick resolver: a GPU pick's primitive index in, a
+  `SubShapeRef` out, handling the `faceIndices` / `edgeIndices` / `vertexIndices` indirection, the
+  bounds checks, the empty-`vertexIndices` identity mapping, and the identity-table-over-re-derivation
+  rule. Identity only: the selection-mode gate, clip-plane pre-filter and geometry enrichment stay in
+  the layers that own them.
+- **`SubShapeRef`** / **`SubShape`** / **`InteractiveObject`**: the types naming a picked piece of
+  topology and the scene entry it belongs to. Moved down from the `OCCTSwiftAIS` target
+  (OCCTSwiftInteraction#2), which keeps source-compatible typealiases.
+- **`ExportManager`** / **`ExportFormat`**: shape export to OBJ / PLY / STEP / BREP.
+- **Per-domain converters**: `CurveConverter` (`curve2DToBody` / `curve3DToBody`),
   `SurfaceConverter` (UV isoparametric grid bodies), `WireConverter` (wire → edge polyline),
   `PointConverter` (points → point-cloud body).
-- **`BodyUtilities`** — `makeMarkerSphere()`, `offsetBody()` helpers.
-- **`ScriptManifest`** — JSON manifest types for script-harness integration.
+- **`BodyUtilities`**: `makeMarkerSphere()`, `offsetBody()` helpers.
+- **`ScriptManifest`**: JSON manifest types for script-harness integration.
