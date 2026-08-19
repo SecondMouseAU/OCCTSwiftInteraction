@@ -59,20 +59,28 @@ under the wrong line.
 The old repositories are archived, not deleted. Their tags remain resolvable, so an unmigrated
 consumer keeps building until it chooses to move.
 
-## Who needs to do this
+## Who needs to do this, and in what order
 
-Eight repositories depend on at least one of the three:
+**These are not independent manifest edits.** SwiftPM enforces target-name uniqueness across the entire transitive package graph, before pruning by which products a consumer uses, so a graph containing both this package and any package still pinning the old `OCCTSwiftTools` / `OCCTSwiftAIS` / `OCCTSwiftCADKit` fails outright:
 
-| Repo | Uses |
-|---|---|
-| OCCTMCP | Tools, AIS |
-| OCCTSwiftUX | Tools, AIS, CADKit |
-| OCCTSwiftScripts | Tools, AIS |
-| PadCAM | Tools, AIS, CADKit |
-| OCCTParts | Tools, AIS |
-| OCCTDesignLoop | Tools |
-| OCCTSwiftPartsAgent | Tools |
-| Unfolder | CADKit |
+```
+error: multiple packages ('occtswiftais', 'occtswiftinteraction') declare targets with a
+conflicting name: 'OCCTSwiftAIS'; target names need to be unique across the package graph
+```
 
-`OCCTSwiftPartsAgent` and `Unfolder` still pin pre-org `gsdali/` URLs and are stale for unrelated
-reasons; they need modernising before this migration rather than as part of it.
+That is a hard resolution error, not a version-range conflict, and it fires even when the consumer never reaches the offending target. **A repo can migrate only once every package in its transitive graph has.**
+
+| Wave | Repo | Uses | Behind |
+|---|---|---|---|
+| 1 | **OCCTSwiftScripts** | Tools, AIS | nothing. **This is the gate**, four consumers sit behind it |
+| 1 | **OCCTSwiftUX** | Tools, AIS | nothing. OCCTStudio sits behind it |
+| 1 | PadCAM | Tools, AIS, CADKit | nothing |
+| 1 | Unfolder | CADKit | nothing |
+| 2 | OCCTMCP | Tools, AIS | OCCTSwiftScripts |
+| 2 | OCCTParts | Tools | OCCTSwiftScripts |
+| 2 | OCCTDesignLoop | Tools | OCCTSwiftScripts |
+| 3 | OCCTStudio | Tools, AIS | OCCTSwiftUX |
+
+`OCCTSwiftPartsAgent` does **not** pin the old packages directly. It reaches them only through `gsdali/OCCTSwiftScripts` at `0.8.1`, a pre-org URL, so it is the stale-pin problem rather than this migration. `Unfolder` is in the same family and still pins pre-org URLs for its other dependencies; it needs modernising alongside rather than as part of this.
+
+**Partial migration is not a safe intermediate state** for anything depending on a repo that has not yet moved. Plan for the whole set, not one repo at a time.
