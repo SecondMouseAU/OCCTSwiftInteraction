@@ -55,9 +55,13 @@ See [`references/`](references/index.md).
 - Per-target specs: [OCCTSwiftTools](../docs/spec/OCCTSwiftTools.md),
   [OCCTSwiftAIS](../docs/spec/OCCTSwiftAIS.md). OCCTSwiftCADKit has no spec.
 - Migration from the three old packages: [docs/MIGRATION.md](../docs/MIGRATION.md).
-- Platform floor is the higher of OCCTSwift's and OCCTSwiftViewport's (macOS 15 / iOS 18). The
-  `visionOS`/`tvOS` claim is inherited from the Tools and AIS manifests and is **unverified for the
-  CADKit target**; confirm or narrow before 1.0.0.
+- Platforms are **macOS 15+ and iOS 18+, and only those two**: the floor is the higher of
+  OCCTSwift's and OCCTSwiftViewport's, and the set is what the kernel actually ships.
+  `OCCT.xcframework` carries exactly three slices (`ios-arm64`, `ios-arm64-simulator`,
+  `macos-arm64`), so nothing links on visionOS or tvOS. The manifest inherited a `visionOS`/`tvOS`
+  claim from the pre-merge Tools and AIS manifests, where it was never true either; dropped before
+  1.0.0, root cause filed as
+  [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 - Version line starts at `0.x`, reaching `1.0.0` once the picking consolidation (ecosystem#43) has
   landed. The three old version lines do not continue here.
 - LGPL-2.1, matching OCCT.

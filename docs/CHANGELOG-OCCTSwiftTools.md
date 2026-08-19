@@ -4,6 +4,14 @@ Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the 
 
 ## Unreleased
 
+### Platforms narrowed to iOS and macOS
+
+A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
+
+The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared, so as not to regress the two targets with the most dependents. That reasoning was wrong in a way invisible from the manifests: the wider claim was never true for any of the three, so there was nothing to regress. Root cause is filed upstream as [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
+
+`platforms` is now `.iOS(.v18)`, `.macOS(.v15)`. A consumer that declares a visionOS or tvOS target and depends on this package is now told so at resolution time rather than discovering it at link time.
+
 ### A failed sub-shape conversion no longer shifts every later ordinal
 
 Closes [OCCTSwiftInteraction#9](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/9). A 1.0.0 blocker.
@@ -411,4 +419,4 @@ Initial release. Lifts the `OCCTSwiftTools` sub-product out of OCCTSwiftViewport
 
 **Test invocation:** `OCCT_SERIAL=1 swift test --parallel --num-workers 1`. The env var + serial workers are required, not optional, due to a known NCollection container-overflow race in OCCT on arm64 macOS.
 
-**Platform floor:** iOS 18 / macOS 15 / visionOS 1 / tvOS 18 — the higher of OCCTSwift's and OCCTSwiftViewport's floors.
+**Platform floor:** iOS 18 / macOS 15 / visionOS 1 / tvOS 18, the higher of OCCTSwift's and OCCTSwiftViewport's floors. (What that release declared. The visionOS / tvOS half was never true, and was dropped before 1.0.0; see the Unreleased entry above.)

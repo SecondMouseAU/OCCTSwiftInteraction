@@ -62,15 +62,20 @@ func occtDep(_ name: String, from version: String) -> Package.Dependency {
 // Modeled on OCCTSwiftUX, which has vended six targets from one package since well before this.
 let package = Package(
     name: "OCCTSwiftInteraction",
-    // The union of what the three carried. OCCTSwiftTools and OCCTSwiftAIS both declared
-    // visionOS/tvOS; OCCTSwiftCADKit declared only iOS/macOS. Keeping the union rather than the
-    // intersection avoids regressing the two targets with the most dependents, but it does mean the
-    // CADKit target's visionOS/tvOS build is unverified. Confirm or narrow before 1.0.0.
+    // iOS and macOS, and only those two. `OCCT.xcframework`'s `Info.plist` carries exactly three
+    // slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and
+    // OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything
+    // linking the kernel on visionOS or tvOS cannot link at all.
+    //
+    // This manifest declared `.visionOS(.v1)` and `.tvOS(.v18)` until the 1.0.0 sweep, taking the
+    // union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared during the merge so
+    // as not to regress the two targets with the most dependents. That reasoning was wrong in a way
+    // invisible from the manifests: the wider claim was never true for any of the three, so there
+    // was nothing to regress. Root cause is filed upstream as
+    // https://github.com/SecondMouseAU/OCCTSwift/issues/978.
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
-        .visionOS(.v1),
-        .tvOS(.v18),
     ],
     products: [
         .library(name: "OCCTSwiftTools", targets: ["OCCTSwiftTools"]),

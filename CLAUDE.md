@@ -227,11 +227,22 @@ Per-type reference for all three targets is in [docs/reference/](docs/reference/
   Covenant text.
 - **Release pattern**: commit, push, tag, and create a GitHub release with notes.
 
+## Platforms are iOS and macOS, and that is settled
+
+`Package.swift` declares `.iOS(.v18)` and `.macOS(.v15)`. Nothing else, and do not add anything
+else: `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`,
+`ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0
+release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS
+or tvOS cannot link at all.
+
+The manifest declared `.visionOS(.v1)` and `.tvOS(.v18)` until the 1.0.0 sweep, inherited from the
+union of what the three pre-merge manifests declared. The claim was never true for any of the three.
+Root cause is filed upstream as
+[OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
+
 ## Still to finish after the merge
 
 - `okf/index.md` describes the OCCTSwiftTools half in more detail than the other two.
-- The CADKit target's `visionOS`/`tvOS` build is unverified. `Package.swift` keeps the union of what
-  the three declared, and CADKit declared only iOS and macOS. Confirm or narrow before 1.0.0.
 
 ## Ecosystem context worth reading before non-trivial changes
 

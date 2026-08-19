@@ -76,4 +76,4 @@ Then declare it as a dependency of your target:
 
 - Source: [github.com/SecondMouseAU/OCCTSwiftTools](https://github.com/SecondMouseAU/OCCTSwiftTools)
 - License: LGPL 2.1 (matching OCCT)
-- Platforms: macOS 15+, iOS 18+, visionOS 1+, tvOS 18+ (arm64)
+- Platforms: macOS 15+ and iOS 18+ (arm64), and only those two. `OCCT.xcframework` carries `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, so nothing links on visionOS or tvOS ([OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978)).
