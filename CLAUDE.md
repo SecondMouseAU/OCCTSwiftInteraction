@@ -70,7 +70,7 @@ OCCTSwiftIO built clean with zero errors while carrying three real breaks in its
 Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
 published URLs. No binary lives in this repo.
 
-**Expected baseline: 343 tests across 30 suites, all passing.**
+**Expected baseline: 357 tests across 32 suites, all passing.**
 
 ## Face identity is `IsSame`, and that decision is settled
 
@@ -112,6 +112,40 @@ Three behaviours look like the resolver's job and are not, so they stayed where 
 
 Pulling any of them down would drag presentation and viewport state into the bridge layer, which is
 the thing this consolidation exists to prevent.
+
+## One identity-table builder, and identity comes back from the load
+
+[OCCTSwiftInteraction#7](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/7), the layer
+below phase 2.
+
+`OCCTSwiftTools.ShapeIdentity` is the only place a `Shape` becomes `FaceIdentityTable` /
+`EdgeIdentityTable` / `VertexIdentityTable`. There were three copies before: this package's private
+helpers, `CADViewportService`'s statics, and OCCTSwiftUX's. Do not write a fourth.
+
+- **`ShapeIdentity(shape:graph:)`** uses a graph you already hold. `graph: nil` still means
+  "tables without durable uids", which is the mode `shapeToBodyMetadataAndIdentities(graph:)` has
+  always offered.
+- **`ShapeIdentity(shape:)`** mints its own graph. This is the convenience CADKit and UX each
+  hand-rolled.
+
+**After a file load, ask the loader, do not rebuild.** `CADFileLoader.load(from:format:
+includeIdentity: true)` fills `CADLoadResult.identity`, keyed by `ViewportBody.id`.
+
+**`CADLoadResult.shapes` must never be paired positionally with `.bodies`.** The STL/IGES robust
+reload appends a shape even when that input produced no body, so every later pairing shifts and a
+body gets another body's geometry. Consumers used to detect the resulting count mismatch and drop
+identity wholesale; the loader now keys identity by body id inside the branch that creates each
+body, so there is nothing to pair and nothing to guard. `CADFileLoaderIdentityTests` holds this
+down by geometry, not by index, and it was mutation-checked.
+
+**Identity is off by default and should stay that way.** `BRepGraph.init` serialises the whole
+shape to a BREP string: measured at 5.0ms against a 14-face solid whose mesh takes 9.6ms. Headless
+consumers of `load` (OCCTDesignLoop's reprojection, batch render and parts extraction) never pick.
+
+The bridge's edge-polyline-only branch (`mesh(...)` returned nil) used to substitute an empty
+`FaceIdentityTable` and now builds the ordinary one. It is reachable from tests only through the
+internal `edgePolylineOnlyBridge` seam, because a wire, an edge and a lone vertex all mesh to an
+empty `Mesh` rather than to nil.
 
 ## One selection, held by `InteractiveContext`
 

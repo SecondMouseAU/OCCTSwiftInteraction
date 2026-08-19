@@ -391,7 +391,8 @@ public final class CADViewportService {
         default: throw CADViewportError.unsupportedFormat(ext)
         }
 
-        let result = try await CADFileLoader.load(from: url, format: format, progress: progress)
+        let result = try await CADFileLoader.load(
+            from: url, format: format, progress: progress, includeIdentity: true)
         guard let firstShape = result.shapes.first else {
             throw CADViewportError.emptyFile
         }
@@ -401,7 +402,7 @@ public final class CADViewportService {
         self.legacyLoadedShapeEntityID = result.bodies.first?.id
         self.modelBodies = result.bodies
         self.metadata = result.metadata
-        rebuildIdentity(bodies: result.bodies, shapes: result.shapes)
+        installIdentity(result.identity)
         for body in result.bodies {
             entities[body.id] = Entity(bodyIDs: [body.id])
         }
@@ -427,33 +428,19 @@ public final class CADViewportService {
         resetAllModelState()
         self.legacyLoadedShape = shape
         self.legacyLoadedShapeEntityID = id
-        let graph = BRepGraph(shape: shape)
-        let (body, meta, faceTable, edgeTable, vertexTable) =
-            CADFileLoader.shapeToBodyMetadataAndIdentities(
-                shape,
-                id: id,
-                color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
-                graph: graph
-            )
+        let identity = ShapeIdentity(shape: shape)
+        let (body, meta) = CADFileLoader.shapeToBodyAndMetadata(
+            shape,
+            id: id,
+            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)
+        )
         if let body {
             self.modelBodies = [body]
         }
         if let meta {
             self.metadata[id] = meta
         }
-        self.bodyShapes[id] = shape
-        if let graph {
-            self.bodyGraphs[id] = graph
-        }
-        if let faceTable {
-            self.faceIdentity[id] = faceTable
-        }
-        if let edgeTable {
-            self.edgeIdentity[id] = edgeTable
-        }
-        if let vertexTable {
-            self.vertexIdentity[id] = vertexTable
-        }
+        installIdentity([id: identity])
         entities[id] = Entity(bodyIDs: [id])
         clearSelection()
         updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
@@ -493,117 +480,39 @@ public final class CADViewportService {
         }
     }
 
-    /// Builds a `BRepGraph` and `FaceIdentityTable` per body from a multi-body file load's
-    /// raw shapes, keyed by body id.
+    /// Installs the durable identity the loader (or `ShapeIdentity(shape:)`) already built,
+    /// keyed by body id.
     ///
-    /// `CADFileLoader.load(from:format:)` has no identity-table overload: it owns the
-    /// STL/IGES robust-reload fallback, which this package shouldn't reimplement just to
-    /// get identity, so the table is built directly from `shape.faces()` instead of
-    /// re-tessellating each body through `shapeToBodyMetadataAndIdentity`. Since OCCTSwift
-    /// 2.0.0 (#541/#613), `shape.faces()` is a 0-based, *deduplicated* enumeration
-    /// (`TopExp::MapShapes`-backed), and `Mesh.Triangle.faceIndex` (the value the mesher
-    /// writes into `CADBodyMetadata.faceIndices`) was converted onto that same deduplicated
-    /// enumeration in the same release. The two still name the identical ordinal for the
-    /// identical shape (see `FaceIdentityTable`'s own documentation), so ordinals still line
-    /// up without a second tessellation pass; only the underlying semantics moved, together,
-    /// from per-occurrence to per-distinct-face.
+    /// This service used to build the tables itself, from a hand-written copy of the private
+    /// helpers in `OCCTSwiftTools.CADFileLoader` whose own comment said so. Construction is
+    /// `ShapeIdentity`'s since OCCTSwiftInteraction#7, and a file load gets it back from
+    /// `CADLoadResult.identity`.
     ///
-    /// Requires `bodies` and `shapes` to correspond positionally (`shapes[i]` is the shape
-    /// `bodies[i]` was tessellated from): true for `CADFileLoader.load(from:format:)`'s
-    /// primary bridge, where both arrays are appended together only on tessellation success.
-    /// Its STL/IGES robust-reload fallback (`reloadRobustAndBridge`) can violate this: it
-    /// appends to `shapes` on every input even when that input's body tessellation fails, so
-    /// a body-tessellation failure part-way through a multibody robust reload shifts `shapes`
-    /// out of alignment with `bodies` for every subsequent entry. Detectable from the outside
-    /// only via the count mismatch it produces (`shapes.count > bodies.count`): when that
-    /// happens, this method skips building identity entirely rather than risk pairing a body
-    /// with the wrong shape, matching this pack's own rule that `uid`/`shape` should be
-    /// absent rather than wrong.
-    func rebuildIdentity(bodies: [_ViewportBody], shapes: [OCCTSwift.Shape]) {
-        guard bodies.count == shapes.count else {
-            self.bodyShapes = [:]
-            self.bodyGraphs = [:]
-            self.faceIdentity = [:]
-            self.edgeIdentity = [:]
-            self.vertexIdentity = [:]
-            return
+    /// **There is no count-mismatch guard here any more, and that is the point.** The old
+    /// `rebuildIdentity(bodies:shapes:)` paired `shapes[i]` with `bodies[i]` positionally, which
+    /// `CADFileLoader`'s STL/IGES robust reload can break: it appends a shape even when that
+    /// input produced no body, so every later pairing shifts and a body gets another body's
+    /// geometry. From out here the only visible symptom was the count mismatch, so the guard
+    /// dropped identity for every body, including correctly paired ones, rather than risk one
+    /// wrong pairing. `CADLoadResult.identity` is keyed by body id inside the loader, in the same
+    /// branch that creates each body, so no positional pairing happens anywhere and there is
+    /// nothing left to detect.
+    ///
+    /// Additive: body ids not present in `identity` keep whatever they had, which is what the
+    /// multi-entity `loadFile(from:id:)` needs. The deprecated single-entity loaders clear
+    /// everything through `resetAllModelState()` first, so they get replace-all semantics without
+    /// a second code path.
+    ///
+    /// Internal rather than private so tests can seed a synthetic multi-body scenario directly:
+    /// this package's tests ship no multi-body file on disk.
+    func installIdentity(_ identity: [String: ShapeIdentity]) {
+        for (bodyID, entry) in identity {
+            bodyShapes[bodyID] = entry.shape
+            if let graph = entry.graph { bodyGraphs[bodyID] = graph }
+            faceIdentity[bodyID] = entry.faces
+            edgeIdentity[bodyID] = entry.edges
+            vertexIdentity[bodyID] = entry.vertices
         }
-
-        var newShapes: [String: OCCTSwift.Shape] = [:]
-        var newGraphs: [String: BRepGraph] = [:]
-        var newFaceIdentity: [String: FaceIdentityTable] = [:]
-        var newEdgeIdentity: [String: EdgeIdentityTable] = [:]
-        var newVertexIdentity: [String: VertexIdentityTable] = [:]
-
-        for (index, body) in bodies.enumerated() {
-            let shape = shapes[index]
-            newShapes[body.id] = shape
-            let graph = BRepGraph(shape: shape)
-            if let graph {
-                newGraphs[body.id] = graph
-            }
-            newFaceIdentity[body.id] = Self.makeFaceIdentityTable(shape: shape, graph: graph)
-            newEdgeIdentity[body.id] = Self.makeEdgeIdentityTable(shape: shape, graph: graph)
-            newVertexIdentity[body.id] = Self.makeVertexIdentityTable(shape: shape, graph: graph)
-        }
-
-        self.bodyShapes = newShapes
-        self.bodyGraphs = newGraphs
-        self.faceIdentity = newFaceIdentity
-        self.edgeIdentity = newEdgeIdentity
-        self.vertexIdentity = newVertexIdentity
-    }
-
-    /// Mirrors the private `makeFaceIdentityTable` in `OCCTSwiftTools.CADFileLoader`: map
-    /// every `shape.faces()` ordinal to its `Shape`, and, when a graph is available, to the
-    /// `GraphUID` minted via `graph.findNode(for:)` on that same face `Shape` so `IsSame`
-    /// semantics hold.
-    private static func makeFaceIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?)
-        -> FaceIdentityTable
-    {
-        let faceShapes = shape.faces().compactMap { OCCTSwift.Shape.fromFace($0) }
-        guard let graph else {
-            return FaceIdentityTable(shapes: faceShapes)
-        }
-        let uids: [BRepGraph.GraphUID?] = faceShapes.map { faceShape in
-            guard let node = graph.findNode(for: faceShape) else { return nil }
-            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
-        }
-        return FaceIdentityTable(shapes: faceShapes, uids: uids)
-    }
-
-    /// Mirrors the private `makeEdgeIdentityTable` in `OCCTSwiftTools.CADFileLoader`: map
-    /// every `shape.edges()` ordinal (the same `TopTools_IndexedMapOfShape` traversal
-    /// `edgeIndices` is built from) to its `Shape` and, when available, `GraphUID`.
-    private static func makeEdgeIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?)
-        -> EdgeIdentityTable
-    {
-        let edgeShapes = shape.edges().compactMap { OCCTSwift.Shape.fromEdge($0) }
-        guard let graph else {
-            return EdgeIdentityTable(shapes: edgeShapes)
-        }
-        let uids: [BRepGraph.GraphUID?] = edgeShapes.map { edgeShape in
-            guard let node = graph.findNode(for: edgeShape) else { return nil }
-            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
-        }
-        return EdgeIdentityTable(shapes: edgeShapes, uids: uids)
-    }
-
-    /// Mirrors the private `makeVertexIdentityTable` in `OCCTSwiftTools.CADFileLoader`: map
-    /// every `shape.subShapes(ofType: .vertex)` ordinal (the same `TopTools_IndexedMapOfShape`
-    /// traversal `vertexIndices` is built from) to its `Shape` and, when available, `GraphUID`.
-    private static func makeVertexIdentityTable(shape: OCCTSwift.Shape, graph: BRepGraph?)
-        -> VertexIdentityTable
-    {
-        let vertexShapes = shape.subShapes(ofType: .vertex)
-        guard let graph else {
-            return VertexIdentityTable(shapes: vertexShapes)
-        }
-        let uids: [BRepGraph.GraphUID?] = vertexShapes.map { vertexShape in
-            guard let node = graph.findNode(for: vertexShape) else { return nil }
-            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
-        }
-        return VertexIdentityTable(shapes: vertexShapes, uids: uids)
     }
 
     /// Convenience for callers that have file `Data` rather than a URL
@@ -683,27 +592,32 @@ public final class CADViewportService {
         default: throw CADViewportError.unsupportedFormat(ext)
         }
 
-        let result = try await CADFileLoader.load(from: url, format: format, progress: progress)
+        let result = try await CADFileLoader.load(
+            from: url, format: format, progress: progress, includeIdentity: true)
         guard !result.bodies.isEmpty else {
             throw CADViewportError.emptyFile
         }
 
         remove(id: id)
 
+        // The loader keys identity by ITS body ids; this entity renames every body to
+        // "<id>-<index>", so identity is re-keyed alongside the rename rather than rebuilt.
         var bodyIDs: [String] = []
+        var identity: [String: ShapeIdentity] = [:]
         for (index, originalBody) in result.bodies.enumerated() {
             let bodyID = "\(id)-\(index)"
             if let originalMeta = result.metadata[originalBody.id] {
                 metadata[bodyID] = originalMeta
+            }
+            if let originalIdentity = result.identity[originalBody.id] {
+                identity[bodyID] = originalIdentity
             }
             var body = originalBody
             body.id = bodyID
             modelBodies.append(body)
             bodyIDs.append(bodyID)
         }
-        addIdentity(
-            bodyIDs: bodyIDs,
-            shapes: result.bodies.count == result.shapes.count ? result.shapes : [])
+        installIdentity(identity)
 
         entities[id] = Entity(bodyIDs: bodyIDs)
         updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
@@ -730,14 +644,11 @@ public final class CADViewportService {
 
         remove(id: id)
 
-        let graph = BRepGraph(shape: placedShape)
-        let (body, meta, faceTable, edgeTable, vertexTable) =
-            CADFileLoader.shapeToBodyMetadataAndIdentities(
-                placedShape,
-                id: id,
-                color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
-                graph: graph
-            )
+        let (body, meta) = CADFileLoader.shapeToBodyAndMetadata(
+            placedShape,
+            id: id,
+            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)
+        )
 
         guard let body else {
             entities[id] = Entity(bodyIDs: [])
@@ -750,48 +661,13 @@ public final class CADViewportService {
         if let meta {
             metadata[id] = meta
         }
-        bodyShapes[id] = placedShape
-        if let graph {
-            bodyGraphs[id] = graph
-        }
-        if let faceTable {
-            faceIdentity[id] = faceTable
-        }
-        if let edgeTable {
-            edgeIdentity[id] = edgeTable
-        }
-        if let vertexTable {
-            vertexIdentity[id] = vertexTable
-        }
+        // Built after the body, so a shape that produced nothing renderable does not pay for a
+        // BRepGraph it can never be picked through.
+        installIdentity([id: ShapeIdentity(shape: placedShape)])
 
         entities[id] = Entity(bodyIDs: [id])
         updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
         return id
-    }
-
-    /// Additive counterpart to `rebuildIdentity`: builds identity for one entity's bodies
-    /// and merges it in with whatever other entities' identity already exists, rather than
-    /// wiping everything (which is what `rebuildIdentity`, used by the deprecated
-    /// single-entity `loadFile(from:progress:)`, does).
-    ///
-    /// Same defensive count-mismatch guard as `rebuildIdentity`: if `bodyIDs` and `shapes`
-    /// don't correspond positionally (or an empty `shapes` was passed because the caller
-    /// already detected a mismatch), identity is skipped for this batch; the bodies still
-    /// display, without durable-identity picks, rather than risk pairing a body with the
-    /// wrong shape.
-    private func addIdentity(bodyIDs: [String], shapes: [OCCTSwift.Shape]) {
-        guard bodyIDs.count == shapes.count else { return }
-        for (index, bodyID) in bodyIDs.enumerated() {
-            let shape = shapes[index]
-            bodyShapes[bodyID] = shape
-            let graph = BRepGraph(shape: shape)
-            if let graph {
-                bodyGraphs[bodyID] = graph
-            }
-            faceIdentity[bodyID] = Self.makeFaceIdentityTable(shape: shape, graph: graph)
-            edgeIdentity[bodyID] = Self.makeEdgeIdentityTable(shape: shape, graph: graph)
-            vertexIdentity[bodyID] = Self.makeVertexIdentityTable(shape: shape, graph: graph)
-        }
     }
 
     /// Removes a loaded entity (and its bodies) from the viewport.
@@ -1649,7 +1525,7 @@ public final class CADViewportService {
     /// pristine `clippingSourceShapes` entry when `updateCapSurfaces` is restoring).
     ///
     /// Preserves the caller-configurable state of `original` (visibility, pickability,
-    /// material, transform) that `CADFileLoader.shapeToBodyMetadataAndIdentities` would
+    /// material, transform) that `CADFileLoader.shapeToBodyAndMetadata` would
     /// otherwise reset to its own defaults, and updates identity tables to match the new
     /// geometry (so picking the surviving faces, and the new cut face, resolves correctly,
     /// per the same identity contract `load(_:id:transform:)` maintains). Returns `false`
@@ -1666,11 +1542,9 @@ public final class CADViewportService {
         bodyID: String, withCappedShape shape: OCCTSwift.Shape, preserving original: _ViewportBody
     ) -> Bool {
         guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { return false }
-        let graph = BRepGraph(shape: shape)
-        let (freshBody, meta, faceTable, edgeTable, vertexTable) =
-            CADFileLoader.shapeToBodyMetadataAndIdentities(
-                shape, id: bodyID, color: original.color, graph: graph
-            )
+        let (freshBody, meta) = CADFileLoader.shapeToBodyAndMetadata(
+            shape, id: bodyID, color: original.color
+        )
         guard var body = freshBody else { return false }
         body.isVisible = original.isVisible
         body.isPickable = original.isPickable
@@ -1683,23 +1557,12 @@ public final class CADViewportService {
 
         modelBodies[index] = body
         if let meta { metadata[bodyID] = meta } else { metadata.removeValue(forKey: bodyID) }
-        bodyShapes[bodyID] = shape
-        if let graph { bodyGraphs[bodyID] = graph } else { bodyGraphs.removeValue(forKey: bodyID) }
-        if let faceTable {
-            faceIdentity[bodyID] = faceTable
-        } else {
-            faceIdentity.removeValue(forKey: bodyID)
-        }
-        if let edgeTable {
-            edgeIdentity[bodyID] = edgeTable
-        } else {
-            edgeIdentity.removeValue(forKey: bodyID)
-        }
-        if let vertexTable {
-            vertexIdentity[bodyID] = vertexTable
-        } else {
-            vertexIdentity.removeValue(forKey: bodyID)
-        }
+        let identity = ShapeIdentity(shape: shape)
+        installIdentity([bodyID: identity])
+        // `installIdentity` merges, and a cap replaces this body's geometry outright: if the graph
+        // failed to build for the NEW shape, the OLD one must go rather than linger naming
+        // pre-cap topology. The tables above are unconditional, so only the graph needs this.
+        if identity.graph == nil { bodyGraphs.removeValue(forKey: bodyID) }
         scalarFields.removeValue(forKey: bodyID)
         dropLastScalarFieldBodyID(ifCurrently: bodyID)
         return true

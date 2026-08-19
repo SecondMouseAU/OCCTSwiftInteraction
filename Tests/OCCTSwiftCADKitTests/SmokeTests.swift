@@ -205,23 +205,26 @@ struct SmokeTests {
         #expect(uidDistinct != uidA)
     }
 
-    /// Regression for #25 review: `rebuildIdentity` is the multi-body identity builder for
-    /// `loadFile`, and reimplements `FaceIdentityTable` construction locally (rather than
-    /// calling `shapeToBodyMetadataAndIdentity`, to avoid re-tessellating every body).
+    /// Regression for #25 review: `installIdentity` is how a multi-body `loadFile` gets durable
+    /// identity into this service.
     ///
     /// `sharedFaceBetweenShellsResolvesToSameUID` above only exercises the single-body path
-    /// of `loadShape` through the library's own identity builder; this test drives
-    /// `rebuildIdentity` directly against more than one body, including the shared-face
-    /// fixture, to prove the local reimplementation collapses the shared face to one
-    /// `GraphUID` the same way. `metadata` is seeded directly since `loadFile` needs a real
-    /// multi-body file on disk, which this package's tests don't ship.
+    /// of `loadShape`; this test drives more than one body at once, including the shared-face
+    /// fixture, to prove the shared face still collapses to one `GraphUID` per body and that
+    /// two bodies' identity does not collide. `metadata` is seeded directly since `loadFile`
+    /// needs a real multi-body file on disk, which this package's tests don't ship.
+    ///
+    /// Rewritten for OCCTSwiftInteraction#7: this service no longer builds the tables itself
+    /// (that was the second of three copies of `OCCTSwiftTools.CADFileLoader`'s private
+    /// helpers), so the test seeds `OCCTSwiftTools.ShapeIdentity` values keyed by body id, the
+    /// same shape `CADLoadResult.identity` hands it in production. No positional pairing.
     ///
     /// Updated for OCCTSwift v2.0.0 (issue #54): see `sharedFaceBetweenShellsResolvesToSameUID`
     /// above for why the shared face's two triangulations are now found by *value*, not by two
     /// different ordinals.
     @MainActor
-    @Test("rebuildIdentity resolves durable identity correctly across multiple bodies")
-    func rebuildIdentityMultiBodyResolvesDurableIdentity() {
+    @Test("installIdentity resolves durable identity correctly across multiple bodies")
+    func installIdentityMultiBodyResolvesDurableIdentity() {
         guard let plainBox = Shape.box(width: 4, height: 4, depth: 4) else {
             Issue.record("Shape.box returned nil")
             return
@@ -271,12 +274,15 @@ struct SmokeTests {
 
         let service = CADViewportService()
         service.metadata = ["multi-0": plainMeta, "multi-1": compoundMeta]
-        service.rebuildIdentity(bodies: [plainBody, compoundBody], shapes: [plainBox, compound])
+        service.installIdentity([
+            plainBody.id: ShapeIdentity(shape: plainBox),
+            compoundBody.id: ShapeIdentity(shape: compound),
+        ])
 
         guard let pickA = service.resolveFacePick(bodyID: "multi-1", triangleIndex: triForShellA),
             let pickB = service.resolveFacePick(bodyID: "multi-1", triangleIndex: triForShellB)
         else {
-            Issue.record("resolveFacePick failed against rebuildIdentity's output")
+            Issue.record("resolveFacePick failed against installIdentity's output")
             return
         }
         guard let uidA = pickA.uid, let uidB = pickB.uid else {
@@ -297,26 +303,32 @@ struct SmokeTests {
         }
     }
 
-    /// Regression for #25 review: the STL/IGES robust-reload fallback of
-    /// `OCCTSwiftTools.CADFileLoader` (`reloadRobustAndBridge`) can append a shape for every
-    /// input even when that input's body tessellation fails, which shifts
-    /// `CADLoadResult.shapes` out of positional alignment with `.bodies` for everything after
-    /// the failure.
+    /// Regression for #25 review, re-aimed by OCCTSwiftInteraction#7.
     ///
-    /// `rebuildIdentity` can't repair that alignment from the outside, so it must detect the
-    /// resulting count mismatch and refuse to build identity at all: absent rather than
-    /// silently wrong.
+    /// The original subject was `rebuildIdentity`'s count-mismatch guard: the STL/IGES
+    /// robust-reload fallback of `OCCTSwiftTools.CADFileLoader` (`reloadRobustAndBridge`)
+    /// appends a shape for every input even when that input's body tessellation fails, so
+    /// `CADLoadResult.shapes` shifts out of positional alignment with `.bodies` for everything
+    /// after the failure, and this service, pairing them positionally from the outside, had to
+    /// detect the resulting count mismatch and drop identity wholesale.
+    ///
+    /// That guard is gone because the hazard is: `CADLoadResult.identity` is keyed by body id
+    /// inside the loader, in the same branch that creates each body, so no positional pairing
+    /// happens here at all. The unit test that a body never gets another body's geometry now
+    /// lives where the pairing does, in `CADFileLoaderIdentityTests`.
+    ///
+    /// What is still this service's own property, and what this test now holds down: a body
+    /// with no identity entry (whatever the reason) resolves to no pick rather than to a
+    /// wrong one. Absent rather than wrong, at the level where it can still happen.
     @MainActor
-    @Test(
-        "rebuildIdentity clears identity rather than risk misaligned pairing when bodies/shapes counts differ"
-    )
-    func rebuildIdentityGuardsAgainstCountMismatch() {
+    @Test("a body with no identity entry resolves to no pick rather than a wrong one")
+    func bodyWithoutIdentityResolvesToNoPick() {
         guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
             Issue.record("Shape.box returned nil")
             return
         }
         let (body, meta) = CADFileLoader.shapeToBodyAndMetadata(
-            box, id: "mismatch-0", color: SIMD4<Float>(1, 1, 1, 1)
+            box, id: "no-identity-0", color: SIMD4<Float>(1, 1, 1, 1)
         )
         guard let body, let meta else {
             Issue.record("shapeToBodyAndMetadata returned nil")
@@ -324,24 +336,27 @@ struct SmokeTests {
         }
 
         let service = CADViewportService()
-        service.metadata = ["mismatch-0": meta]
-        // shapes.count (2) > bodies.count (1): the exact mismatch reloadRobustAndBridge can
-        // produce after a partial tessellation failure mid-batch.
-        service.rebuildIdentity(bodies: [body], shapes: [box, box])
+        service.modelBodies = [body]
+        service.metadata = ["no-identity-0": meta]
+        // Deliberately no installIdentity call: the body displays and its triangles are
+        // pickable, but nothing tells the service what shape they came from.
+        #expect(service.resolveFacePick(bodyID: "no-identity-0", triangleIndex: 0) == nil)
 
-        #expect(service.resolveFacePick(bodyID: "mismatch-0", triangleIndex: 0) == nil)
+        // And once identity IS installed, the same pick resolves, so the nil above is the
+        // missing entry rather than some other reason the pick could not land.
+        service.installIdentity(["no-identity-0": ShapeIdentity(shape: box)])
+        #expect(service.resolveFacePick(bodyID: "no-identity-0", triangleIndex: 0) != nil)
     }
 
-    /// Regression for #27 review: like `rebuildIdentityMultiBodyResolvesDurableIdentity`
+    /// Regression for #27 review: like `installIdentityMultiBodyResolvesDurableIdentity`
     /// above, but for edges and vertices.
     ///
-    /// `makeEdgeIdentityTable`/`makeVertexIdentityTable` (the hand-rolled builders for the
-    /// multi-body `loadFile` path) had zero coverage; every other edge/vertex test only
-    /// drove the single-body path of `loadShape` through the library's own
-    /// `shapeToBodyMetadataAndIdentities`.
+    /// The hand-rolled `makeEdgeIdentityTable`/`makeVertexIdentityTable` this used to cover are
+    /// gone (OCCTSwiftInteraction#7); the multi-body edge and vertex path is still worth holding
+    /// down, since every other edge/vertex test drives the single-body `loadShape` path.
     @MainActor
-    @Test("rebuildIdentity resolves edge and vertex durable identity across multiple bodies")
-    func rebuildIdentityMultiBodyResolvesEdgeAndVertexIdentity() {
+    @Test("installIdentity resolves edge and vertex durable identity across multiple bodies")
+    func installIdentityMultiBodyResolvesEdgeAndVertexIdentity() {
         guard let smallBox = Shape.box(width: 2, height: 2, depth: 2) else {
             Issue.record("Shape.box returned nil")
             return
@@ -366,17 +381,20 @@ struct SmokeTests {
         service.selectionModes = [.face, .edge, .vertex]
         service.metadata = ["multi-0": meta0, "multi-1": meta1]
         service.modelBodies = [body0, body1]
-        service.rebuildIdentity(bodies: [body0, body1], shapes: [smallBox, box])
+        service.installIdentity([
+            body0.id: ShapeIdentity(shape: smallBox),
+            body1.id: ShapeIdentity(shape: box),
+        ])
 
         guard let edgePick = service.resolveEdgePick(bodyID: "multi-1", segmentIndex: 0) else {
-            Issue.record("resolveEdgePick failed against rebuildIdentity's output")
+            Issue.record("resolveEdgePick failed against installIdentity's output")
             return
         }
         #expect(edgePick.bodyID == "multi-1")
         #expect(edgePick.uid != nil)
 
         guard let vertexPick = service.resolveVertexPick(bodyID: "multi-1", pointIndex: 0) else {
-            Issue.record("resolveVertexPick failed against rebuildIdentity's output")
+            Issue.record("resolveVertexPick failed against installIdentity's output")
             return
         }
         #expect(vertexPick.bodyID == "multi-1")
@@ -1736,7 +1754,7 @@ struct SmokeTests {
     /// entity.
     ///
     /// Constructs a synthetic two-body "candidate" entity (this package's tests don't ship
-    /// a multi-body file on disk) via the internal `entities`/`Entity`/`rebuildIdentity`
+    /// a multi-body file on disk) via the internal `entities`/`Entity`/`installIdentity`
     /// test seams.
     @MainActor
     @Test("applySideBySide accounts for every body of a multi-body entity, not just the first")
@@ -1777,14 +1795,15 @@ struct SmokeTests {
             "candidate-0", "candidate-1",
         ])
 
-        guard let referenceBody = service.modelBodies.first(where: { $0.id == "reference" }) else {
+        guard service.modelBodies.contains(where: { $0.id == "reference" }) else {
             Issue.record("expected reference body to already be loaded")
             return
         }
-        service.rebuildIdentity(
-            bodies: [referenceBody, candidateNearBody, candidateFarBody],
-            shapes: [referenceBox, candidateNear, candidateFar]
-        )
+        service.installIdentity([
+            "reference": ShapeIdentity(shape: referenceBox),
+            "candidate-0": ShapeIdentity(shape: candidateNear),
+            "candidate-1": ShapeIdentity(shape: candidateFar),
+        ])
 
         service.setComparison(
             ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .sideBySide))

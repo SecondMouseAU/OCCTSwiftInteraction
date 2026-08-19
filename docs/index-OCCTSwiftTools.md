@@ -53,7 +53,7 @@ Task-oriented recipes, each runnable against the real API:
 
 Per-type API reference for every public symbol:
 
-- [API Reference](reference/): `PointConverter`, `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`, `CADFileLoader`, `FaceIdentityTable`, `EdgeIdentityTable`, `VertexIdentityTable`, `SubShapePickResolver`, `SubShapeRef` / `SubShape` / `InteractiveObject`
+- [API Reference](reference/): `PointConverter`, `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`, `CADFileLoader`, `FaceIdentityTable`, `EdgeIdentityTable`, `VertexIdentityTable`, `ShapeIdentity`, `SubShapePickResolver`, `SubShapeRef` / `SubShape` / `InteractiveObject`
 
 ## Project
 

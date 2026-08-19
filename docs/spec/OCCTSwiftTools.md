@@ -69,10 +69,23 @@ import OCCTSwiftTools   // re-exports OCCTSwiftIO transitively (@_exported)
 public struct CADLoadResult: @unchecked Sendable {                               // STAYS in Tools (has bodies)
     public var bodies: [ViewportBody]
     public var metadata: [String: CADBodyMetadata]   // CADBodyMetadata is now an IO type
-    public var shapes: [Shape]
+    public var shapes: [Shape]                       // do NOT pair positionally with bodies
     public var dimensions: [DimensionInfo]
     public var geomTolerances: [GeomToleranceInfo]
     public var datums: [DatumInfo]
+    public var identity: [String: ShapeIdentity]     // keyed by body id, opt-in (#7)
+}
+
+/// The one builder for the three ordinal-to-identity tables (OCCTSwiftInteraction#7).
+public struct ShapeIdentity: Sendable {
+    public let shape: Shape
+    public let graph: BRepGraph?
+    public let faces: FaceIdentityTable
+    public let edges: EdgeIdentityTable
+    public let vertices: VertexIdentityTable
+
+    public init(shape: Shape, graph: BRepGraph?)   // caller's graph, nil supported
+    public init(shape: Shape)                      // mints its own
 }
 
 public enum CADFileLoader {
@@ -80,9 +93,12 @@ public enum CADFileLoader {
     /// bridges each shape to a `ViewportBody` + `CADBodyMetadata`.
     public static func load(
         from url: URL, format: CADFileFormat,
-        progress: ImportProgress? = nil
+        progress: ImportProgress? = nil,
+        includeIdentity: Bool = false
     ) async throws -> CADLoadResult
-    public static func loadFromManifest(at url: URL) throws -> CADLoadResult
+    public static func loadFromManifest(
+        at url: URL, includeIdentity: Bool = false
+    ) throws -> CADLoadResult
     public static func shapeToBodyAndMetadata(
         _ shape: Shape, id: String, color: SIMD4<Float>,
         stl: Bool = false, deflection: Double? = nil, gpuTessellation: Bool = false,

@@ -51,7 +51,10 @@ timestamp: 2026-06-22
   reads the body's `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable`);
   `.faceIndex`/`.edgeIndex`/`.vertexIndex` are ephemeral render-path ordinals only. Since
   OCCTSwiftInteraction#3 each stores a `SubShapeRef` as `ref` and forwards `.shape`/`.uid`/the
-  ordinal to it, so identity is the resolver's, not a parallel copy of it.
+  ordinal to it, so identity is the resolver's, not a parallel copy of it. Since
+  OCCTSwiftInteraction#7 the tables themselves are not built here either: a file load asks for
+  `CADLoadResult.identity` (`includeIdentity: true`) and an in-memory shape goes through
+  `OCCTSwiftTools.ShapeIdentity`, both installed by the internal `installIdentity(_:)`.
   `PickedFaceInfo.scalarValue` is the picked face's value from the body's `ScalarField`, if any. The
   clip-plane pre-filter and the descriptive enrichment around each info type stay here on purpose:
   clip planes are this service's state, and enrichment is presentation, so neither belongs in the

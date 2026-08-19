@@ -40,21 +40,31 @@ i.e. on the robust reload.
 public static func load(
     from url: URL,
     format: CADFileFormat,
-    progress: ImportProgress? = nil
+    progress: ImportProgress? = nil,
+    includeIdentity: Bool = false
 ) async throws -> CADLoadResult
 ```
 
 - **Parameters:**
-  - `url` — file URL to load.
-  - `format` — the `CADFileFormat` (`.step`, `.iges`, `.stl`, `.obj`, `.brep`, …).
-  - `progress` — optional progress + cancellation observer. Honoured by `.step` and `.iges` only — STL / OBJ / BREP are single-call upstream. If `progress.shouldCancel()` returns `true`, the import throws `OCCTSwift.ImportError.cancelled`.
-- **Returns:** a `CADLoadResult` with bridged bodies, per-body metadata, raw shapes, and any PMI (dimensions / tolerances / datums).
+  - `url`: file URL to load.
+  - `format`: the `CADFileFormat` (`.step`, `.iges`, `.stl`, `.obj`, `.brep`, …).
+  - `progress`: optional progress + cancellation observer. Honoured by `.step` and `.iges` only (STL / OBJ / BREP are single-call upstream). If `progress.shouldCancel()` returns `true`, the import throws `OCCTSwift.ImportError.cancelled`.
+  - `includeIdentity`: populate [`CADLoadResult.identity`](#cadloadresult) with a [`ShapeIdentity`](ShapeIdentity) per body: the shape it was tessellated from, a `BRepGraph` for it, and the three ordinal-to-identity tables `SubShapePickResolver` reads. Off by default: each body costs a `BRepGraph`, measured at roughly half the cost of meshing that body, and a consumer that loads geometry to render or reproject it never picks. Turn it on for anything that does. This is the only supported way to get identity out of a multi-body file load.
+- **Returns:** a `CADLoadResult` with bridged bodies, per-body metadata, raw shapes, any PMI (dimensions / tolerances / datums), and, when asked, per-body identity.
 - **Example:**
   ```swift
   let result = try await CADFileLoader.load(
       from: URL(fileURLWithPath: "/path/bracket.step"),
       format: .step
   )
+
+  // Picking as well as rendering: ask for identity, then read it by body id.
+  let pickable = try await CADFileLoader.load(
+      from: URL(fileURLWithPath: "/path/assembly.step"),
+      format: .step,
+      includeIdentity: true
+  )
+  let uid = pickable.identity["step-0"]?.faces.uid(forOrdinal: 3)
   ```
 
 ---
@@ -65,11 +75,15 @@ Loads bodies from a script manifest (`manifest.json` plus its referenced BREP
 files), applying each body's recorded colour. Synchronous.
 
 ```swift
-public static func loadFromManifest(at url: URL) throws -> CADLoadResult
+public static func loadFromManifest(
+    at url: URL,
+    includeIdentity: Bool = false
+) throws -> CADLoadResult
 ```
 
 - **Parameters:**
-  - `url` — file URL of the `manifest.json`.
+  - `url`: file URL of the `manifest.json`.
+  - `includeIdentity`: as on `load(from:format:progress:includeIdentity:)`.
 - **Returns:** a `CADLoadResult` whose bodies use ids of the form `"script-<descriptor.id>"` and fall back to grey `(0.7, 0.7, 0.7, 1)` where no colour was recorded.
 - **Example:**
   ```swift
@@ -243,6 +257,7 @@ public struct CADLoadResult: @unchecked Sendable {
     public var dimensions: [DimensionInfo]
     public var geomTolerances: [GeomToleranceInfo]
     public var datums: [DatumInfo]
+    public var identity: [String: ShapeIdentity]
 
     public init(
         bodies: [ViewportBody] = [],
@@ -250,14 +265,41 @@ public struct CADLoadResult: @unchecked Sendable {
         shapes: [Shape] = [],
         dimensions: [DimensionInfo] = [],
         geomTolerances: [GeomToleranceInfo] = [],
-        datums: [DatumInfo] = []
+        datums: [DatumInfo] = [],
+        identity: [String: ShapeIdentity] = [:]
     )
 }
 ```
 
-- `bodies` — bridged, renderable bodies.
-- `metadata` — per-body selection metadata, keyed by body id.
-- `shapes` — the raw OCCTSwift shapes that were loaded.
-- `dimensions` / `geomTolerances` / `datums` — PMI (product manufacturing information) surfaced by formats that carry it. The types come from OCCTSwiftIO.
+- `bodies`: bridged, renderable bodies.
+- `metadata`: per-body selection metadata, keyed by body id.
+- `shapes`: the raw OCCTSwift shapes that were loaded. **Do not pair positionally with `bodies`**, see below.
+- `dimensions` / `geomTolerances` / `datums`: PMI (product manufacturing information) surfaced by formats that carry it. The types come from OCCTSwiftIO.
+- `identity`: a [`ShapeIdentity`](ShapeIdentity) per loaded body, keyed by `ViewportBody.id`. Empty unless the load was asked for it (`includeIdentity: true`).
+
+### Why `identity` is keyed by body id, and `shapes` is not safe to pair
+
+`shapes` and `bodies` line up positionally on the primary bridge, where both arrays are appended
+together only on tessellation success. They do **not** line up after the STL/IGES robust reload
+(`reloadRobustAndBridge`), which appends a shape for every input even when that input produced no
+body: every later pairing shifts by one, and a body silently gets another body's geometry.
+
+From outside the loader the only symptom is a count mismatch (`shapes.count > bodies.count`), which
+is why consumers used to guard on it and drop identity wholesale. `identity` is built inside the
+loader, in the same branch that creates each body, so nothing pairs positionally and there is
+nothing left to guard (OCCTSwiftInteraction#7).
+
+```swift
+let result = try await CADFileLoader.load(from: url, format: .step, includeIdentity: true)
+for body in result.bodies {
+    guard let identity = result.identity[body.id],
+          let meta = result.metadata[body.id] else { continue }
+    let ref = SubShapePickResolver.resolveFace(
+        triangleIndex: pick.triangleIndex,
+        faceIndices: meta.faceIndices,
+        identity: identity.faces,
+        shape: identity.shape)
+}
+```
 
 ---
