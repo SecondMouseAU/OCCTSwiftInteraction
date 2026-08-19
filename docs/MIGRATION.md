@@ -19,7 +19,7 @@ occtDep("OCCTSwiftAIS",   from: "1.3.2"),
 occtDep("OCCTSwiftCADKit", from: "1.1.2"),
 
 // after
-occtDep("OCCTSwiftInteraction", from: "0.1.0"),
+occtDep("OCCTSwiftInteraction", from: "0.2.0"),
 ```
 
 Then update the `package:` label on each product you use. The product names are unchanged; only the
