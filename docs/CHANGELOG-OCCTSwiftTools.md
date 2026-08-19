@@ -4,7 +4,32 @@ Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the 
 
 ## Unreleased
 
-**One canonical pick resolver, and the types that name picked topology move down here.** Closes [OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2), phase 2 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43).
+### One canonical identity-table builder, and a file load can finally return identity
+
+Closes [OCCTSwiftInteraction#7](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/7).
+
+Phase 2 (below) made `SubShapePickResolver` the one place a render-path ordinal becomes a `SubShapeRef`. It did not consolidate the step before that, building the tables the resolver reads, and three copies of it had accumulated: this package's private helpers, `OCCTSwiftCADKit`'s statics (whose own comment said it mirrored them), and `OCCTSwiftUX`'s `ShapeIdentity`.
+
+New API, both additions:
+
+- **`ShapeIdentity`**: the `Shape`, its `BRepGraph` and all three identity tables, built once. `init(shape:graph:)` uses a graph the caller holds, with `nil` still meaning "tables without durable uids"; `init(shape:)` mints one, which is the convenience CADKit and UX each hand-rolled. The uid loop is written once, generic over `[Shape]`, rather than three times.
+- **`CADLoadResult.identity: [String: ShapeIdentity]`**, keyed by `ViewportBody.id`, plus **`includeIdentity: Bool = false`** on `load(from:format:progress:)` and `loadFromManifest(at:)`. New stored property with a default and new defaulted parameters, so no source break.
+
+**The reason both landed rather than just the builder.** They fix different halves. A public builder removes the duplicated *construction* but leaves every consumer pairing `shapes[i]` with `bodies[i]` after a file load, which is not safe: the STL/IGES robust reload appends a shape even when that input produced no body, so every later pairing shifts and a body gets another body's geometry. `CADLoadResult.identity` removes the duplicated *pairing*, since the loader keys it by body id in the same branch that creates each body. Neither alone makes the downstream copies deletable, because `CADViewportService.load(_:id:transform:)` and `loadShape(_:id:)` take an in-memory `Shape` and never produce a `CADLoadResult` at all.
+
+**Why identity is off by default.** `BRepGraph.init` serialises the whole shape to a BREP string. Measured against a 14-face, 36-edge solid: meshing 9.6ms, `BRepGraph(shape:)` 5.0ms, of which 3.8ms is that serialisation. Headless consumers of `load` (reprojection, batch render, parts extraction) never pick and should not pay for it.
+
+**One behaviour change, on a path no test could reach.** The bridge's edge-polyline-only branch (taken when `mesh(...)` returns nil) used to substitute an empty `FaceIdentityTable`; it now builds the ordinary one. That was the only place any copy of this logic varied a table's *content*, and it was asymmetric with the edge and vertex tables built in full on the same branch. It is inert through picking either way, because `SubShapePickResolver.resolveFace` bounds-checks against `faceIndices`, which is empty there. The branch is now reachable from tests through the internal `edgePolylineOnlyBridge` seam, the same treatment `bodyEntries` already had, because it cannot be provoked from a synthetic shape: a wire, an edge and a lone vertex all mesh to an empty `Mesh` rather than to nil.
+
+**A small performance fix on the way through.** `shapeToBodyAndMetadata` used to build all three identity tables and discard them. It now skips construction entirely, which is three fewer shape-map walks per body, on the path every `load` body takes.
+
+**Tests:** 14 new across two new suites (`ShapeIdentity`, `CADFileLoader identity`), 357 total. The failure cases the three copies disagreed about (nil graph, no faces, the edge-polyline-only branch, and the shape-to-body pairing) had no shared coverage at all before. The pairing test asserts by geometry rather than by index, and was mutation-checked: deliberately shifting the pairing inside the loader fails it.
+
+**One thing in the issue that did not survive contact with the code.** The issue describes `CADViewportService`'s count-mismatch guard as the thing to preserve. Two of its three implementations were redundant: `loadFile(from:id:)` pre-detected the mismatch at the call site *and* `addIdentity` re-detected it, and `rebuildIdentity`'s wholesale wipe ran against dictionaries `resetAllModelState()` had emptied a line earlier. All of it is gone, because the hazard it detected cannot arise once the loader keys identity by body id.
+
+### One canonical pick resolver, and the types that name picked topology move down here
+
+Closes [OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2), phase 2 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43).
 
 New API:
 

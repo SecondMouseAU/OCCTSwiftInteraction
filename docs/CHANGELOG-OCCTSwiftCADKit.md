@@ -12,6 +12,39 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### `CADViewportService` stops building identity tables and reads the loader's
+
+Closes [OCCTSwiftInteraction#7](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/7).
+
+This service carried a private copy of `OCCTSwiftTools.CADFileLoader`'s three identity-table
+builders, and said so: *"Mirrors the private `makeFaceIdentityTable` in
+`OCCTSwiftTools.CADFileLoader`"*. It existed because `CADFileLoader.load(from:format:)` returned
+no tables, so the only way to get identity after a multi-body file load was to rebuild it here.
+`CADLoadResult.identity` now exists, so the copy is gone.
+
+#### What changes for a consumer
+
+Nothing in the public API. `rebuildIdentity(bodies:shapes:)` and `addIdentity(bodyIDs:shapes:)`
+were both internal; they are replaced by a single internal `installIdentity(_:)` taking
+`[String: OCCTSwiftTools.ShapeIdentity]`.
+
+One behaviour improves. Both file-loading paths used to detect a `shapes`/`bodies` count mismatch
+and drop durable identity for **every** body rather than risk pairing one with the wrong shape
+(the mismatch is produced by `CADFileLoader`'s STL/IGES robust reload, which appends a shape even
+when that input produced no body). A file that hit that case therefore loaded with picks that
+resolved to nothing at all, including for bodies that were paired correctly. The loader now keys
+identity by body id in the same branch that creates each body, so there is no positional pairing
+anywhere and no mismatch to detect: those bodies now pick normally.
+
+The guard was also implemented three times for one hazard. `loadFile(from:id:)` pre-detected the
+mismatch at the call site and `addIdentity` re-detected it; `rebuildIdentity`'s wholesale wipe of
+`bodyShapes` / `bodyGraphs` / all three tables ran against dictionaries `resetAllModelState()` had
+emptied on the line above.
+
+`replaceBody` (the cap-plane re-tessellation path) keeps one thing the shared installer does not
+do: it still removes a stale `BRepGraph` when the new capped shape fails to build one, since
+`installIdentity` merges and would otherwise leave a graph naming pre-cap topology.
+
 ### `CADViewportService` adopts the interactive context's selection
 
 Closes [OCCTSwiftInteraction#3](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/3),

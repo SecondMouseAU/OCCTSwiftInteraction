@@ -52,7 +52,9 @@ public struct FaceIdentityTable: Sendable {
 - `uids` is populated only when a `BRepGraph` was supplied to the entry point that produced this table. Each element is `nil` if that ordinal's face could not be resolved in the graph.
 - `shape(forOrdinal:)` / `uid(forOrdinal:)` return `nil` for an out-of-range ordinal (or, for `uid(forOrdinal:)`, when no graph was supplied at all).
 
-Obtained from [`CADFileLoader.shapeToBodyMetadataAndIdentity`](CADFileLoader#cadfileloadershapetobodymetadataandidentity) or [`shapeToBodyMetadataAndIdentities`](CADFileLoader#cadfileloadershapetobodymetadataandidentities).
+Obtained from [`ShapeIdentity`](ShapeIdentity), which is the one builder for all three tables, from
+[`CADLoadResult.identity`](CADFileLoader#cadloadresult) after a file load, or from
+[`CADFileLoader.shapeToBodyMetadataAndIdentity`](CADFileLoader#cadfileloadershapetobodymetadataandidentity) / [`shapeToBodyMetadataAndIdentities`](CADFileLoader#cadfileloadershapetobodymetadataandidentities) when meshing and identity are wanted from one call.
 
 ## Example
 

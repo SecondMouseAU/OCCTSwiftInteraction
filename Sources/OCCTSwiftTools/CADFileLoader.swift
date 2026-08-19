@@ -19,15 +19,38 @@ import simd
 public struct CADLoadResult: @unchecked Sendable {
     public var bodies: [ViewportBody]
     public var metadata: [String: CADBodyMetadata]
+
+    /// Every shape the load produced, in load order.
+    ///
+    /// **Do not pair this with `bodies` positionally.** It holds on the primary bridge, where both
+    /// arrays are appended together only on tessellation success, but not for the STL/IGES robust
+    /// reload (`reloadRobustAndBridge`), which appends a shape even when that input produced no
+    /// body and so shifts every later pairing: a body would be handed another body's geometry.
+    /// Use `identity` instead, which the loader keys by body id at the moment each body is
+    /// created, so the pairing is never inferred from the outside. See OCCTSwiftInteraction#7.
     public var shapes: [Shape]
     public var dimensions: [DimensionInfo]
     public var geomTolerances: [GeomToleranceInfo]
     public var datums: [DatumInfo]
 
+    /// The shape, `BRepGraph` and three ordinal-to-identity tables for each loaded body, keyed by
+    /// `ViewportBody.id`.
+    ///
+    /// Empty unless the load was asked for it (`includeIdentity: true`), because building it costs
+    /// a `BRepGraph` per body and a consumer that only renders should not pay for one. See
+    /// `ShapeIdentity` for the measured cost.
+    ///
+    /// This is the supported way to get identity out of a multi-body file load. Before
+    /// OCCTSwiftInteraction#7 there was none, and every consumer rebuilt the tables from
+    /// `shapes` and `bodies` itself, which is both duplicated work and the pairing hazard
+    /// documented on `shapes` above.
+    public var identity: [String: ShapeIdentity]
+
     public init(
         bodies: [ViewportBody] = [], metadata: [String: CADBodyMetadata] = [:],
         shapes: [Shape] = [], dimensions: [DimensionInfo] = [],
-        geomTolerances: [GeomToleranceInfo] = [], datums: [DatumInfo] = []
+        geomTolerances: [GeomToleranceInfo] = [], datums: [DatumInfo] = [],
+        identity: [String: ShapeIdentity] = [:]
     ) {
         self.bodies = bodies
         self.metadata = metadata
@@ -35,6 +58,7 @@ public struct CADLoadResult: @unchecked Sendable {
         self.dimensions = dimensions
         self.geomTolerances = geomTolerances
         self.datums = datums
+        self.identity = identity
     }
 }
 
@@ -49,6 +73,15 @@ public enum CADFileLoader {
     ///   - progress: optional progress + cancellation observer. Honored by `.step` and
     ///     `.iges` formats only; STL/OBJ/BREP loaders are single-call upstream and don't
     ///     surface progress.
+    ///   - includeIdentity: If `true`, populates `CADLoadResult.identity` with a `ShapeIdentity`
+    ///     per loaded body: the shape it was tessellated from, a `BRepGraph` built for it, and the
+    ///     three ordinal-to-identity tables `SubShapePickResolver` reads. Off by default because
+    ///     each body costs a `BRepGraph`, which serialises the whole shape to a BREP string on the
+    ///     way through (measured at roughly half the cost of meshing it), and a consumer that
+    ///     loads geometry to render or reproject it never picks. Turn it on for anything that
+    ///     does: it is the only supported way to get identity out of a multi-body file load, and
+    ///     it is built inside the loader precisely so no consumer has to pair `shapes` with
+    ///     `bodies` itself. See OCCTSwiftInteraction#7.
     /// - Returns: The loaded bodies with their selection metadata.
     /// - Throws: Whatever the underlying `OCCTSwiftIO.ShapeLoader.load` throws for the given
     ///   `format` (a malformed or unreadable file), or `OCCTSwift.ImportError.cancelled` if
@@ -56,22 +89,36 @@ public enum CADFileLoader {
     public static func load(
         from url: URL,
         format: CADFileFormat,
-        progress: ImportProgress? = nil
+        progress: ImportProgress? = nil,
+        includeIdentity: Bool = false
     ) async throws -> CADLoadResult {
         let ioResult = try await ShapeLoader.load(from: url, format: format, progress: progress)
         return bridgeWithFallback(
             ioResult: ioResult, idPrefix: format.rawValue,
-            url: url, format: format, progress: progress
+            url: url, format: format, progress: progress,
+            includeIdentity: includeIdentity
         )
     }
 
     /// Loads bodies from a script manifest (manifest.json + BREP files).
-    public static func loadFromManifest(at url: URL) throws -> CADLoadResult {
+    ///
+    /// - Parameters:
+    ///   - url: location of the manifest.
+    ///   - includeIdentity: see `load(from:format:progress:includeIdentity:)`.
+    /// - Returns: The loaded bodies with their selection metadata, and, when asked, one
+    ///   `ShapeIdentity` per body.
+    /// - Throws: Whatever `OCCTSwiftIO.ShapeLoader.loadFromManifest` throws for an unreadable or
+    ///   malformed manifest, or for a BREP file it references that cannot be read.
+    public static func loadFromManifest(
+        at url: URL,
+        includeIdentity: Bool = false
+    ) throws -> CADLoadResult {
         let ioResult = try ShapeLoader.loadFromManifest(at: url)
 
         var bodies: [ViewportBody] = []
         var metadata: [String: CADBodyMetadata] = [:]
         var shapes: [Shape] = []
+        var identity: [String: ShapeIdentity] = [:]
 
         for (index, pair) in ioResult.shapesWithColors.enumerated() {
             let descriptor = ioResult.manifest?.bodies[index]
@@ -83,10 +130,12 @@ public enum CADFileLoader {
                 bodies.append(body)
                 shapes.append(pair.shape)
                 if let meta { metadata[bodyID] = meta }
+                if includeIdentity { identity[bodyID] = ShapeIdentity(shape: pair.shape) }
             }
         }
 
-        return CADLoadResult(bodies: bodies, metadata: metadata, shapes: shapes)
+        return CADLoadResult(
+            bodies: bodies, metadata: metadata, shapes: shapes, identity: identity)
     }
 
     // MARK: - Bridge with STL/IGES robust fallback
@@ -101,11 +150,13 @@ public enum CADFileLoader {
         idPrefix: String,
         url: URL,
         format: CADFileFormat,
-        progress: ImportProgress?
+        progress: ImportProgress?,
+        includeIdentity: Bool
     ) -> CADLoadResult {
         var bodies: [ViewportBody] = []
         var metadata: [String: CADBodyMetadata] = [:]
         var shapes: [Shape] = []
+        var identity: [String: ShapeIdentity] = [:]
         var needsRobustReload = false
 
         for (index, pair) in ioResult.shapesWithColors.enumerated() {
@@ -118,6 +169,7 @@ public enum CADFileLoader {
                 bodies.append(body)
                 shapes.append(pair.shape)
                 if let meta { metadata[bodyID] = meta }
+                if includeIdentity { identity[bodyID] = ShapeIdentity(shape: pair.shape) }
             } else if format == .stl || format == .iges {
                 needsRobustReload = true
                 break
@@ -130,19 +182,22 @@ public enum CADFileLoader {
         // splits it into one ViewportBody per body.
         if needsRobustReload {
             return reloadRobustAndBridge(
-                idPrefix: idPrefix, url: url, format: format, progress: progress)
+                idPrefix: idPrefix, url: url, format: format, progress: progress,
+                includeIdentity: includeIdentity)
         }
 
         return CADLoadResult(
             bodies: bodies, metadata: metadata, shapes: shapes,
             dimensions: ioResult.dimensions,
             geomTolerances: ioResult.geomTolerances,
-            datums: ioResult.datums
+            datums: ioResult.datums,
+            identity: identity
         )
     }
 
     private static func reloadRobustAndBridge(
-        idPrefix: String, url: URL, format: CADFileFormat, progress: ImportProgress?
+        idPrefix: String, url: URL, format: CADFileFormat, progress: ImportProgress?,
+        includeIdentity: Bool
     ) -> CADLoadResult {
         // The robust reload mirrors the primary load's blocking call; we're
         // already on a detached task at this point (outer load() is async),
@@ -163,6 +218,7 @@ public enum CADFileLoader {
             var bodies: [ViewportBody] = []
             var metadata: [String: CADBodyMetadata] = [:]
             var shapes: [Shape] = []
+            var identity: [String: ShapeIdentity] = [:]
             for (index, pair) in ioRobust.shapesWithColors.enumerated() {
                 let bodyID = "\(idPrefix)-\(index)"
                 let rgba = pair.color ?? SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
@@ -171,11 +227,18 @@ public enum CADFileLoader {
                     bodies.append(body)
                     shapes.append(pair.shape)
                     if let meta { metadata[bodyID] = meta }
+                    // Keyed by the body id this shape actually produced, in the same branch that
+                    // produced it. This is the loop that creates the pairing hazard documented on
+                    // `CADLoadResult.shapes`: the `else` below appends a shape with no body, so
+                    // every later positional pairing shifts. Identity never pairs positionally, so
+                    // there is nothing here for a consumer to get wrong (OCCTSwiftInteraction#7).
+                    if includeIdentity { identity[bodyID] = ShapeIdentity(shape: pair.shape) }
                 } else {
                     shapes.append(pair.shape)
                 }
             }
-            return CADLoadResult(bodies: bodies, metadata: metadata, shapes: shapes)
+            return CADLoadResult(
+                bodies: bodies, metadata: metadata, shapes: shapes, identity: identity)
         } catch {
             return CADLoadResult()
         }
@@ -272,11 +335,11 @@ public enum CADFileLoader {
         includeMeasurements: Bool = false,
         directMesh useDirectMesh: Bool = false
     ) -> (ViewportBody?, CADBodyMetadata?) {
-        let (body, meta, _, _, _) = bridgeShapeToBody(
+        let (body, meta, _) = bridgeShapeToBody(
             shape, id: bodyID, color: rgba, stl: stl, deflection: customDeflection,
             gpuTessellation: gpuTessellation, edgeDeflection: edgeDeflection,
             maxPointsPerEdge: maxPointsPerEdge, includeMeasurements: includeMeasurements,
-            directMesh: useDirectMesh, graph: nil
+            directMesh: useDirectMesh, identity: false, graph: nil
         )
         return (body, meta)
     }
@@ -311,13 +374,13 @@ public enum CADFileLoader {
         directMesh useDirectMesh: Bool = false,
         graph: BRepGraph? = nil
     ) -> (ViewportBody?, CADBodyMetadata?, FaceIdentityTable?) {
-        let (body, meta, faceIdentity, _, _) = bridgeShapeToBody(
+        let (body, meta, identity) = bridgeShapeToBody(
             shape, id: bodyID, color: rgba, stl: stl, deflection: customDeflection,
             gpuTessellation: gpuTessellation, edgeDeflection: edgeDeflection,
             maxPointsPerEdge: maxPointsPerEdge, includeMeasurements: includeMeasurements,
-            directMesh: useDirectMesh, graph: graph
+            directMesh: useDirectMesh, identity: true, graph: graph
         )
-        return (body, meta, faceIdentity)
+        return (body, meta, identity?.faces)
     }
 
     /// Overload of `shapeToBodyAndMetadata` that emits identity tables for all three pickable
@@ -331,6 +394,11 @@ public enum CADFileLoader {
     /// Without a graph, only `shapes` is populated on each table.
     ///
     /// All other parameters match `shapeToBodyAndMetadata`.
+    ///
+    /// Table construction itself is `ShapeIdentity`'s since OCCTSwiftInteraction#7; this overload
+    /// is the one-pass convenience for a caller that wants a mesh and identity from the same call.
+    /// A caller that already has a `ViewportBody`, or that wants identity for a shape it is not
+    /// tessellating, builds a `ShapeIdentity` directly instead.
     public static func shapeToBodyMetadataAndIdentities(
         _ shape: Shape,
         id bodyID: String,
@@ -347,14 +415,19 @@ public enum CADFileLoader {
         ViewportBody?, CADBodyMetadata?, FaceIdentityTable?, EdgeIdentityTable?,
         VertexIdentityTable?
     ) {
-        bridgeShapeToBody(
+        let (body, meta, identity) = bridgeShapeToBody(
             shape, id: bodyID, color: rgba, stl: stl, deflection: customDeflection,
             gpuTessellation: gpuTessellation, edgeDeflection: edgeDeflection,
             maxPointsPerEdge: maxPointsPerEdge, includeMeasurements: includeMeasurements,
-            directMesh: useDirectMesh, graph: graph
+            directMesh: useDirectMesh, identity: true, graph: graph
         )
+        return (body, meta, identity?.faces, identity?.edges, identity?.vertices)
     }
 
+    // The `identity` flag is whether to build the `ShapeIdentity` at all, which is distinct from
+    // `graph == nil` (build the tables, but without durable uids). Skipping it entirely is what
+    // `shapeToBodyAndMetadata` wants: it discards the tables, and building three of them walks the
+    // shape's face, edge and vertex maps for nothing.
     private static func bridgeShapeToBody(
         _ shape: Shape,
         id bodyID: String,
@@ -366,11 +439,9 @@ public enum CADFileLoader {
         maxPointsPerEdge: Int,
         includeMeasurements: Bool,
         directMesh useDirectMesh: Bool,
+        identity: Bool,
         graph: BRepGraph?
-    ) -> (
-        ViewportBody?, CADBodyMetadata?, FaceIdentityTable?, EdgeIdentityTable?,
-        VertexIdentityTable?
-    ) {
+    ) -> (ViewportBody?, CADBodyMetadata?, ShapeIdentity?) {
         let measurements: ShapeMeasurements? = includeMeasurements ? shape.measure() : nil
         let mesh: Mesh?
         if let customDeflection {
@@ -385,32 +456,11 @@ public enum CADFileLoader {
             mesh = shape.mesh(parameters: highQualityMeshParams)
         }
         guard let mesh else {
-            let edgePolylines = extractEdgePolylines(
-                from: shape, deflection: edgeDeflection, maxPointsPerEdge: maxPointsPerEdge
+            return edgePolylineOnlyBridge(
+                shape, id: bodyID, color: rgba, edgeDeflection: edgeDeflection,
+                maxPointsPerEdge: maxPointsPerEdge, measurements: measurements,
+                identity: identity, graph: graph
             )
-            if !edgePolylines.isEmpty {
-                let edges = edgePolylines.map { $0.points }
-                let pickVerts = sourceShapeVertexPickData(from: shape)
-                let edgeIndices = flattenEdgeIndices(edgePolylines)
-                let body = ViewportBody(
-                    id: bodyID, vertexData: [], indices: [],
-                    edges: edges,
-                    edgeIndices: edgeIndices,
-                    vertices: pickVerts.positions,
-                    vertexIndices: pickVerts.indices,
-                    color: rgba
-                )
-                let meta = CADBodyMetadata(
-                    faceIndices: [], edgePolylines: edgePolylines,
-                    vertices: pickVerts.positions,
-                    measurements: measurements
-                )
-                let faceIdentity = FaceIdentityTable(shapes: [], uids: graph != nil ? [] : nil)
-                let edgeIdentity = makeEdgeIdentityTable(from: shape, graph: graph)
-                let vertexIdentity = makeVertexIdentityTable(from: shape, graph: graph)
-                return (body, meta, faceIdentity, edgeIdentity, vertexIdentity)
-            }
-            return (nil, nil, nil, nil, nil)
         }
 
         let triangles = mesh.trianglesWithFaces()
@@ -472,77 +522,60 @@ public enum CADFileLoader {
             vertices: pickVerts.positions,
             measurements: measurements
         )
-        let faceIdentity = makeFaceIdentityTable(from: shape, graph: graph)
-        let edgeIdentity = makeEdgeIdentityTable(from: shape, graph: graph)
-        let vertexIdentity = makeVertexIdentityTable(from: shape, graph: graph)
 
-        return (body, meta, faceIdentity, edgeIdentity, vertexIdentity)
+        return (body, meta, identity ? ShapeIdentity(shape: shape, graph: graph) : nil)
     }
 
-    /// Builds a `FaceIdentityTable` from `shape.faces()`, the same enumeration
-    /// `OCCTShapeCreateMeshWithParams` uses to assign `Mesh.Triangle.faceIndex`, so
-    /// `shapes[ordinal]` always names the exact face tessellated into the triangles carrying
-    /// that ordinal.
+    /// The bridge's fallback branch: a shape whose `mesh(...)` returned nil, rendered as edge
+    /// polylines with vertex pick points and no triangles at all.
     ///
-    /// As of OCCTSwift v2.0.0 (#541/#613) both sides moved together onto the same deduplicated
-    /// enumeration: a face shared between two shells is meshed once per owning shell (each
-    /// triangulation wound outward for its own owner) but both triangulations now carry the one
-    /// index that names the shared face, matching the single entry `shape.faces()` now returns
-    /// for it. Before v2.0.0, `shape.faces()` and the mesher's own walk were the SAME raw,
-    /// non-deduplicating `TopExp_Explorer` traversal (one entry per shell a shared face belonged
-    /// to), which is what motivated capturing this correspondence directly in the first place
-    /// (issue #42) rather than trusting `shape.subShapes(ofType: .face)`'s independently
-    /// deduplicated enumeration to agree with it. No source change was needed here for the bump:
-    /// this function already reads `shape.faces()` dynamically rather than hardcoding either
-    /// enumeration's shape.
-    private static func makeFaceIdentityTable(from shape: Shape, graph: BRepGraph?)
-        -> FaceIdentityTable
-    {
-        let faceShapes = shape.faces().compactMap { Shape.fromFace($0) }
-        guard let graph else {
-            return FaceIdentityTable(shapes: faceShapes)
-        }
-        let uids: [BRepGraph.GraphUID?] = faceShapes.map { faceShape in
-            guard let node = graph.findNode(for: faceShape) else { return nil }
-            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
-        }
-        return FaceIdentityTable(shapes: faceShapes, uids: uids)
-    }
+    /// Internal rather than private so it can be unit-tested directly, the same reason
+    /// `bodyEntries` is. This branch fires only when meshing fails outright, which is the very
+    /// condition that triggers the STL/IGES robust reload, and it is not reachable from a
+    /// synthetic shape: a wire, an edge and a lone vertex all mesh to an empty `Mesh` rather than
+    /// to nil (measured), so they come back through the meshed branch with `faceIndices: []`.
+    ///
+    /// Identity here is the ordinary `ShapeIdentity`, built the same way as on the meshed branch.
+    /// It used to be special-cased, substituting an empty `FaceIdentityTable` on the grounds that
+    /// no face ordinal exists when nothing was tessellated. That was the one place any copy of
+    /// this logic varied a table's *content*, it was asymmetric with the edge and vertex tables
+    /// built in full on this same branch, and it was inert: `SubShapePickResolver.resolveFace`
+    /// bounds-checks against `faceIndices`, which is empty here, so the face table is never read
+    /// through a pick either way. Dropped in favour of one rule (OCCTSwiftInteraction#7). The
+    /// table now answers "which faces does this shape have, and what are their durable uids" even
+    /// for a shape the mesher could not handle, which is strictly more than it answered before.
+    static func edgePolylineOnlyBridge(
+        _ shape: Shape,
+        id bodyID: String,
+        color rgba: SIMD4<Float>,
+        edgeDeflection: Double,
+        maxPointsPerEdge: Int,
+        measurements: ShapeMeasurements?,
+        identity: Bool,
+        graph: BRepGraph?
+    ) -> (ViewportBody?, CADBodyMetadata?, ShapeIdentity?) {
+        let edgePolylines = extractEdgePolylines(
+            from: shape, deflection: edgeDeflection, maxPointsPerEdge: maxPointsPerEdge
+        )
+        guard !edgePolylines.isEmpty else { return (nil, nil, nil) }
 
-    /// Builds an `EdgeIdentityTable` from `shape.edges()`, the same `TopTools_IndexedMapOfShape`
-    /// traversal `Shape.edge(at:)` and the bulk edge-polyline extractor behind
-    /// `ViewportBody.edgeIndices` use, so `shapes[ordinal]` always names the exact edge behind
-    /// the segments carrying that ordinal.
-    private static func makeEdgeIdentityTable(from shape: Shape, graph: BRepGraph?)
-        -> EdgeIdentityTable
-    {
-        let edgeShapes = shape.edges().compactMap { Shape.fromEdge($0) }
-        guard let graph else {
-            return EdgeIdentityTable(shapes: edgeShapes)
-        }
-        let uids: [BRepGraph.GraphUID?] = edgeShapes.map { edgeShape in
-            guard let node = graph.findNode(for: edgeShape) else { return nil }
-            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
-        }
-        return EdgeIdentityTable(shapes: edgeShapes, uids: uids)
-    }
-
-    /// Builds a `VertexIdentityTable` from `shape.subShapes(ofType: .vertex)`, the same
-    /// `TopTools_IndexedMapOfShape` traversal `Shape.vertices()` / `Shape.vertex(at:)` behind
-    /// `ViewportBody.vertexIndices` use, so `shapes[ordinal]` always names the exact vertex
-    /// behind the pick point carrying that ordinal.
-    private static func makeVertexIdentityTable(from shape: Shape, graph: BRepGraph?)
-        -> VertexIdentityTable
-    {
-        let vertexShapes = shape.subShapes(ofType: .vertex)
-        guard let graph else {
-            return VertexIdentityTable(shapes: vertexShapes)
-        }
-        let uids: [BRepGraph.GraphUID?] = vertexShapes.map { vertexShape in
-            guard let node = graph.findNode(for: vertexShape) else { return nil }
-            return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
-        }
-        return VertexIdentityTable(shapes: vertexShapes, uids: uids)
+        let edges = edgePolylines.map { $0.points }
+        let pickVerts = sourceShapeVertexPickData(from: shape)
+        let edgeIndices = flattenEdgeIndices(edgePolylines)
+        let body = ViewportBody(
+            id: bodyID, vertexData: [], indices: [],
+            edges: edges,
+            edgeIndices: edgeIndices,
+            vertices: pickVerts.positions,
+            vertexIndices: pickVerts.indices,
+            color: rgba
+        )
+        let meta = CADBodyMetadata(
+            faceIndices: [], edgePolylines: edgePolylines,
+            vertices: pickVerts.positions,
+            measurements: measurements
+        )
+        return (body, meta, identity ? ShapeIdentity(shape: shape, graph: graph) : nil)
     }
 
     // MARK: - Edge / Vertex extraction helpers

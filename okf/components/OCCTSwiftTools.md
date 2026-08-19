@@ -15,13 +15,19 @@ and SPEC.md):
 - **`CADFileLoader`**: `Shape` → `ViewportBody` conversion (`shapeToBodyAndMetadata`) and STEP/STL/
   OBJ/BREP loading; produces triangulated meshes plus picking metadata.
 - **`CADBodyMetadata`** / **`CADLoadResult`** / **`CADFileFormat`**: face/edge/vertex indices for
-  sub-body selection, the aggregated load result (bodies + metadata + shapes + GD&T), and the
-  input-format enum (`.step`, `.stl`, `.obj`, `.brep`).
+  sub-body selection, the aggregated load result (bodies + metadata + shapes + GD&T + per-body
+  identity), and the input-format enum (`.step`, `.stl`, `.obj`, `.brep`).
 - **`FaceIdentityTable`** / **`EdgeIdentityTable`** / **`VertexIdentityTable`**: resolve a
   render-path face/edge/vertex ordinal (as stored in `ViewportBody.faceIndices` /
   `edgeIndices` / `vertexIndices`) back to its `Shape` and, when a `BRepGraph` is supplied, its
-  durable `GraphUID`. Obtained from `CADFileLoader.shapeToBodyMetadataAndIdentity` (face only) or
-  `shapeToBodyMetadataAndIdentities` (all three).
+  durable `GraphUID`.
+- **`ShapeIdentity`**: the one place a `Shape` becomes those three tables (OCCTSwiftInteraction#7),
+  holding the shape, its `BRepGraph` and all three. `init(shape:graph:)` takes a graph the caller
+  holds (`nil` gives shapes without uids); `init(shape:)` mints one. A file load returns one per
+  body via `CADLoadResult.identity` when called with `includeIdentity: true`, which is what stops
+  a consumer pairing `shapes` with `bodies` positionally. `shapeToBodyMetadataAndIdentity` (face
+  only) and `shapeToBodyMetadataAndIdentities` (all three) remain as the one-pass mesh-plus-identity
+  convenience.
 - **`SubShapePickResolver`**: the one canonical pick resolver: a GPU pick's primitive index in, a
   `SubShapeRef` out, handling the `faceIndices` / `edgeIndices` / `vertexIndices` indirection, the
   bounds checks, the empty-`vertexIndices` identity mapping, and the identity-table-over-re-derivation
