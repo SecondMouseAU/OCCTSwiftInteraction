@@ -1,30 +1,23 @@
 ---
-type: component
-title: Components index
-resource: https://github.com/SecondMouseAU/OCCTSwiftTools
-tags: [index]
-description: Public modules / API surfaces exposed by OCCTSwiftTools.
-timestamp: 2026-07-20
+type: index
+title: OCCTSwiftInteraction components
+resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction
+tags: [index, okf, components]
+description: The three targets this package vends, each with its own component bundle.
 ---
 
 # Components
 
-The library exposes a single product/target, `OCCTSwiftTools`. Its public surface (from the README
-and SPEC.md):
+This package vends three SwiftPM targets in a strict upward dependency direction. Each keeps its
+own component bundle, carried over from when it was its own repository.
 
-- **`CADFileLoader`** — `Shape` → `ViewportBody` conversion (`shapeToBodyAndMetadata`) and STEP/STL/
-  OBJ/BREP loading; produces triangulated meshes plus picking metadata.
-- **`CADBodyMetadata`** / **`CADLoadResult`** / **`CADFileFormat`** — face/edge/vertex indices for
-  sub-body selection, the aggregated load result (bodies + metadata + shapes + GD&T), and the
-  input-format enum (`.step`, `.stl`, `.obj`, `.brep`).
-- **`FaceIdentityTable`** / **`EdgeIdentityTable`** / **`VertexIdentityTable`**: resolve a
-  render-path face/edge/vertex ordinal (as stored in `ViewportBody.faceIndices` /
-  `edgeIndices` / `vertexIndices`) back to its `Shape` and, when a `BRepGraph` is supplied, its
-  durable `GraphUID`. Obtained from `CADFileLoader.shapeToBodyMetadataAndIdentity` (face only) or
-  `shapeToBodyMetadataAndIdentities` (all three).
-- **`ExportManager`** / **`ExportFormat`** — shape export to OBJ / PLY / STEP / BREP.
-- **Per-domain converters** — `CurveConverter` (`curve2DToBody` / `curve3DToBody`),
-  `SurfaceConverter` (UV isoparametric grid bodies), `WireConverter` (wire → edge polyline),
-  `PointConverter` (points → point-cloud body).
-- **`BodyUtilities`** — `makeMarkerSphere()`, `offsetBody()` helpers.
-- **`ScriptManifest`** — JSON manifest types for script-harness integration.
+- [OCCTSwiftTools](OCCTSwiftTools.md): kernel-to-renderer bridge. Shape into ViewportBody with
+  picking metadata, plus the Face/Edge/VertexIdentityTables. Depends on no UI framework, and must
+  not gain one: headless consumers take this product alone.
+- [OCCTSwiftAIS](OCCTSwiftAIS.md): interactive services. Selection state, modes, schemes, filters,
+  area selection, manipulator widgets, dimensions. Modeled on OCCT's own `AIS_*`.
+- [OCCTSwiftCADKit](OCCTSwiftCADKit.md): the assembled SwiftUI CAD viewport service. Import,
+  picking, clipping, camera framing.
+
+The layering is enforced by target dependencies, so the compiler checks it exactly as strictly as
+it did when these were three packages.

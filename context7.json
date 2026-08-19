@@ -1,23 +1,28 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
-  "projectTitle": "OCCTSwiftTools",
-  "description": "Bridge layer of OCCTSwift: converts kernel objects (Shape, Curve2D/Curve3D, Surface, Wire) and point clouds into ViewportBody values for the OCCTSwiftViewport Metal renderer, plus CADFileLoader.",
+  "projectTitle": "OCCTSwiftInteraction",
+  "description": "Identity, selection and the assembled CAD viewport service for the OCCTSwift stack. One package vending three targets: OCCTSwiftTools (kernel-to-renderer bridge and the identity tables), OCCTSwiftAIS (selection state and interactive services), and OCCTSwiftCADKit (the assembled SwiftUI CAD viewport service).",
   "folders": [
     "docs",
-    "Sources/OCCTSwiftTools"
+    "Sources/OCCTSwiftTools",
+    "Sources/OCCTSwiftAIS",
+    "Sources/OCCTSwiftCADKit"
   ],
   "excludeFolders": [
     "Tests",
     ".build"
   ],
   "rules": [
-    "Import the module with `import OCCTSwiftTools`; add `import OCCTSwift` when you also touch kernel types (Shape, Curve2D/Curve3D, Surface, Wire) and `import simd` for SIMD vectors.",
-    "Every converter is a `public enum` used as a namespace of `static func`s — call them statically (e.g. `PointConverter.pointsToBody(...)`), there are no instances to construct.",
+    "This package vends THREE modules. Import the one you need: `import OCCTSwiftTools` for the kernel-to-renderer bridge and identity tables, `import OCCTSwiftAIS` for selection and interactive services, `import OCCTSwiftCADKit` for the assembled SwiftUI viewport service. Add `import OCCTSwift` when you also touch kernel types.",
+    "The targets layer strictly upward: OCCTSwiftTools, then OCCTSwiftAIS, then OCCTSwiftCADKit. Never add a dependency that points back down the other way; the compiler enforces this through target dependencies.",
+    "OCCTSwiftTools imports no UI framework and must stay that way. Headless consumers (OCCTSwiftScripts, OCCTMCP) depend on that product alone, and SwiftPM only compiles what they name, so adding SwiftUI there would cost every headless build.",
+    "Picking is currently resolved in more than one place across these targets; that consolidation is tracked as ecosystem#43. Prefer the OCCTSwiftTools identity tables (`FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable`) as the source of durable identity rather than re-deriving from sub-shape enumeration.",
+    "Every converter is a `public enum` used as a namespace of `static func`s \u2014 call them statically (e.g. `PointConverter.pointsToBody(...)`), there are no instances to construct.",
     "The package's role is the OCCTSwift kernel -> ViewportBody bridge; it is the only repo depending on both OCCTSwift and OCCTSwiftViewport, sitting below OCCTSwiftAIS in the layered stack.",
     "`PointConverter.pointsToBody(_:id:color:pointRadius:perPointColors:)` returns an Optional: nil when `perPointColors` is non-nil and its length != `points.count`. Empty input is valid and returns an empty point body for clearing a prior point set.",
     "`CurveConverter`, `SurfaceConverter`, and `WireConverter` produce edge-only or isoparametric-grid bodies (no mesh). `curve2DToBody` projects onto the XZ ground plane (Y=0); `surfaceToGridBodies` returns up to two bodies `<idPrefix>-u`/`<idPrefix>-v`.",
     "`CADFileLoader.shapeToBodyAndMetadata(_:id:color:...)` returns (ViewportBody?, CADBodyMetadata?); nil only if meshing fails AND no edge polylines extract. stl/deflection/gpuTessellation steer mesh density; edgeDeflection/maxPointsPerEdge tune edges.",
     "`CADFileLoader.load(from:format:progress:)` (async throws) over OCCTSwiftIO ShapeLoader, returns CADLoadResult (bodies, metadata, shapes, PMI: dimensions/geomTolerances/datums). STL/IGES self-heal, STEP/OBJ/BREP not. Cancel throws ImportError.cancelled.",
-    "For headless, shape-only work with no Viewport dependency, skip CADFileLoader and use `OCCTSwiftIO.ShapeLoader.load` / `ShapeLoadResult` directly — CADFileLoader exists specifically to add the ViewportBody bridge on top."
+    "For headless, shape-only work with no Viewport dependency, skip CADFileLoader and use `OCCTSwiftIO.ShapeLoader.load` / `ShapeLoadResult` directly \u2014 CADFileLoader exists specifically to add the ViewportBody bridge on top."
   ]
 }

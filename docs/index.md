@@ -1,79 +1,43 @@
 ---
-title: Home
-nav_order: 1
+title: OCCTSwiftInteraction
 ---
 
-# OCCTSwiftTools
+# OCCTSwiftInteraction
 
-**OCCTSwiftTools** is the bridge layer of the OCCTSwift ecosystem. It turns
-OCCTSwift kernel objects — `Shape`, `Curve2D` / `Curve3D`, `Surface`, `Wire` —
-and raw point clouds into the `ViewportBody` values that the OCCTSwiftViewport
-Metal renderer draws, and it wraps OCCTSwiftIO's headless `ShapeLoader` so a CAD
-file on disk arrives as renderable, pickable bodies.
+Identity, selection, and the assembled CAD viewport service for the OCCTSwift stack. One package,
+three targets.
 
-It sits in the middle of the layered stack:
+- **OCCTSwiftTools**: kernel-to-renderer bridge. `Shape` into `ViewportBody` with picking metadata,
+  plus the `Face`/`Edge`/`VertexIdentityTable`s that give a picked ordinal a durable topological
+  identity. No UI framework.
+- **OCCTSwiftAIS**: interactive services. Selection state, modes, schemes, filters, area selection,
+  manipulator widgets, dimensions.
+- **OCCTSwiftCADKit**: the assembled SwiftUI CAD viewport service. Import, picking, clipping,
+  camera framing.
 
-```
-OCCTSwiftAIS          (selection / manipulators / dimensions)
-       ↑
-OCCTSwiftTools        ← this package: the Shape ↔ ViewportBody bridge
-       ↑      ↑
-OCCTSwift   OCCTSwiftViewport
-(B-Rep)     (Metal renderer)
-```
+## Start here
 
-OCCTSwiftTools is the only repo that depends on **both** sibling kernels, which
-keeps OCCTSwift and OCCTSwiftViewport decoupled from each other. The public API
-is a handful of namespacing enums of `static func`s plus one result struct — no
-instances to manage, just `Input → ViewportBody`.
+- [Migrating from the three old packages](MIGRATION.md)
+- Getting started: [OCCTSwiftAIS](guides/getting-started-OCCTSwiftAIS.md),
+  [OCCTSwiftCADKit](guides/getting-started-OCCTSwiftCADKit.md)
+- [Cookbook](guides/cookbook/)
+- [Per-type reference](reference/), covering all three targets
 
-```swift
-import OCCTSwift
-import OCCTSwiftTools
+## Specs
 
-// Turn an OCCTSwift Shape into a renderable, pickable ViewportBody.
-let box = Shape.box(width: 10, height: 5, depth: 3)!
-let (body, metadata) = CADFileLoader.shapeToBodyAndMetadata(
-    box, id: "box", color: SIMD4<Float>(0.6, 0.6, 0.65, 1.0)
-)
-// `body` carries the triangulated mesh + wireframe edges + pick data;
-// `metadata` carries face indices, edge polylines, and source vertices.
-```
+- [OCCTSwiftTools](spec/OCCTSwiftTools.md)
+- [OCCTSwiftAIS](spec/OCCTSwiftAIS.md)
 
-## Cookbook
+## Release history
 
-Task-oriented recipes, each runnable against the real API:
+These were three separate release lines before the merge, kept separate rather than interleaved:
 
-- [Shape to ViewportBody](guides/cookbook/shape-to-body) — mesh + picking metadata for a solid
-- [Point clouds](guides/cookbook/point-clouds) — render tens of thousands of points via `PointConverter`
-- [Curves, surfaces, and wires](guides/cookbook/curves-surfaces-wires) — edge-only and isoparametric-grid bodies
-- [Loading a CAD file](guides/cookbook/loading-cad-files) — `CADFileLoader.load` over STEP / IGES / STL / OBJ / BREP
+- [OCCTSwiftTools](CHANGELOG-OCCTSwiftTools.md)
+- [OCCTSwiftAIS](CHANGELOG-OCCTSwiftAIS.md)
 
-## Reference
+## Pre-merge documentation indexes
 
-Per-type API reference for every public symbol:
+Kept for anything they cover that the merged docs do not yet:
 
-- [API Reference](reference/) — `PointConverter`, `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`, `CADFileLoader`, `FaceIdentityTable`, `EdgeIdentityTable`, `VertexIdentityTable`
-
-## Project
-
-Add OCCTSwiftTools to your `Package.swift`:
-
-```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.1"),
-```
-
-Then declare it as a dependency of your target:
-
-```swift
-.target(
-    name: "MyApp",
-    dependencies: [
-        .product(name: "OCCTSwiftTools", package: "OCCTSwiftTools")
-    ]
-)
-```
-
-- Source: [github.com/SecondMouseAU/OCCTSwiftTools](https://github.com/SecondMouseAU/OCCTSwiftTools)
-- License: LGPL 2.1 (matching OCCT)
-- Platforms: macOS 15+, iOS 18+, visionOS 1+, tvOS 18+ (arm64)
+- [OCCTSwiftTools](index-OCCTSwiftTools.md)
+- [OCCTSwiftAIS](index-OCCTSwiftAIS.md)
