@@ -82,7 +82,7 @@ The platform floor is the **higher** of OCCTSwift's (12.0 / 15.0) and OCCTSwiftV
 
 ## Status
 
-Active. Requires `OCCTSwift` ≥ `v1.15.0` (for `BRepGraph`) and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
+Active. Requires `OCCTSwift` ≥ `v3.0.0` and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
 
 ## License
 

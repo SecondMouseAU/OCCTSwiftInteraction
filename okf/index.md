@@ -18,7 +18,7 @@ timestamp: 2026-06-22
 
 - **Cluster:** kernel
 - **Depends on:**
-  [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep kernel, ≥ v1.7.1),
+  [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep kernel, ≥ v3.0.0),
   [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) (Metal renderer / `ViewportBody`, ≥ v1.1.20), and
   [OCCTSwiftIO](https://github.com/SecondMouseAU/OCCTSwiftIO) (headless file I/O, ≥ v1.0.1).
 - **Feeds:** OCCTSwiftAIS (selection / manipulators / dimensions) and any app that needs to display
