@@ -5,6 +5,8 @@ builder:
       swift_version: "6.3"
       documentation_targets:
         - OCCTSwiftTools
+        - OCCTSwiftAIS
+        - OCCTSwiftCADKit
     - platform: macos-spm
       swift_version: "6.2"
     - platform: macos-spm

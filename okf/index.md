@@ -1,13 +1,13 @@
 ---
 type: repo
-title: OCCTSwiftTools
-resource: https://github.com/SecondMouseAU/OCCTSwiftTools
+title: OCCTSwiftInteraction
+resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction
 tags: [cad, occt, bridge, viewport, converters, swift, kernel]
-description: Bridge layer between the OCCTSwift kernel and the OCCTSwiftViewport renderer; converts Shapes/curves/surfaces into ViewportBody and loads CAD files.
+description: Identity, selection and the assembled CAD viewport service. One package vending three targets (OCCTSwiftTools, OCCTSwiftAIS, OCCTSwiftCADKit), merged from three repositories so the layers version and release together.
 timestamp: 2026-06-22
 ---
 
-# OCCTSwiftTools
+# OCCTSwiftInteraction
 
 > The bridge layer of the ecosystem: it turns OCCTSwift geometry (`Shape`, `Curve2D`/`Curve3D`,
 > `Surface`, `Wire`, point sets) into renderable `ViewportBody` instances with triangulated meshes

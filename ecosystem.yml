@@ -1,10 +1,11 @@
 okf_version: 1
-repo: OCCTSwiftTools
+repo: OCCTSwiftInteraction
 cluster: kernel
 visibility: public
 status: active
 language: Swift
-summary: Bridge layer between the OCCTSwift kernel and the OCCTSwiftViewport renderer — converts Shapes/curves/surfaces into ViewportBody and loads CAD files.
+summary: Identity, selection and the assembled CAD viewport service. One package vending three targets (OCCTSwiftTools, OCCTSwiftAIS, OCCTSwiftCADKit), merged from three repositories so the layers version and release together.
 products: []
 depends_on: [OCCTSwift, OCCTSwiftViewport, OCCTSwiftIO]
 maintainer: gsdali
+supersedes: [OCCTSwiftTools, OCCTSwiftAIS, OCCTSwiftCADKit]

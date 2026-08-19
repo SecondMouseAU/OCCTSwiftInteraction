@@ -7,55 +7,129 @@ import Foundation
 // OCCT ecosystem SHARES the single OCCTSwift/Libraries/OCCT.xcframework instead of each repo
 // extracting its own 1.3 GB copy. CI / fresh clones (no sibling) use the URL pin. `#filePath`-relative
 // so it's independent of build CWD.
+//
+// Only trust a sibling checkout when THIS manifest is a real local dev clone, never when this
+// manifest is itself a transitively-resolved SwiftPM checkout under a consumer's `.build/`. SwiftPM
+// lays every dependency's checkout out flat under one shared `.build/checkouts/` directory, so once
+// e.g. `.build/checkouts/OCCTSwiftViewport` exists, `../OCCTSwiftViewport` relative to
+// `.build/checkouts/OCCTSwiftInteraction` spuriously "exists" too, flipping this manifest's own
+// declaration from url to path during the very resolution that created that checkout. SwiftPM then
+// sees a non-deterministic manifest and reports the whole graph unresolvable. See
+// SecondMouseAU/ecosystem#14 and OCCTSwiftScripts#69.
+//
+// Worth recording: OCCTSwiftCADKit's own manifest still lacked this guard at merge time, while
+// OCCTSwiftTools and OCCTSwiftAIS carried it. That divergence is exactly the class of drift this
+// merge exists to stop.
+private func isRealLocalSibling(_ manifestDir: String, _ name: String) -> Bool {
+    guard !manifestDir.contains("/.build/") else { return false }
+    return FileManager.default.fileExists(atPath: manifestDir + "/../\(name)/Package.swift")
+}
+
 func occtDep(_ name: String, from version: String) -> Package.Dependency {
     let manifestDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-    // Only trust a sibling checkout for a REAL local dev clone, never when this manifest is itself a
-    // transitively-resolved checkout under a consumer's `.build/checkouts/` (SwiftPM lays every dep out
-    // flat there, so `../\(name)` spuriously exists and flips this to a path dep → a SwiftPM identity
-    // conflict with the URL-based dep. See SecondMouseAU/ecosystem#14.
-    if !manifestDir.contains("/.build/"),
-       FileManager.default.fileExists(atPath: manifestDir + "/../\(name)/Package.swift") {
+    if isRealLocalSibling(manifestDir, name) {
         return .package(path: "../\(name)")
     }
     return .package(url: "https://github.com/SecondMouseAU/\(name).git", from: Version(version)!)
 }
 
+// OCCTSwiftInteraction: identity, selection, and the assembled CAD viewport service.
+//
+// One package, three targets, strict upward dependency direction:
+//
+//   OCCTSwiftTools     kernel-to-renderer bridge: Shape into ViewportBody with picking metadata,
+//                      plus the Face/Edge/VertexIdentityTables that give a picked ordinal a durable
+//                      topological identity. No UI framework of any kind.
+//     └─ OCCTSwiftAIS  interactive services: selection state, modes, schemes, filters, area
+//                      selection, manipulator widgets, dimensions. Modeled on OCCT's own AIS_*.
+//          └─ OCCTSwiftCADKit   the assembled SwiftUI CAD viewport service: import, face/edge/vertex
+//                               picking, clipping, camera framing.
+//
+// **These were three separate repositories until ecosystem#41.** They were merged because the
+// boundaries between them are real but the packaging of them was not: three version lines that only
+// ever moved together, three release cuts that had to happen in strict order, and three CI setups.
+// A single cross-cutting change (the picking consolidation, ecosystem#42) would otherwise need six
+// sequenced PRs across three repos with a release between each. OCCTSwiftTools was 1,123 lines
+// across 9 files, carrying more repository overhead than code.
+//
+// The merge deliberately does NOT collapse the modules. Each stays a SwiftPM target, so the layering
+// is still enforced by the compiler exactly as strictly as it was across package boundaries, and a
+// headless consumer depending only on the `OCCTSwiftTools` product still compiles no SwiftUI:
+// SwiftPM builds only the targets reachable from the products you actually name. Module names are
+// unchanged, so every consumer keeps its existing `import OCCTSwiftTools` / `import OCCTSwiftAIS` /
+// `import OCCTSwiftCADKit` lines and changes only the package reference in its own manifest.
+//
+// Modeled on OCCTSwiftUX, which has vended six targets from one package since well before this.
 let package = Package(
-    name: "OCCTSwiftTools",
+    name: "OCCTSwiftInteraction",
+    // The union of what the three carried. OCCTSwiftTools and OCCTSwiftAIS both declared
+    // visionOS/tvOS; OCCTSwiftCADKit declared only iOS/macOS. Keeping the union rather than the
+    // intersection avoids regressing the two targets with the most dependents, but it does mean the
+    // CADKit target's visionOS/tvOS build is unverified. Confirm or narrow before 1.0.0.
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
         .visionOS(.v1),
-        .tvOS(.v18)
+        .tvOS(.v18),
     ],
     products: [
-        .library(
-            name: "OCCTSwiftTools",
-            targets: ["OCCTSwiftTools"]
-        ),
+        .library(name: "OCCTSwiftTools", targets: ["OCCTSwiftTools"]),
+        .library(name: "OCCTSwiftAIS", targets: ["OCCTSwiftAIS"]),
+        .library(name: "OCCTSwiftCADKit", targets: ["OCCTSwiftCADKit"]),
     ],
     dependencies: [
-        occtDep("OCCTSwift", from: "3.0.0"),    // ≥3.0.0: Rule 2 major on a much smaller surface than 2.0.0 (docs/SEMVER.md#v300). OCCT itself does not move: the kernel stays at 8.0.1, rebuilt as v3.0.0-kernel.1 to carry two patches the 2.0.0 asset was missing (OCCTSwift#905/#913). Three breaks, every one audited here and none of them reachable: Selector.SubShapeType.compsolid renamed .compSolid (#844); Shape.ShapeFilterType.RawValue moving Int32 to Int now that ShapeFilterType is a ShapeType typealias (#844), a break only where the raw type is named or stored; and Shape.bounds/size/center, Wire.bounds, Edge.bounds, Face.bounds/exactBounds becoming Optional (#943), returning nil on OCCT's own Bnd_Box::IsVoid() instead of fabricating a (0,0,0)-(0,0,0) box that was indistinguishable from a genuine zero-size shape at the world origin. That third one is what bites elsewhere in the fleet, but nothing here asks a shape for its extent: this repo is a Shape/ViewportBody bridge over meshes, edge polylines and the identity tables, and the ShapeMeasurements it hangs on CADBodyMetadata are computed inside OCCTSwift, not recomputed from bounds here. Verified by a build against the real v3.0.0 sibling rather than grep alone (grep is unreliable on .bounds/.size/.center, which collide with Viewport and SIMD types): floor bump only, zero source changes; ≥2.0.0: correctness release (OCCTSwift#377/#669), OCCT absorbed to 8.0.1. 17 breaking changes (docs/SEMVER.md#v200); audited every call site in this repo against the full break table (issue #51). Shape.faces() and Mesh.Triangle.faceIndex both moved to the deduplicated enumeration together (#541/#613), which the FaceIdentityTable comments below described as a raw-vs-deduplicated split that no longer exists post-2.0.0 (comments updated, no logic change: makeFaceIdentityTable already reads shape.faces() dynamically rather than hardcoding the old enumeration). AAG / mass-property / continuity / PathParser surfaces are not reachable from this repo (grep-verified, zero hits); ≥1.17.0: Pass 1a duplication/bug-fix audit (OCCTSwift#377/#380): continuity enum consolidation (source-compatible via deprecated aliases), Surface.drawMesh/evaluateGrid now return SurfaceGrid (not used here); ≥1.15.0: TopologyGraph renamed to BRepGraph (OCCTSwift#333)
-        occtDep("OCCTSwiftViewport", from: "1.1.23"),
-        occtDep("OCCTSwiftIO", from: "1.7.0"),  // ≥1.7.0: ShapeLoader splits multibody into per-body entries (#21)
+        // >=3.0.0: `Selector.SubShapeType.compsolid` renamed `.compSolid`, and six bounding-box
+        // accessors became Optional (OCCTSwift docs/SEMVER.md#v300). Audited across all three
+        // targets during the v3.0.0 fanout (ecosystem#39): none needed a source change for it.
+        occtDep("OCCTSwift", from: "3.0.0"),
+        occtDep("OCCTSwiftViewport", from: "1.1.26"),
+        // >=1.7.8: the release carrying OCCTSwift 3.0.0.
+        occtDep("OCCTSwiftIO", from: "1.7.8"),
     ],
     targets: [
         .target(
             name: "OCCTSwiftTools",
             dependencies: [
-                .product(name: "OCCTSwift",         package: "OCCTSwift"),
+                .product(name: "OCCTSwift", package: "OCCTSwift"),
                 .product(name: "OCCTSwiftViewport", package: "OCCTSwiftViewport"),
-                .product(name: "OCCTSwiftIO",       package: "OCCTSwiftIO"),
+                .product(name: "OCCTSwiftIO", package: "OCCTSwiftIO"),
             ],
             path: "Sources/OCCTSwiftTools",
-            swiftSettings: [
-                .swiftLanguageMode(.v6)
-            ]
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "OCCTSwiftAIS",
+            dependencies: ["OCCTSwiftTools"],
+            path: "Sources/OCCTSwiftAIS",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "OCCTSwiftCADKit",
+            dependencies: [
+                "OCCTSwiftTools",
+                "OCCTSwiftAIS",
+                .product(name: "OCCTSwift", package: "OCCTSwift"),
+                .product(name: "OCCTSwiftViewport", package: "OCCTSwiftViewport"),
+            ],
+            path: "Sources/OCCTSwiftCADKit",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "OCCTSwiftToolsTests",
             dependencies: ["OCCTSwiftTools"],
             path: "Tests/OCCTSwiftToolsTests"
+        ),
+        .testTarget(
+            name: "OCCTSwiftAISTests",
+            dependencies: ["OCCTSwiftAIS"],
+            path: "Tests/OCCTSwiftAISTests",
+            resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "OCCTSwiftCADKitTests",
+            dependencies: ["OCCTSwiftCADKit"],
+            path: "Tests/OCCTSwiftCADKitTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]
 )

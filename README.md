@@ -1,89 +1,68 @@
-# OCCTSwiftTools
+# OCCTSwiftInteraction
 
-[![Swift](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FSecondMouseAU%2FOCCTSwiftTools%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/SecondMouseAU/OCCTSwiftTools)
-[![Platforms](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FSecondMouseAU%2FOCCTSwiftTools%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/SecondMouseAU/OCCTSwiftTools)
+[![Swift](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FSecondMouseAU%2FOCCTSwiftInteraction%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/SecondMouseAU/OCCTSwiftInteraction)
+[![Platforms](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FSecondMouseAU%2FOCCTSwiftInteraction%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/SecondMouseAU/OCCTSwiftInteraction)
 [![License](https://img.shields.io/badge/license-LGPL--2.1-blue)](LICENSE)
 
-The bridge layer between [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep modeling kernel) and [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) (Metal viewport).
+Identity, selection, and the assembled CAD viewport service for the OCCTSwift stack.
 
-Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md): see the ecosystem map for how this package fits with the kernel, viewport, and sibling layers.
+Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md).
 
-> Status: **v1.6.1**. SemVer-stable from v1.0.0; versioning follows the [cohort SemVer policy](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md). See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
+> Status: **0.x**, heading for `1.0.0` once the picking consolidation
+> ([ecosystem#42](https://github.com/SecondMouseAU/ecosystem/issues/42)) has landed and settled.
 
-## What it does
+## Three targets, one package
+
+```
+OCCTSwiftTools      kernel-to-renderer bridge: Shape into ViewportBody with picking metadata,
+                    plus the identity tables that give a picked ordinal a durable
+                    topological identity. No UI framework of any kind.
+  └─ OCCTSwiftAIS   interactive services: selection state, modes, schemes, filters, area
+                    selection, manipulator widgets, dimensions. Modeled on OCCT's own AIS_*.
+       └─ OCCTSwiftCADKit    the assembled SwiftUI CAD viewport service: import, picking,
+                             clipping, camera framing.
+```
 
 ```swift
 import OCCTSwift
 import OCCTSwiftTools
 
 let box = Shape.box(width: 10, height: 5, depth: 3)!
-let body = ViewportBody.from(box)!     // ← this lives here
+let body = ViewportBody.from(box)!
 ```
 
-Plus one-shot file loaders:
+## Why one package instead of three
 
-```swift
-let bodies = try CADFile.loadSTEP(at: stepURL)
-let mesh   = try CADFile.loadSTL(at: stlURL)
-```
+These were three repositories until [ecosystem#41](https://github.com/SecondMouseAU/ecosystem/issues/41).
+The boundaries between them are real; the packaging of them was not. Three version lines that only
+ever moved together, three release cuts that had to happen in strict order, three CI setups. A
+single cross-cutting change needed six sequenced pull requests across three repositories with a
+release between each. `OCCTSwiftTools` was 1,123 lines across 9 files, carrying more repository
+overhead than code.
 
-## Architecture position
+**The merge does not collapse the modules.** Each is still a SwiftPM target, so the layering stays
+enforced by the compiler exactly as strictly as it was across package boundaries. Depending on this
+package does not pull SwiftUI into a headless build: SwiftPM compiles only the targets reachable
+from the products you name, and `OCCTSwiftTools` imports no UI framework.
 
-```
-OCCTSwiftAIS          (selection / manipulator / dimensions; sibling repo)
-       ↑
-OCCTSwiftTools        ← this repo
-       ↑      ↑
-OCCTSwift   OCCTSwiftViewport
-(B-Rep)     (Metal renderer)
-```
+This follows `OCCTSwiftUX`, which has vended six targets from one package since well before this.
 
-OCCTSwiftTools is the only repo that depends on **both** sibling kernels. OCCTSwiftAIS depends on this; the two kernels stay decoupled from each other.
+## Migrating
 
-## Converters
+Your `import` lines do not change. See [docs/MIGRATION.md](docs/MIGRATION.md).
 
-Per-domain helpers that turn an OCCT-or-raw input into a `ViewportBody`:
+## Documentation
 
-| Helper | Input | Output body shape |
-|---|---|---|
-| `CADFileLoader.shapeToBodyAndMetadata` | `OCCTSwift.Shape` | Triangulated mesh + picking metadata |
-| `CurveConverter.curve2DToBody` / `curve3DToBody` | `Curve2D` / `Curve3D` | Edge polyline (no mesh) |
-| `SurfaceConverter` | `Surface` | Triangulated surface mesh |
-| `WireConverter.wireToBody` | `Wire` | Edge polyline |
-| `PointConverter.pointsToBody` | `[SIMD3<Float>]` | Point list (no mesh, no edges) |
+- [docs/MIGRATION.md](docs/MIGRATION.md), moving from the three old packages
+- [docs/reference/](docs/reference/), per-type reference across all three targets
+- [docs/guides/](docs/guides/), getting started and cookbook
+- Historical changelogs: [OCCTSwiftTools](docs/CHANGELOG-OCCTSwiftTools.md),
+  [OCCTSwiftAIS](docs/CHANGELOG-OCCTSwiftAIS.md)
 
-> **Note on `PointConverter`**: produces a `ViewportBody` with `primitiveKind == .point`, drawn by the point-cloud rendering pipeline added in [OCCTSwiftViewport v1.0.2](https://github.com/SecondMouseAU/OCCTSwiftViewport/releases/tag/v1.0.2) (issue [#28](https://github.com/SecondMouseAU/OCCTSwiftViewport/issues/28)). `pointRadius` and `perPointColors` are now carried through to the body's `pointRadius` and `vertexColors` fields; consumers (e.g. OCCTMCP's `add_scene_primitive(pointCloud)`) can lift their previous sphere-compound caps and render tens of thousands of points cleanly.
+## Known issues
 
-## Identity tables
-
-`shapeToBodyMetadataAndIdentities` (and the narrower `shapeToBodyMetadataAndIdentity`) resolve a
-render-path face / edge / vertex ordinal back to the `Shape` it was extracted from, and, when a
-`BRepGraph` is supplied, to a durable `GraphUID`. See
-[FaceIdentityTable](docs/reference/FaceIdentityTable.md),
-[EdgeIdentityTable](docs/reference/EdgeIdentityTable.md), and
-[VertexIdentityTable](docs/reference/VertexIdentityTable.md).
-
-## Installation
-
-```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.1"),
-```
-
-## Supported platforms
-
-| Platform | Status |
-|---|---|
-| macOS 15+ arm64 | Supported |
-| iOS 18+ device + simulator arm64 | Supported |
-| visionOS 1+ device + simulator arm64 | Supported |
-| tvOS 18+ device + simulator arm64 | Supported |
-
-The platform floor is the **higher** of OCCTSwift's (12.0 / 15.0) and OCCTSwiftViewport's (15.0 / 18.0).
-
-## Status
-
-Active. Requires `OCCTSwift` ≥ `v3.0.0` and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
-
-## License
-
-LGPL 2.1 (matching OCCT). See [LICENSE](LICENSE).
+`InteractiveContextMutationTests` fails 5 assertions, carried over from before the merge and tracked
+as [OCCTSwiftAIS#46](https://github.com/SecondMouseAU/OCCTSwiftAIS/issues/46). The test asserts a
+`Shape.faces()` enumeration split that OCCTSwift 2.0.0 erased. Fixing it requires deciding whether
+face identity keys on `faces()` or `orientedFaces()`, which is also the first step of the picking
+consolidation.

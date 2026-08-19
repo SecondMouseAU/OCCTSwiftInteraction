@@ -20,7 +20,8 @@ name: tests
 # macOS-only: the OCCTSwift dependency ships as a macOS xcframework, the same
 # reasoning OCCTSwiftScripts' own tests.yml uses.
 #
-# Baseline at rollout: 45 tests passing.
+# Baseline at merge: 314 tests across 27 suites, of which 5 fail (OCCTSwiftAIS#46,
+# pre-existing and inherited from before the merge).
 
 on:
   push:

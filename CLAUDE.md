@@ -4,9 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repo state
 
-`v0.1.0` shipped the wholesale migration out of OCCTSwiftViewport's sub-product slot. The 7 source files (`BodyUtilities`, `CADFileLoader`, `CurveConverter`, `ExportManager`, `ScriptManifest`, `SurfaceConverter`, `WireConverter`) live in `Sources/OCCTSwiftTools/`; 6 Swift Testing suites cover them in `Tests/OCCTSwiftToolsTests/`. See [docs/CHANGELOG.md](docs/CHANGELOG.md) for the API surface, and [SPEC.md](SPEC.md) "Sequencing" for the v0.2.0+ wishlist (`Shape.measure`, IGES/glTF loaders, progress callbacks).
+**This repo is the merge of three: `OCCTSwiftTools`, `OCCTSwiftAIS` and `OCCTSwiftCADKit`**
+(ecosystem#41). Each is still its own SwiftPM target under `Sources/<Module>` with tests under
+`Tests/<Module>Tests`, and the module names are unchanged, so consumers keep their existing `import`
+lines. The layering is enforced by target dependencies, not convention: `OCCTSwiftTools` depends on
+no UI framework and must stay that way, because headless consumers (OCCTSwiftScripts, OCCTMCP) take
+that product alone and SwiftPM only compiles what they name.
 
-Add new API freely — the "move, don't rewrite" rule from the migration is no longer in force.
+Version line starts at `0.x`, reaching `1.0.0` once the picking consolidation (ecosystem#42) has
+landed and settled. The three old version lines do not continue here.
+
+**Known failing test:** `InteractiveContextMutationTests` fails 5 assertions (OCCTSwiftAIS#46),
+inherited from before the merge. It asserts a `Shape.faces()` enumeration split that OCCTSwift 2.0.0
+erased. Do not "fix" it by relaxing the assertions; it is the regression test OCCTSwiftAIS#31 exists
+to keep. The real fix is deciding whether face identity keys on `faces()` or `orientedFaces()`,
+which is also step one of ecosystem#42.
+
+**Docs still to finish after the merge:** `okf/index.md` and this file still describe the
+OCCTSwiftTools half in more detail than the other two. Tracked on the migration issue.
 
 ## Architectural position (load-bearing context)
 
