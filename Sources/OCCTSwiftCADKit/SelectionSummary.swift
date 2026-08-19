@@ -16,7 +16,8 @@ public struct SelectionSummary: Sendable, Equatable {
     public let totalLength: Double
 
     /// Combined axis-aligned bounds of every selected entity (a face/edge's own bounds; a
-    /// vertex's position, as a zero-size bounds). `nil` only if the selection is empty.
+    /// vertex's position, as a zero-size bounds). `nil` if the selection is empty, or if no
+    /// selected entity contributed a bounding box.
     public let bounds: CADViewportService.ShapeBounds?
 
     public init(

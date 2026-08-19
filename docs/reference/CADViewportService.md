@@ -74,11 +74,11 @@ let custom = CADViewportService(configuration: .init(
 | `loadedShape` | `OCCTSwift.Shape?` | **Deprecated**, use `loadedShapes`/`shape(id:)`. Non-nil only when exactly one entity is loaded, however it was loaded. |
 | `loadedShapes` | `[String: OCCTSwift.Shape]` | Multi-entity loads, keyed by entity id (see [Multi-body / assembly](#multi-body--assembly)). |
 | `selection` | `[PickedEntity]` | Every currently selected face/edge/vertex. Read-only; a real pick replaces it wholesale — build a multi-selection with `select(_:scheme:)`. |
-| `selectionSummary` | `SelectionSummary?` | Aggregate measures over `selection` — count by kind, total area/length, combined bounds. `nil` when empty. |
+| `selectionSummary` | `SelectionSummary?` | Aggregate measures over `selection`: count by kind, total area/length, combined bounds. `nil` when empty. |
 | `selected` | `PickedEntity?` | **Deprecated**, use `selection`. Non-nil only when the selection is exactly one entity. |
 | `selectionModes` | `Set<SelectionMode>` | Which sub-shape kinds picking resolves. Defaults to `[.face]`. |
 | `selectedFace` | `PickedFaceInfo?` | **Deprecated**, use `selection`. Non-nil only when the selection is exactly one face. |
-| `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of the single loaded shape, or `nil` (see `loadedShape`'s single-entity caveat). |
+| `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of the single loaded shape, or `nil` (see `loadedShape`'s single-entity caveat, and the [void-bounds note](#void-bounding-boxes)). |
 | `overlayIDs` | `[String]` | Sorted ids of overlay layers currently staged. |
 | `visibility` | `[String: Bool]` | Per-entity visibility, keyed by entity id. |
 | `scalarFieldLegend` | `ScalarFieldLegend?` | Legend for the most recently set scalar field (see [Scalar fields](#scalar-fields)). `nil` if none is set. |
@@ -208,6 +208,9 @@ public func entityID(forBodyID bodyID: String) -> String?         // which entit
 public var visibility: [String: Bool] { get set }                 // per-entity visibility
 public func focus(on ids: [String])                               // frame the camera on a subset
 ```
+
+`focus(on:)` no-ops when none of `ids` is loaded, and also when none of the loaded ones has a
+bounding box (see [Void bounding boxes](#void-bounding-boxes)).
 
 ```swift
 viewport.visibility = ["cover": false]
@@ -594,6 +597,26 @@ if let b = viewport.shapeBounds {
 }
 ```
 
+#### Void bounding boxes
+
+From OCCTSwift 3.0.0 a shape can report *no* bounding box at all (`Shape.bounds` and friends
+return `nil` when OCCT's own `Bnd_Box::IsVoid()` says so, instead of the fabricated
+`(0,0,0)-(0,0,0)` earlier versions returned, which was indistinguishable from a genuine
+zero-size shape at the world origin). Every place this service reads bounds now declines
+rather than substituting a default:
+
+| Reader | Behaviour when a shape has no bounding box |
+|---|---|
+| `focus(on:)` | Skips that entity. No-ops entirely if no listed entity has bounds, leaving the camera where it is. |
+| Auto-focus after a deprecated single-shape load | No-op, same reasoning. |
+| `shapeBounds` | `nil`. |
+| `selectionSummary` | That face contributes no bounds (it still counts toward `faceCount`/`totalArea`); `bounds` is `nil` if nothing contributed any. |
+| Face picking | Resolves to `nil`: a face with no bounding box cannot have produced the rendered triangle that was picked. |
+| Capping (`clippingPlanes` with `showCapSurface`) | A split piece with no bounding box is treated as clipped away, not kept. |
+
+Aiming the camera at the world origin for a shape that has no extent is worse than not
+reframing at all, which is why none of these fall back to a zero bounds.
+
 ---
 
 ## `CADViewportView`
@@ -816,8 +839,9 @@ public struct SelectionSummary: Sendable, Equatable {
 
 Aggregate measures over `CADViewportService.selection`, returned by `selectionSummary`.
 `bounds` combines every selected entity's own bounds (a face/edge's geometric bounds, or a
-vertex's position as a zero-size bounds) — `nil` only when the selection is empty, in
-which case `selectionSummary` itself is `nil` too.
+vertex's position as a zero-size bounds). It is `nil` when the selection is empty, in which
+case `selectionSummary` itself is `nil` too, and also when no selected entity contributed a
+bounding box (see [Void bounding boxes](#void-bounding-boxes)).
 
 ```swift
 if let summary = viewport.selectionSummary {

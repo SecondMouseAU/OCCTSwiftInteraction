@@ -847,7 +847,8 @@ public final class CADViewportService {
 
     /// Frames the camera on the union of bounds of the given entities.
     ///
-    /// No-op if none of `ids` are currently loaded.
+    /// No-op if none of `ids` are currently loaded, or if none of the loaded ones has a
+    /// bounding box.
     public func focus(on ids: [String]) {
         let shapes = ids.compactMap { shape(id: $0) }
         guard !shapes.isEmpty else { return }
@@ -855,10 +856,11 @@ public final class CADViewportService {
         var minPt = SIMD3<Double>(repeating: .infinity)
         var maxPt = SIMD3<Double>(repeating: -.infinity)
         for s in shapes {
-            let b = s.bounds
+            guard let b = s.bounds else { continue }
             minPt = SIMD3(min(minPt.x, b.min.x), min(minPt.y, b.min.y), min(minPt.z, b.min.z))
             maxPt = SIMD3(max(maxPt.x, b.max.x), max(maxPt.y, b.max.y), max(maxPt.z, b.max.z))
         }
+        guard minPt.x.isFinite else { return }
         let center = SIMD3<Float>(
             Float((minPt.x + maxPt.x) / 2),
             Float((minPt.y + maxPt.y) / 2),
@@ -1114,16 +1116,19 @@ public final class CADViewportService {
     /// fine for the "roughly frame the camera" use in `focus(on:)`), `applySideBySide` needs
     /// the offset to actually clear every body of a multi-body entity, not just whichever
     /// one happens to be first.
+    ///
+    /// `nil` when the entity isn't loaded, or when no body of it has a bounding box.
     private func entityBounds(_ entityID: String) -> (min: SIMD3<Double>, max: SIMD3<Double>)? {
         let shapes = entityBodyIDs(entityID).compactMap { bodyShapes[$0] }
         guard !shapes.isEmpty else { return nil }
         var minPt = SIMD3<Double>(repeating: .infinity)
         var maxPt = SIMD3<Double>(repeating: -.infinity)
         for s in shapes {
-            let b = s.bounds
+            guard let b = s.bounds else { continue }
             minPt = SIMD3(min(minPt.x, b.min.x), min(minPt.y, b.min.y), min(minPt.z, b.min.z))
             maxPt = SIMD3(max(maxPt.x, b.max.x), max(maxPt.y, b.max.y), max(maxPt.z, b.max.z))
         }
+        guard minPt.x.isFinite else { return nil }
         return (minPt, maxPt)
     }
 
@@ -1508,7 +1513,10 @@ public final class CADViewportService {
         for plane in planes {
             let unitNormal = safeUnitNormal(plane.normal)
             func isKept(_ candidate: OCCTSwift.Shape) -> Bool {
-                let b = candidate.bounds
+                // A piece with no bounding box has no geometry to sit on either side of the
+                // plane, so it is not kept; the callers below then route it through the same
+                // `.fullyClipped` path an out-of-scope piece already takes.
+                guard let b = candidate.bounds else { return false }
                 let center = SIMD3<Double>(
                     (b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2)
                 return simd_dot(unitNormal, center - plane.origin) >= 0
@@ -1524,11 +1532,18 @@ public final class CADViewportService {
         return boundsPracticallyEqual(shape, current) ? .unchanged : .capped(current)
     }
 
+    /// Two shapes with no bounding box at all are equal (nothing to tell apart); one of each
+    /// is not (the split changed something).
     private func boundsPracticallyEqual(_ a: OCCTSwift.Shape, _ b: OCCTSwift.Shape) -> Bool {
-        let ab = a.bounds
-        let bb = b.bounds
-        let epsilon = 1e-6
-        return simd_length(ab.min - bb.min) < epsilon && simd_length(ab.max - bb.max) < epsilon
+        switch (a.bounds, b.bounds) {
+        case (nil, nil):
+            return true
+        case (let ab?, let bb?):
+            let epsilon = 1e-6
+            return simd_length(ab.min - bb.min) < epsilon && simd_length(ab.max - bb.max) < epsilon
+        default:
+            return false
+        }
     }
 
     /// Re-tessellates `bodyID` from `shape` (a capped shape from `cappedShape`, or the
@@ -1691,9 +1706,10 @@ public final class CADViewportService {
         return SIMD3<Float>(world.x, world.y, world.z)
     }
 
+    /// No-op if nothing is loaded, or if the loaded shape has no bounding box: leaving the
+    /// camera where it is beats aiming it at the world origin.
     private func focusOnLoadedShape() {
-        guard let shape = currentSingleShape else { return }
-        let b = shape.bounds
+        guard let shape = currentSingleShape, let b = shape.bounds else { return }
         let center = SIMD3<Float>(
             Float((b.min.x + b.max.x) / 2),
             Float((b.min.y + b.max.y) / 2),
@@ -1713,9 +1729,9 @@ public final class CADViewportService {
         public var sizeZ: Double { maxZ - minZ }
     }
 
+    /// `nil` when nothing is loaded, or when the loaded shape has no bounding box.
     public var shapeBounds: ShapeBounds? {
-        guard let shape = currentSingleShape else { return nil }
-        let b = shape.bounds
+        guard let shape = currentSingleShape, let b = shape.bounds else { return nil }
         return ShapeBounds(
             minX: b.min.x, minY: b.min.y, minZ: b.min.z,
             maxX: b.max.x, maxY: b.max.y, maxZ: b.max.z
@@ -1815,8 +1831,8 @@ public final class CADViewportService {
             case .face(let info):
                 faceCount += 1
                 totalArea += info.area
-                if let face = Face(info.shape) {
-                    absorb(face.bounds)
+                if let face = Face(info.shape), let faceBounds = face.bounds {
+                    absorb(faceBounds)
                 }
             case .edge(let info):
                 edgeCount += 1
@@ -1918,7 +1934,10 @@ public final class CADViewportService {
 
         let isHoriz = face.isHorizontal()
         let isVert = face.isVertical()
-        let faceBounds = face.bounds
+        // A face with no bounding box cannot have produced the rendered triangle this pick
+        // came from, so the resolution went wrong somewhere: report no pick rather than
+        // mint a `PickedFaceInfo` whose `bounds` and `description` are invented.
+        guard let faceBounds = face.bounds else { return nil }
         let faceArea = face.area()
         let zLevel = face.zLevel.map { Float($0) }
 
