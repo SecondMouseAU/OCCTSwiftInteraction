@@ -51,7 +51,7 @@ dependency to the `OCCTSwiftTools` target, every headless consumer pays for it.
 ## Versioning
 
 The merged package starts at `0.x` and reaches `1.0.0` once the picking consolidation
-([ecosystem#42](https://github.com/SecondMouseAU/ecosystem/issues/42)) has landed and settled. The
+([ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43)) has landed and settled. The
 three old version lines (`OCCTSwiftTools` 1.6.4, `OCCTSwiftAIS` 1.3.2, `OCCTSwiftCADKit` 1.1.2) do
 not continue here; continuing any one of them would have silently absorbed the other two histories
 under the wrong line.

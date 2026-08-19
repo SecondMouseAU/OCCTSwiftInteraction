@@ -45,10 +45,10 @@ func occtDep(_ name: String, from version: String) -> Package.Dependency {
 //          └─ OCCTSwiftCADKit   the assembled SwiftUI CAD viewport service: import, face/edge/vertex
 //                               picking, clipping, camera framing.
 //
-// **These were three separate repositories until ecosystem#41.** They were merged because the
+// **These were three separate repositories until ecosystem#42.** They were merged because the
 // boundaries between them are real but the packaging of them was not: three version lines that only
 // ever moved together, three release cuts that had to happen in strict order, and three CI setups.
-// A single cross-cutting change (the picking consolidation, ecosystem#42) would otherwise need six
+// A single cross-cutting change (the picking consolidation, ecosystem#43) would otherwise need six
 // sequenced PRs across three repos with a release between each. OCCTSwiftTools was 1,123 lines
 // across 9 files, carrying more repository overhead than code.
 //

@@ -5,20 +5,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repo state
 
 **This repo is the merge of three: `OCCTSwiftTools`, `OCCTSwiftAIS` and `OCCTSwiftCADKit`**
-(ecosystem#41). Each is still its own SwiftPM target under `Sources/<Module>` with tests under
+(ecosystem#42). Each is still its own SwiftPM target under `Sources/<Module>` with tests under
 `Tests/<Module>Tests`, and the module names are unchanged, so consumers keep their existing `import`
 lines. The layering is enforced by target dependencies, not convention: `OCCTSwiftTools` depends on
 no UI framework and must stay that way, because headless consumers (OCCTSwiftScripts, OCCTMCP) take
 that product alone and SwiftPM only compiles what they name.
 
-Version line starts at `0.x`, reaching `1.0.0` once the picking consolidation (ecosystem#42) has
+Version line starts at `0.x`, reaching `1.0.0` once the picking consolidation (ecosystem#43) has
 landed and settled. The three old version lines do not continue here.
 
 **Known failing test:** `InteractiveContextMutationTests` fails 5 assertions (OCCTSwiftAIS#46),
 inherited from before the merge. It asserts a `Shape.faces()` enumeration split that OCCTSwift 2.0.0
 erased. Do not "fix" it by relaxing the assertions; it is the regression test OCCTSwiftAIS#31 exists
 to keep. The real fix is deciding whether face identity keys on `faces()` or `orientedFaces()`,
-which is also step one of ecosystem#42.
+which is also step one of ecosystem#43.
 
 **Docs still to finish after the merge:** `okf/index.md` and this file still describe the
 OCCTSwiftTools half in more detail than the other two. Tracked on the migration issue.

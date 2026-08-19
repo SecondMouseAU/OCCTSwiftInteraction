@@ -9,7 +9,7 @@ Identity, selection, and the assembled CAD viewport service for the OCCTSwift st
 Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md).
 
 > Status: **0.x**, heading for `1.0.0` once the picking consolidation
-> ([ecosystem#42](https://github.com/SecondMouseAU/ecosystem/issues/42)) has landed and settled.
+> ([ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43)) has landed and settled.
 
 ## Three targets, one package
 
@@ -33,7 +33,7 @@ let body = ViewportBody.from(box)!
 
 ## Why one package instead of three
 
-These were three repositories until [ecosystem#41](https://github.com/SecondMouseAU/ecosystem/issues/41).
+These were three repositories until [ecosystem#42](https://github.com/SecondMouseAU/ecosystem/issues/42).
 The boundaries between them are real; the packaging of them was not. Three version lines that only
 ever moved together, three release cuts that had to happen in strict order, three CI setups. A
 single cross-cutting change needed six sequenced pull requests across three repositories with a
