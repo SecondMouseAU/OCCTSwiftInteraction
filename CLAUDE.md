@@ -70,20 +70,28 @@ OCCTSwiftIO built clean with zero errors while carrying three real breaks in its
 Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
 published URLs. No binary lives in this repo.
 
-**Expected baseline: 314 tests across 27 suites, of which 5 fail.** See below.
+**Expected baseline: 314 tests across 27 suites, all passing.**
 
-## Known failing test, do not "fix" it the easy way
+## Face identity is `IsSame`, and that decision is settled
 
-`InteractiveContextMutationTests` fails 5 assertions
-([OCCTSwiftInteraction#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1),
-formerly OCCTSwiftAIS#46). Inherited from before the merge.
+Phase 0 of ecosystem#43, decided in
+[OCCTSwiftInteraction#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1). Do not
+re-open it; encode it.
 
-It asserts the raw-versus-deduplicated `Shape.faces()` split that OCCTSwift **2.0.0** erased. Not a
-v3.0.0 regression: `Shape.faces()` is byte-identical between the v2.0.0 and v3.0.0 tags.
+Face identity keys on OCCT's `TopoDS_Shape::IsSame`: same `TShape`, same `Location`, orientation may
+differ. Consequences, all settled:
 
-**Do not relax the assertions.** They are the regression test OCCTSwiftAIS#31 exists to keep. The
-real fix is deciding whether face identity keys on `faces()` or `orientedFaces()`, which is also
-phase 0 of ecosystem#43 and blocks the rest of that work.
+- `faces()`, deduplicated through `TopTools_IndexedMapOfShape`, is the correct enumeration for
+  `FaceIdentityTable`. `orientedFaces()` is the occurrence enumeration and is not an identity.
+- A face shared between two shells is **one** identity, not two. That it bounds two solids is a fact
+  about the model, not two selectable things.
+- A caller needing to know *which* use of a shared face was picked reads orientation off the
+  returned shape, which is OCCT's own answer, not a second enumeration.
+
+The mesher still walks face **occurrences**, so a shared face is tessellated once per owning shell
+and both triangulations carry the one deduplicated ordinal. `InteractiveContextMutationTests`
+holds that down: it asserts both shells' copies reach the mesh and that picks into either resolve to
+the same durable uid. If you change the tessellation or identity path, that test is the tripwire.
 
 ## Active known duplication
 

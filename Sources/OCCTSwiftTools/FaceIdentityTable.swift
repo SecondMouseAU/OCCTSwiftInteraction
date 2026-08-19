@@ -9,6 +9,30 @@ import OCCTSwift
 /// `CADBodyMetadata.faceIndices`) back to the `Shape` (and, when available, the durable
 /// `GraphUID`) it was tessellated from.
 ///
+/// ## What identity means here (OCCTSwiftInteraction#1, settled)
+///
+/// Face identity keys on OCCT's `TopoDS_Shape::IsSame`: same `TShape`, same `Location`,
+/// orientation may differ. That is a comparison semantic, not a choice of function, and the
+/// enumeration follows from it: `Shape.faces()`, deduplicated through
+/// `TopTools_IndexedMapOfShape`, is `IsSame` and is what this table is built from.
+/// `orientedFaces()` is occurrence-based (`IsEqual`) and is deliberately NOT an identity here.
+///
+/// So a face shared between two shells is **one** entry in `shapes`, not two. That it bounds two
+/// solids is a fact about the model rather than two selectable things. A caller needing to know
+/// which use of a shared face was picked reads orientation off the returned `Shape`, which is
+/// OCCT's own answer (`StdSelect_BRepOwner` carries the shape, never an ordinal) rather than a
+/// second enumeration.
+///
+/// The mesher still walks face occurrences, so a shared face is tessellated once per owning shell,
+/// each wound for its own outside, and **both** triangulations carry the one deduplicated ordinal.
+/// Two triangles with the same ordinal can therefore be different geometry belonging to different
+/// shells, and they resolve to one identity. That is the intended behaviour, not a collision.
+///
+/// This table is also the reason the ordinal is durable at all. OCCT attaches the `TopoDS_Shape`
+/// to the sensitive entity when selection is computed, because its selection data is a CPU-side
+/// structure; ours is a GPU buffer of triangles, so the attachment has to happen at tessellation
+/// time instead. That is what this type is, rather than an index-caching optimisation.
+///
 /// Consumers have historically resolved a triangle's face ordinal via
 /// `shape.subShapes(ofType: .face)[ordinal]`. Before OCCTSwift v2.0.0, that assumed the
 /// render-path ordinal, which walked faces via the same raw, non-deduplicating
