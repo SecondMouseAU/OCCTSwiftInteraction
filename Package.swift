@@ -3,13 +3,13 @@
 import PackageDescription
 import Foundation
 
-// Prefer a local sibling checkout (../<name>) when present, else the published URL — so the whole
+// Prefer a local sibling checkout (../<name>) when present, else the published URL, so the whole
 // OCCT ecosystem SHARES the single OCCTSwift/Libraries/OCCT.xcframework instead of each repo
 // extracting its own 1.3 GB copy. CI / fresh clones (no sibling) use the URL pin. `#filePath`-relative
 // so it's independent of build CWD.
 func occtDep(_ name: String, from version: String) -> Package.Dependency {
     let manifestDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-    // Only trust a sibling checkout for a REAL local dev clone — never when this manifest is itself a
+    // Only trust a sibling checkout for a REAL local dev clone, never when this manifest is itself a
     // transitively-resolved checkout under a consumer's `.build/checkouts/` (SwiftPM lays every dep out
     // flat there, so `../\(name)` spuriously exists and flips this to a path dep → a SwiftPM identity
     // conflict with the URL-based dep. See SecondMouseAU/ecosystem#14.
