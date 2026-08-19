@@ -6,7 +6,7 @@
 
 The bridge layer between [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep modeling kernel) and [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) (Metal viewport).
 
-Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md) — see the ecosystem map for how this package fits with the kernel, viewport, and sibling layers.
+Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md): see the ecosystem map for how this package fits with the kernel, viewport, and sibling layers.
 
 > Status: **v1.6.1**. SemVer-stable from v1.0.0; versioning follows the [cohort SemVer policy](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md). See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
 
@@ -82,7 +82,7 @@ The platform floor is the **higher** of OCCTSwift's (12.0 / 15.0) and OCCTSwiftV
 
 ## Status
 
-Active. Requires `OCCTSwift` ≥ `v1.15.0` (for `BRepGraph`) and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
+Active. Requires `OCCTSwift` ≥ `v3.0.0` and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
 
 ## License
 
