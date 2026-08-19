@@ -87,26 +87,26 @@ public enum SubShapePickResolver {
 ```swift
 let box = Shape.box(width: 10, height: 5, depth: 3)!
 let graph = BRepGraph(shape: box)!
-let (body, meta, faces, edges, vertices) = CADFileLoader.shapeToBodyMetadataAndIdentities(
+let (body, meta, faces, _, vertices) = CADFileLoader.shapeToBodyMetadataAndIdentities(
     box, id: "box", color: SIMD4<Float>(0.6, 0.6, 0.65, 1), graph: graph
 )
 guard let body, let meta else { return }
 
 // A face pick: triangle 0 of the rendered mesh.
-if let ref = SubShapePickResolver.resolveFace(
+if let faceRef = SubShapePickResolver.resolveFace(
     triangleIndex: 0, faceIndices: meta.faceIndices, identity: faces, shape: box)
 {
-    print(ref.ordinal)          // the face ordinal, not the triangle index
-    print(Face(ref.shape)?.area() ?? 0)
-    print(ref.uid as Any)       // durable across a later mutation
+    print(faceRef.ordinal)          // the face ordinal, not the triangle index
+    print(Face(faceRef.shape)?.area() ?? 0)
+    print(faceRef.uid as Any)       // durable across a later mutation
 }
 
 // A vertex pick on a body whose vertexIndices is empty: the point index is the ordinal.
-let ref = SubShapePickResolver.resolveVertex(
+let vertexRef = SubShapePickResolver.resolveVertex(
     pointIndex: 3, pointCount: body.vertices.count, vertexIndices: [],
     identity: vertices, shape: box
 )
-print(ref?.ordinal ?? -1)       // 3
+print(vertexRef?.ordinal ?? -1)     // 3
 ```
 
 See also [FaceIdentityTable](FaceIdentityTable) / [EdgeIdentityTable](EdgeIdentityTable) /
