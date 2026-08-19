@@ -9,11 +9,11 @@ timestamp: 2026-06-22
 
 # References
 
-- [SPEC.md](https://github.com/SecondMouseAU/OCCTSwiftInteraction/blob/main/docs/spec/OCCTSwiftTools.md) — public API surface
+- [SPEC.md](https://github.com/SecondMouseAU/OCCTSwiftInteraction/blob/main/docs/spec/OCCTSwiftTools.md): public API surface
   and roadmap.
-- [docs/CHANGELOG.md](https://github.com/SecondMouseAU/OCCTSwiftInteraction/blob/main/docs/CHANGELOG-OCCTSwiftTools.md)
-  — release history.
-- [Swift Package Index — OCCTSwiftTools](https://swiftpackageindex.com/SecondMouseAU/OCCTSwiftInteraction)
-  — published SPM package (see `.spi.yml`).
-- [OpenCASCADE Technology (OCCT)](https://dev.opencascade.org/) — upstream B-Rep kernel wrapped by
+- [docs/CHANGELOG.md](https://github.com/SecondMouseAU/OCCTSwiftInteraction/blob/main/docs/CHANGELOG-OCCTSwiftTools.md),
+  release history.
+- [Swift Package Index: OCCTSwiftInteraction](https://swiftpackageindex.com/SecondMouseAU/OCCTSwiftInteraction),
+  published SPM package (see `.spi.yml`).
+- [OpenCASCADE Technology (OCCT)](https://dev.opencascade.org/): upstream B-Rep kernel wrapped by
   OCCTSwift, the geometry source this bridge converts.
