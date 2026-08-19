@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftAIS
 import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
@@ -65,6 +66,28 @@ struct SmokeTests {
         #expect(info == info)
         #expect(bounds.width == 10)
         #expect(bounds.height == 5)
+    }
+
+    /// The source-compatibility half of OCCTSwiftInteraction#2.
+    ///
+    /// `InteractiveObject`, `SubShapeRef` and `SubShape` moved to `OCCTSwiftTools`, with
+    /// typealiases left in `OCCTSwiftAIS`. This target imports both, which is the realistic
+    /// consumer shape, so it is where a name that resolved ambiguously would show up. Written
+    /// against the unqualified names on purpose, plus one explicit round trip between the two
+    /// spellings to pin that they denote the same type rather than two similar ones.
+    @Test("The moved sub-shape types resolve when both targets are imported")
+    func movedSubShapeTypesResolveFromBothTargets() throws {
+        let box = try #require(Shape.box(width: 2, height: 2, depth: 2))
+        let object = InteractiveObject(shape: box)
+        let ref = SubShapeRef(shape: box, ordinal: 0)
+        let sub: SubShape = .face(object, ref: ref)
+
+        #expect(sub.object == object)
+        #expect(sub.ref == ref)
+
+        let viaTools: OCCTSwiftTools.SubShapeRef = ref
+        let viaAIS: OCCTSwiftAIS.SubShapeRef = viaTools
+        #expect(viaAIS.ordinal == 0)
     }
 
     /// Regression for #25, updated for OCCTSwift v2.0.0 (issue #54). Originally, a face shared
@@ -370,11 +393,16 @@ struct SmokeTests {
         }
     }
 
-    /// Regression for #27 review: `resolveVertexPick` deliberately implements in full the
-    /// documented "empty means identity mapping" fallback of `ViewportBody.vertexIndices`
-    /// (unlike `OCCTSwiftAIS.InteractiveContext.resolveVertexSubShape`, which
-    /// bounds-checks against `vertexIndices.count` directly and so never resolves when it's
-    /// empty).
+    /// Regression for #27 review: `resolveVertexPick` implements in full the documented
+    /// "empty means identity mapping" fallback of `ViewportBody.vertexIndices`.
+    ///
+    /// This used to be the one place it was implemented, which is what
+    /// OCCTSwiftInteraction#2 consolidated: `OCCTSwiftAIS` bounds-checked against
+    /// `vertexIndices.count` directly and so never resolved a vertex pick when it was empty.
+    /// The behaviour now lives once in `OCCTSwiftTools.SubShapePickResolver.resolveVertex`
+    /// and both targets get it. This test still earns its keep as the CADKit-side end of that
+    /// path, alongside the unit coverage in `SubShapePickResolverTests` and the AIS-side
+    /// `t_handlePick_vertexWithEmptyVertexIndices_identityMaps`.
     ///
     /// Prove the fallback actually works: a body with `vertices` populated but
     /// `vertexIndices` empty must still resolve, using `pointIndex` as the ordinal itself.

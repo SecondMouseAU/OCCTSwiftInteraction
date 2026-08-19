@@ -9,7 +9,8 @@ three targets.
 
 - **OCCTSwiftTools**: kernel-to-renderer bridge. `Shape` into `ViewportBody` with picking metadata,
   plus the `Face`/`Edge`/`VertexIdentityTable`s that give a picked ordinal a durable topological
-  identity. No UI framework.
+  identity, and the one `SubShapePickResolver` every layer above resolves picks through. No UI
+  framework.
 - **OCCTSwiftAIS**: interactive services. Selection state, modes, schemes, filters, area selection,
   manipulator widgets, dimensions.
 - **OCCTSwiftCADKit**: the assembled SwiftUI CAD viewport service. Import, picking, clipping,

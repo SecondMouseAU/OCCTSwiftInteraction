@@ -2,6 +2,21 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
 
+## Unreleased
+
+**One canonical pick resolver, and the types that name picked topology move down here.** Closes [OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2), phase 2 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43).
+
+New API:
+
+- **`SubShapePickResolver`**: `resolveFace(triangleIndex:faceIndices:identity:shape:)`, `resolveEdge(segmentIndex:edgeIndices:identity:shape:)`, `resolveVertex(pointIndex:pointCount:vertexIndices:identity:shape:)`. A GPU pick's primitive index in, a `SubShapeRef` out. Owns the `faceIndices` / `edgeIndices` / `vertexIndices` indirection, the bounds checks, the empty-`vertexIndices` identity mapping, and the rule that the identity table beats re-deriving from the shape's own sub-shape enumeration.
+- **`SubShapeRef`**, **`SubShape`** and **`InteractiveObject`**, moved down from the `OCCTSwiftAIS` target. The type naming a piece of topology belongs in the lowest layer that can produce it, which is the layer holding the identity tables and minting the `BRepGraph.GraphUID`. `OCCTSwiftAIS` keeps source-compatible typealiases, so no consumer changes.
+
+**A real bug fixed on the way in.** `ViewportBody` documents an empty `vertexIndices` as identity mapping, where the point index *is* the vertex ordinal. `OCCTSwiftCADKit`'s copy of the resolver implemented that; `OCCTSwiftAIS`'s bounds-checked the pick against `vertexIndices.count` and therefore never resolved a vertex pick on such a body. The shared resolver takes CADKit's handling, so a vertex pick is bounded by how many points the body renders and never by `vertexIndices.count`.
+
+**Deliberately not absorbed**, per the behaviour matrix on ecosystem#43: clip-plane awareness (the caller's, since clip planes are the viewport service's state and this target has no business knowing about them), geometry enrichment (presentation, and it belongs above), and the whole-body fallback (a selection-mode decision, so it stays in `OCCTSwiftAIS`). The shared resolver is the identity concern only.
+
+**Tests:** 13 new in a new `SubShapePickResolver` suite, covering both indirection paths, the bounds checks, the empty-array cases in both directions, the table-over-re-derivation rule, and every vertex case the AIS copy used to get wrong.
+
 ## v1.6.3 (2026-08-10)
 
 **Repin OCCTSwift floor to 2.0.0.** OCCTSwift's v2.0.0 ([`docs/SEMVER.md#v200`](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/SEMVER.md#v200)) is a correctness major (Pass 1a/1b duplication+bug-fix audit, [#377](https://github.com/SecondMouseAU/OCCTSwift/issues/377)/[#669](https://github.com/SecondMouseAU/OCCTSwift/issues/669); OCCT absorbed to 8.0.1), 17 breaking API changes. A full audit of this repo's own `FaceIdentityTable`/`EdgeIdentityTable`/`VertexIdentityTable` and `shapeToBodyMetadataAndIdentities(...)` surface against the whole break table found one real thing: `Mesh.Triangle.faceIndex`, read in `CADFileLoader.swift` to build `FaceIdentityTable`, moved onto the same deduplicated `Shape.faces()` enumeration OCCTSwift's #541/#613 already put `Shape.faces()` itself on ([#642](https://github.com/SecondMouseAU/OCCTSwift/issues/642) generalizes this — both were the raw, non-deduplicating enumeration before, exactly why `FaceIdentityTable` existed per issue #42). `makeFaceIdentityTable()` needed no logic fix (it already calls `shape.faces()` dynamically, not a hardcoded enumeration), but its own doc comments, `FaceIdentityTable.swift`'s type docs, and `docs/reference/FaceIdentityTable.md` described the old, now-incorrect behaviour in the present tense; updated all three. Fixed a hardcoded pre-dedup face count (`compound.faces().count == 7`) in `FaceIdentityTableTests` (and the same fixture reused in `EdgeIdentityTableTests`/`VertexIdentityTableTests`), rewritten to check the new contract directly rather than just patching the number.

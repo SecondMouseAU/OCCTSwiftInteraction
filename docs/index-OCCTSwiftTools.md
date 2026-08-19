@@ -6,7 +6,7 @@ nav_order: 1
 # OCCTSwiftTools
 
 **OCCTSwiftTools** is the bridge layer of the OCCTSwift ecosystem. It turns
-OCCTSwift kernel objects — `Shape`, `Curve2D` / `Curve3D`, `Surface`, `Wire` —
+OCCTSwift kernel objects (`Shape`, `Curve2D` / `Curve3D`, `Surface`, `Wire`)
 and raw point clouds into the `ViewportBody` values that the OCCTSwiftViewport
 Metal renderer draws, and it wraps OCCTSwiftIO's headless `ShapeLoader` so a CAD
 file on disk arrives as renderable, pickable bodies.
@@ -24,7 +24,7 @@ OCCTSwift   OCCTSwiftViewport
 
 OCCTSwiftTools is the only repo that depends on **both** sibling kernels, which
 keeps OCCTSwift and OCCTSwiftViewport decoupled from each other. The public API
-is a handful of namespacing enums of `static func`s plus one result struct — no
+is a handful of namespacing enums of `static func`s plus one result struct: no
 instances to manage, just `Input → ViewportBody`.
 
 ```swift
@@ -44,16 +44,16 @@ let (body, metadata) = CADFileLoader.shapeToBodyAndMetadata(
 
 Task-oriented recipes, each runnable against the real API:
 
-- [Shape to ViewportBody](guides/cookbook/shape-to-body) — mesh + picking metadata for a solid
-- [Point clouds](guides/cookbook/point-clouds) — render tens of thousands of points via `PointConverter`
-- [Curves, surfaces, and wires](guides/cookbook/curves-surfaces-wires) — edge-only and isoparametric-grid bodies
-- [Loading a CAD file](guides/cookbook/loading-cad-files) — `CADFileLoader.load` over STEP / IGES / STL / OBJ / BREP
+- [Shape to ViewportBody](guides/cookbook/shape-to-body): mesh + picking metadata for a solid
+- [Point clouds](guides/cookbook/point-clouds): render tens of thousands of points via `PointConverter`
+- [Curves, surfaces, and wires](guides/cookbook/curves-surfaces-wires): edge-only and isoparametric-grid bodies
+- [Loading a CAD file](guides/cookbook/loading-cad-files): `CADFileLoader.load` over STEP / IGES / STL / OBJ / BREP
 
 ## Reference
 
 Per-type API reference for every public symbol:
 
-- [API Reference](reference/) — `PointConverter`, `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`, `CADFileLoader`, `FaceIdentityTable`, `EdgeIdentityTable`, `VertexIdentityTable`
+- [API Reference](reference/): `PointConverter`, `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`, `CADFileLoader`, `FaceIdentityTable`, `EdgeIdentityTable`, `VertexIdentityTable`, `SubShapePickResolver`, `SubShapeRef` / `SubShape` / `InteractiveObject`
 
 ## Project
 

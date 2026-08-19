@@ -114,6 +114,11 @@ public final class InteractiveContext: ObservableObject {
     public func setHighlightStyle(_ style: HighlightStyle)
 }
 
+// NOTE (OCCTSwiftInteraction#2): InteractiveObject, SubShape and SubShapeRef now live in the
+// OCCTSwiftTools target, alongside the identity tables and the resolver that mints a ref.
+// OCCTSwiftAIS keeps source-compatible typealiases, so the declarations below still read the
+// same from a caller's point of view.
+
 /// Erased reference to something in the scene.
 public struct InteractiveObject: Hashable, Sendable {
     public let id: UUID
