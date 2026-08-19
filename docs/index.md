@@ -35,6 +35,8 @@ These were three separate release lines before the merge, kept separate rather t
 
 - [OCCTSwiftTools](CHANGELOG-OCCTSwiftTools.md)
 - [OCCTSwiftAIS](CHANGELOG-OCCTSwiftAIS.md)
+- [OCCTSwiftCADKit](CHANGELOG-OCCTSwiftCADKit.md), started at the first change a consumer of that
+  target has to read before upgrading
 
 ## Pre-merge documentation indexes
 

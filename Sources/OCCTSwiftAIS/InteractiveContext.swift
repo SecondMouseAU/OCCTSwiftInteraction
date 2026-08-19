@@ -252,29 +252,57 @@ public final class InteractiveContext: ObservableObject {
 
     /// Add a sub-shape to the current selection.
     ///
-    /// Idempotent.
+    /// Idempotent. Exactly `select(subshape, scheme: .add)`; kept as its own
+    /// method (rather than giving `select(_:scheme:)` a default) so that every
+    /// existing `select(x)` call site keeps meaning "add", which is what it has
+    /// always meant. A defaulted `scheme:` would have silently retuned all of
+    /// them to `.replace`.
     public func select(_ subshape: SubShape) {
-        var s = selection.subshapes
-        s.insert(subshape)
-        selection = Selection(s)
+        select(subshape, scheme: .add)
+    }
+
+    /// Combine one sub-shape with the current selection per `scheme`.
+    ///
+    /// The scheme parameter came from `OCCTSwiftCADKit.CADViewportService.select(_:scheme:)`,
+    /// which had all four schemes where this context had only `.add` (`select`) and
+    /// `.remove` (`deselect`). That service now drives this selection rather than keeping
+    /// a parallel one (OCCTSwiftInteraction#3, phase 3 of ecosystem#43), so the schemes
+    /// live here with the state.
+    ///
+    /// Semantics match `SelectionScheme` everywhere else in this target, including area
+    /// selection: `.replace` assigns, `.add` inserts if absent, `.remove` drops it, `.xor`
+    /// toggles it.
+    public func select(_ subshape: SubShape, scheme: SelectionScheme) {
+        applySelection([subshape], scheme: scheme)
     }
 
     public func deselect(_ subshape: SubShape) {
-        var s = selection.subshapes
-        s.remove(subshape)
-        selection = Selection(s)
+        select(subshape, scheme: .remove)
     }
 
     public func clearSelection() {
         selection = Selection()
     }
 
+    /// Combine a whole candidate set with the current selection per `scheme`.
+    ///
+    /// The one place the scheme rules are written down: `select(_:scheme:)` passes a
+    /// single-element set, `AreaSelection.swift` passes a rectangle/lasso match set.
+    /// Internal, since `select`/`deselect`/`clearSelection` are the intended public
+    /// mutation surface.
+    func applySelection(_ incoming: Set<SubShape>, scheme: SelectionScheme) {
+        let current = selection.subshapes
+        switch scheme {
+        case .replace: selection = Selection(incoming)
+        case .add: selection = Selection(current.union(incoming))
+        case .remove: selection = Selection(current.subtracting(incoming))
+        case .xor: selection = Selection(current.symmetricDifference(incoming))
+        }
+    }
+
     /// Replace `selection` wholesale.
     ///
-    /// Used by `AreaSelection.swift` after combining a rectangle/lasso match
-    /// set with the existing selection per `SelectionScheme`; kept internal
-    /// since `select`/`deselect`/`clearSelection` are the intended public
-    /// mutation surface.
+    /// Kept internal for the same reason as `applySelection(_:scheme:)`.
     func setSelection(_ newSelection: Selection) {
         selection = newSelection
     }
@@ -352,6 +380,19 @@ public final class InteractiveContext: ObservableObject {
     /// The body ID currently associated with `object`, or nil if not displayed.
     func bodyID(for object: InteractiveObject) -> String? {
         entriesByID[object.id]?.bodyID
+    }
+
+    /// Whether `bodyID` names a body this context displays as a selectable
+    /// `InteractiveObject`, that is, one added via `display(_:style:)`.
+    ///
+    /// Public so a host that composites its own bodies into `bodies` alongside this
+    /// context's (`OCCTSwiftCADKit.CADViewportService` does) can tell whose pick it is
+    /// looking at. Since the two share one selection, a host that clears the selection on an
+    /// unresolved pick has to leave this context's own picks alone, or it wipes a selection
+    /// it never owned. False for internal bodies (manipulator handles, dimensions), which
+    /// are not selectable objects.
+    public func displaysBody(withID bodyID: String) -> Bool {
+        entriesByBodyID[bodyID] != nil
     }
 
     /// The source `ViewportBody` for `object`, or nil if the object is not displayed

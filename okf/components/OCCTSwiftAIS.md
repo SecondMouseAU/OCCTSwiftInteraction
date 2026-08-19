@@ -19,6 +19,12 @@ Its API surface groups into:
   selection-mode gate and the whole-body fallback, both selection-mode decisions rather than
   identity ones. `SubShapeRef` / `SubShape` / `InteractiveObject` moved down to `OCCTSwiftTools`
   with source-compatible typealiases left behind.
+  **`InteractiveContext.selection` is the package's only selection store since
+  OCCTSwiftInteraction#3**: `OCCTSwiftCADKit.CADViewportService` drives it rather than keeping a
+  parallel one, so `CADViewportService.selection` is a projection of it and
+  `CADViewportService.selectionModes` is `selectionMode` itself. `select(_:scheme:)` gained the
+  four-scheme parameter from CADKit's version; `select(_:)` is unchanged and still means `.add`.
+  `displaysBody(withID:)` lets such a host tell its own composited bodies from this context's.
 - **Manipulator widgets**: translate / rotate gizmos with `snapTranslate` / `snapRotateDeg` on the
   renderer's overlay layer; SwiftUI integration via `.attachManipulator(_:)`.
 - **Dimensions**: `LinearDimension`, `AngularDimension`, `RadialDimension` with topology-aware

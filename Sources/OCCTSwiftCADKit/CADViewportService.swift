@@ -81,6 +81,23 @@ public final class CADViewportService {
 
     /// Every currently selected sub-shape (face, edge, or vertex), gated by `selectionModes`.
     ///
+    /// **A projection of `interactiveContext.selection`, not a second selection.** Since
+    /// OCCTSwiftInteraction#3 (phase 3 of ecosystem#43) this service holds no selection state
+    /// of its own: the state is the interactive context's `Set<SubShape>`, and this is that
+    /// set enriched into `PickedEntity` values for display. It is mirrored into stored state
+    /// rather than computed on read so SwiftUI observation still fires, exactly as `bodies`
+    /// mirrors `interactiveContext.bodies`; nothing writes it except `syncSelection`.
+    ///
+    /// Two consequences worth knowing:
+    ///
+    /// - **Order is by (body id, kind, ordinal)**, not by when each entry was selected: the
+    ///   underlying state is a `Set`, so insertion order no longer exists to preserve. The
+    ///   order is deterministic, just not chronological.
+    /// - **Whole-body selections do not appear here.** `SelectionMode.body` selects a
+    ///   `SubShape.body` in the interactive context; read `interactiveContext.selection` (or
+    ///   its `bodies` accessor) for those. This property is the sub-shape projection, and
+    ///   `PickedEntity` has no whole-body case.
+    ///
     /// Empty if nothing is selected. A real viewport pick always replaces the whole selection
     /// (matching the point-pick behavior of `OCCTSwiftAIS` itself: scheme-based combination is
     /// for programmatic `select(_:scheme:)` calls, e.g. area selection); build multi-selection
@@ -100,12 +117,26 @@ public final class CADViewportService {
 
     /// Which sub-shape kinds picking resolves.
     ///
-    /// Defaults to `[.face]`, matching this service's behavior before edge/vertex picking
-    /// existed; add `.edge`/`.vertex` to opt in. `.body` has no effect here (there is no
-    /// whole-body `PickedEntity` case); it exists on `SelectionMode` for
-    /// `OCCTSwiftAIS.InteractiveContext.selectionMode`, a separate, independent selection
-    /// system this service does not share state with.
-    public var selectionModes: Set<SelectionMode> = [.face]
+    /// **The same state as `interactiveContext.selectionMode`, not a copy of it.** Reading or
+    /// writing either one reads or writes the other; before OCCTSwiftInteraction#3 these were
+    /// two variables free to disagree, and by default they did (`[.face]` here, `[.body]`
+    /// there, in a service that owns both).
+    ///
+    /// Initialised to `[.face]` in `init`, matching this service's behavior before edge/vertex
+    /// picking existed, which overrides the interactive context's own `[.body]` default; add
+    /// `.edge`/`.vertex` to opt in.
+    ///
+    /// `.body` now does something: it selects a `SubShape.body` in the interactive context for
+    /// objects displayed there directly (`interactiveContext.display(_:style:)`), with AIS's
+    /// whole-body fallback on a face pick that fails to resolve. It still produces no
+    /// `PickedEntity`, because there is no whole-body case; see `selection`.
+    ///
+    /// Assigning a different set clears the selection, which is the interactive context's
+    /// documented behaviour for `selectionMode` and now applies here too.
+    public var selectionModes: Set<SelectionMode> {
+        get { interactiveContext.selectionMode }
+        set { interactiveContext.selectionMode = newValue }
+    }
 
     /// Currently selected face, or `nil` if nothing is picked or the current pick is an
     /// edge or vertex.
@@ -134,6 +165,40 @@ public final class CADViewportService {
     private var selectionBodies: [_ViewportBody] = []
     private var ownedBodyIDs: Set<String> = []
     private var bodiesSubscription: AnyCancellable?
+    private var selectionSubscription: AnyCancellable?
+
+    // MARK: - Bridge to the interactive context's selection state
+
+    /// A stable `InteractiveObject.id` per model body id.
+    ///
+    /// The interactive context names what a selection belongs to with an `InteractiveObject`,
+    /// while this service names it with a body id string, so driving that selection needs one
+    /// object per body. Only the **id** is cached, never the object: `InteractiveObject`
+    /// equality and hashing are id-only, so the `Shape` can be re-read from `bodyShapes` on
+    /// every construction (and can change under a cap-plane split) without disturbing set
+    /// membership.
+    ///
+    /// Deliberately not `interactiveContext.display(_:)`: that owns tessellation, and this
+    /// service tessellates its own bodies with its own transforms, caps and comparison state.
+    /// Registering them as context entries would also hand `updateSelectionVisuals` the
+    /// `triangleStyles` array that `setScalarField(_:forBody:)` paints, and the two would
+    /// overwrite each other.
+    private var bodyObjectIDs: [String: UUID] = [:]
+
+    /// Reverse of `bodyObjectIDs`, for projecting a `SubShape` back to the body it names.
+    private var objectBodyIDs: [UUID: String] = [:]
+
+    /// The enrichment computed for each currently selected sub-shape, keyed by the identity
+    /// the interactive context holds.
+    ///
+    /// A cache, not state: every key is a `SubShape` currently in
+    /// `interactiveContext.selection`, and `syncSelection` prunes it to exactly that set. It
+    /// exists because two `PickedFaceInfo` fields cannot be recovered from a `SubShapeRef`
+    /// after the fact: `scalarValue` for a `.perTriangle` field needs the triangle the pick
+    /// landed on, and `description` is formatted at pick time. A sub-shape selected some other
+    /// way (through the context directly, or by area selection) is enriched on demand instead,
+    /// and gets `scalarValue == nil` for a per-triangle field.
+    private var selectionInfo: [SubShape: PickedEntity] = [:]
 
     // MARK: - Durable identity (per loaded body)
 
@@ -262,6 +327,10 @@ public final class CADViewportService {
         let controller = _ViewportController(configuration: configuration)
         self.controller = controller
         self.interactiveContext = InteractiveContext(viewport: controller)
+        // This service's historical default, applied to the now-shared mode set. The
+        // interactive context's own default is `[.body]`; an app that wants whole-body
+        // selection back sets `selectionModes` itself.
+        self.interactiveContext.selectionMode = [.face]
         controller.onPick = { [weak self] result in
             Task { @MainActor in
                 self?.handlePick(result)
@@ -271,6 +340,21 @@ public final class CADViewportService {
             .receive(on: RunLoop.main)
             .sink { [weak self] new in
                 self?.bodies = new
+            }
+        // The one path by which a selection change reaches this service, whoever made it:
+        // this service's own `select`/`clearSelection`, a direct `interactiveContext.select`,
+        // an area selection, or a `selectionMode` change clearing the selection.
+        //
+        // Deliberately NOT `.receive(on: RunLoop.main)`, unlike the `$bodies` sink above: this
+        // has to run synchronously so a caller reading `selection` immediately after
+        // `select(_:scheme:)` sees the result. That means it fires during `willSet`, when
+        // `interactiveContext.selection` still reads as the OLD value, so the new selection is
+        // taken from the emitted value rather than read back off the context.
+        self.selectionSubscription = interactiveContext.$selection
+            .sink { [weak self] newSelection in
+                MainActor.assumeIsolated {
+                    self?.syncSelection(with: newSelection)
+                }
             }
     }
 
@@ -393,6 +477,8 @@ public final class CADViewportService {
         faceIdentity.removeAll()
         edgeIdentity.removeAll()
         vertexIdentity.removeAll()
+        bodyObjectIDs.removeAll()
+        objectBodyIDs.removeAll()
         entities.removeAll()
         scalarFields.removeAll()
         lastScalarFieldBodyID = nil
@@ -736,13 +822,8 @@ public final class CADViewportService {
     ///
     /// A full clean slate, equivalent to a fresh `CADViewportService`.
     public func removeAll() {
-        let hadSelection = !selection.isEmpty
         resetAllModelState()
-        if hadSelection {
-            clearSelection()  // also calls rebuildBodies()
-        } else {
-            rebuildBodies()
-        }
+        clearSelection()  // also calls rebuildBodies()
     }
 
     private func removeBodies(_ bodyIDs: [String]) {
@@ -764,14 +845,26 @@ public final class CADViewportService {
     /// Drops only the selection entries that referenced a removed body, leaving everything
     /// else selected: the selection survives operations unrelated to it, and accurately
     /// reports (by no longer containing them) the entries that didn't.
+    ///
+    /// Prunes the interactive context's selection, which is where the state is. Keys on the
+    /// body's `InteractiveObject` rather than on `PickedEntity.bodyID` as it used to, which is
+    /// the same question asked in the vocabulary that now holds the answer, and it reaches
+    /// whole-body selections on the removed body too (a `PickedEntity` scan never could).
     private func pruneSelection(removingBodyIDs bodyIDs: [String]) {
-        let removed = Set(bodyIDs)
-        guard selection.contains(where: { removed.contains($0.bodyID) }) else {
-            rebuildBodies()
-            return
+        let removedObjectIDs = Set(bodyIDs.compactMap { bodyObjectIDs[$0] })
+        for subShape in interactiveContext.selection.subshapes
+        where removedObjectIDs.contains(subShape.object.id) {
+            // Each of these fires the `$selection` sink, which re-projects and rebuilds.
+            interactiveContext.deselect(subShape)
         }
-        selection.removeAll { removed.contains($0.bodyID) }
-        rebuildSelectionHighlights()  // also calls rebuildBodies()
+        for bodyID in bodyIDs {
+            if let objectID = bodyObjectIDs.removeValue(forKey: bodyID) {
+                objectBodyIDs.removeValue(forKey: objectID)
+            }
+        }
+        // Unconditional, because this always rebuilt the viewport even when it pruned nothing:
+        // its caller has just removed bodies that are still in the rendered array.
+        rebuildBodies()
     }
 
     /// Clears the active comparison if it referenced one of the just-removed entities.
@@ -1004,13 +1097,19 @@ public final class CADViewportService {
     /// The scalar value at a resolved face pick, if a field is set on that body.
     ///
     /// `nil` domain matches `PickedFaceInfo.faceIndex`/`triangleIndex` per `ScalarField.Domain`.
-    private func scalarValue(forBody bodyID: String, faceIndex: Int, triangleIndex: Int) -> Double?
+    /// `triangleIndex` is `nil` when the face was not reached through a pick (an area
+    /// selection, or a selection made through `interactiveContext` directly), in which case a
+    /// `.perTriangle` field has nothing to sample and reports no value. A `.perFace` field is
+    /// unaffected: the face ordinal is enough.
+    private func scalarValue(forBody bodyID: String, faceIndex: Int, triangleIndex: Int?)
+        -> Double?
     {
         guard let field = scalarFields[bodyID] else { return nil }
         switch field.domain {
         case .perFace:
             return faceIndex >= 0 && faceIndex < field.values.count ? field.values[faceIndex] : nil
         case .perTriangle:
+            guard let triangleIndex else { return nil }
             return triangleIndex >= 0 && triangleIndex < field.values.count
                 ? field.values[triangleIndex] : nil
         }
@@ -1770,45 +1869,139 @@ public final class CADViewportService {
     // MARK: - Selection
 
     /// Clear the current selection (and any highlight bodies).
+    ///
+    /// Clears the interactive context's selection, which is the one selection there is, so
+    /// this also drops any whole-body or AIS-side entries, not just this service's sub-shape
+    /// projection.
     public func clearSelection() {
-        selection = []
+        interactiveContext.clearSelection()
+        // Emptying `selection` itself is the `$selection` sink's job, and it has already run
+        // (synchronously) if anything changed. What is left here is the part this method has
+        // always done unconditionally, including when the selection was already empty: drop
+        // the highlight bodies and rebuild the viewport.
         selectionBodies = []
         rebuildBodies()
     }
 
-    /// Adds, removes, or replaces `entity` in `selection` per `scheme`.
+    /// Adds, removes, or replaces `entity` in the selection per `scheme`.
     ///
-    /// Mirrors the exact combination semantics of `OCCTSwiftAIS.SelectionScheme`
-    /// (`.replace` assigns, `.add`/`.remove`/`.xor` combine against the current selection),
-    /// just applied to one entity here rather than a batch region match. Membership uses the
-    /// `Equatable` of `PickedEntity` itself (`uid`-preferring, so the same durable
-    /// face/edge/vertex is recognized as already-selected regardless of which ephemeral
-    /// ordinal it was picked at).
+    /// Delegates to `interactiveContext.select(_:scheme:)`, which holds the selection.
+    /// `SelectionScheme`'s semantics are the interactive context's own, the same ones
+    /// `selectRectangle`/`selectPolygon` area selection uses: `.replace` assigns, `.add`
+    /// inserts if absent, `.remove` drops it, `.xor` toggles it.
+    ///
+    /// Membership is `SubShapeRef`'s rule (the durable `uid` when both sides have one, else
+    /// the render-path ordinal), which is what `PickedEntity`'s own `Equatable` has always
+    /// mirrored, so the same durable face/edge/vertex is recognized as already-selected
+    /// regardless of which ephemeral ordinal it was picked at.
+    ///
+    /// An entity naming a body this service has not loaded still selects: it gets its own
+    /// `InteractiveObject` like any other body id, so a caller staging a pick by hand
+    /// (an escalation request, a test) behaves the same as a real one.
     public func select(_ entity: PickedEntity, scheme: SelectionScheme = .replace) {
-        switch scheme {
-        case .replace:
-            selection = [entity]
-        case .add:
-            if !selection.contains(entity) {
-                selection.append(entity)
-            }
-        case .remove:
-            selection.removeAll { $0 == entity }
-        case .xor:
-            if let index = selection.firstIndex(of: entity) {
-                selection.remove(at: index)
-            } else {
-                selection.append(entity)
+        let subShape = subShape(for: entity)
+        // Before delegating, so the `$selection` sink finds the enrichment already cached and
+        // does not have to rebuild it from the bare ref.
+        selectionInfo[subShape] = entity
+        interactiveContext.select(subShape, scheme: scheme)
+    }
+
+    /// The interactive context's name for `entity`: its `SubShapeRef` plus the
+    /// `InteractiveObject` standing for the body it was picked on.
+    private func subShape(for entity: PickedEntity) -> SubShape {
+        let object = object(forBody: entity.bodyID, fallbackShape: entity.ref.shape)
+        switch entity {
+        case .face(let info): return .face(object, ref: info.ref)
+        case .edge(let info): return .edge(object, ref: info.ref)
+        case .vertex(let info): return .vertex(object, ref: info.ref)
+        }
+    }
+
+    /// The `InteractiveObject` standing for `bodyID`, minted on first use and stable
+    /// thereafter.
+    ///
+    /// `fallbackShape` is only used for a body id this service has never loaded, where there
+    /// is no body shape to point at. It never affects identity: `InteractiveObject` compares
+    /// and hashes by `id` alone.
+    private func object(forBody bodyID: String, fallbackShape: OCCTSwift.Shape)
+        -> InteractiveObject
+    {
+        let id: UUID
+        if let existing = bodyObjectIDs[bodyID] {
+            id = existing
+        } else {
+            id = UUID()
+            bodyObjectIDs[bodyID] = id
+            objectBodyIDs[id] = bodyID
+        }
+        return InteractiveObject(id: id, shape: bodyShapes[bodyID] ?? fallbackShape)
+    }
+
+    /// Re-projects the interactive context's selection into `selection` and rebuilds the
+    /// highlight bodies.
+    ///
+    /// Takes the new selection as an argument rather than reading `interactiveContext`,
+    /// because the `$selection` sink that drives it fires during `willSet`, when the context
+    /// still reports the previous value.
+    private func syncSelection(with newSelection: Selection) {
+        let subShapes = newSelection.subshapes
+        let projected =
+            subShapes
+            .compactMap { pickedEntity(for: $0) }
+            .sorted(by: Self.selectionOrder)
+        selectionInfo = selectionInfo.filter { subShapes.contains($0.key) }
+        guard projected != selection else { return }
+        selection = projected
+        rebuildSelectionHighlights()  // also calls rebuildBodies()
+    }
+
+    /// Deterministic ordering for `selection`: body id, then kind, then render-path ordinal.
+    ///
+    /// The underlying state is a `Set<SubShape>`, so there is no insertion order left to
+    /// preserve; an unordered projection would make `selection` differ run to run.
+    private static func selectionOrder(_ lhs: PickedEntity, _ rhs: PickedEntity) -> Bool {
+        func rank(_ entity: PickedEntity) -> Int {
+            switch entity {
+            case .face: return 0
+            case .edge: return 1
+            case .vertex: return 2
             }
         }
-        rebuildSelectionHighlights()
+        return (lhs.bodyID, rank(lhs), lhs.ref.ordinal)
+            < (rhs.bodyID, rank(rhs), rhs.ref.ordinal)
     }
+
+    /// The enrichment for one selected sub-shape: the value cached when this service resolved
+    /// or was handed the pick, else built on demand.
+    ///
+    /// `nil` for a `.body` sub-shape (no whole-body `PickedEntity` case), for a body this
+    /// service does not have geometry for, and for anything whose enrichment fails.
+    private func pickedEntity(for subShape: SubShape) -> PickedEntity? {
+        if let cached = selectionInfo[subShape] { return cached }
+        guard let bodyID = objectBodyIDs[subShape.object.id] else { return nil }
+        switch subShape {
+        case .body:
+            return nil
+        case .face(_, let ref):
+            return enrichFace(ref: ref, bodyID: bodyID, triangleIndex: nil).map(PickedEntity.face)
+        case .edge(_, let ref):
+            return enrichEdge(ref: ref, bodyID: bodyID).map(PickedEntity.edge)
+        case .vertex(_, let ref):
+            return enrichVertex(ref: ref, bodyID: bodyID, renderPosition: nil).map(
+                PickedEntity.vertex)
+        }
+    }
+
+    /// Renamed to `selectionMeasurements` in OCCTSwiftInteraction#3, with the type it returns.
+    @available(*, deprecated, renamed: "selectionMeasurements")
+    public var selectionSummary: SelectionMeasurements? { selectionMeasurements }
 
     /// Aggregate measures over `selection`: count by kind, total face area, total edge
     /// length, and combined bounds.
     ///
-    /// `nil` when nothing is selected.
-    public var selectionSummary: SelectionSummary? {
+    /// `nil` when nothing is selected. Whole-body selections do not contribute, for the same
+    /// reason they do not appear in `selection`.
+    public var selectionMeasurements: SelectionMeasurements? {
         guard !selection.isEmpty else { return nil }
 
         var faceCount = 0
@@ -1831,6 +2024,10 @@ public final class CADViewportService {
             case .face(let info):
                 faceCount += 1
                 totalArea += info.area
+                // Re-derives the face's own 3D bounding box rather than reading `info.bounds`,
+                // which is deliberate and not a missed reuse: `FaceBounds` is XY only and
+                // `Float`, while this aggregate is 3D and `Double`. The edge and vertex
+                // branches below read their cached values because those already are 3D.
                 if let face = Face(info.shape), let faceBounds = face.bounds {
                     absorb(faceBounds)
                 }
@@ -1866,7 +2063,7 @@ public final class CADViewportService {
                 maxX: maxPt.x, maxY: maxPt.y, maxZ: maxPt.z
             ) : nil
 
-        return SelectionSummary(
+        return SelectionMeasurements(
             faceCount: faceCount,
             edgeCount: edgeCount,
             vertexCount: vertexCount,
@@ -1876,8 +2073,28 @@ public final class CADViewportService {
         )
     }
 
-    private func handlePick(_ result: _PickResult?) {
-        guard let result, let entity = resolveEntityPick(result) else {
+    /// `internal` rather than `private`, for the same reason as `resolveFacePick` and its
+    /// siblings: so a test can drive the whole pick path (mode gate, ownership check,
+    /// resolution, selection) with a synthesised `PickResult` instead of only its middle.
+    /// `controller.onPick` is the only production caller.
+    func handlePick(_ result: _PickResult?) {
+        guard let result else {
+            // Empty space deselects, which is this service's contract and now applies to the
+            // whole shared selection, including anything held for an object displayed
+            // directly into the interactive context.
+            clearSelection()
+            return
+        }
+
+        // A pick on a body the interactive context displays itself belongs to that context,
+        // which resolves it through its own `handlePick` into the same selection this service
+        // now reads. Returning here rather than falling through to `clearSelection()` is what
+        // stops this service from wiping a selection it never owned; before
+        // OCCTSwiftInteraction#3 the two selections were independent and the question could
+        // not arise.
+        guard !interactiveContext.displaysBody(withID: result.bodyID) else { return }
+
+        guard let entity = resolveEntityPick(result) else {
             clearSelection()
             return
         }
@@ -1930,11 +2147,20 @@ public final class CADViewportService {
         else {
             return nil
         }
+        return enrichFace(ref: ref, bodyID: bodyID, triangleIndex: triangleIndex)
+    }
 
-        let faceShape = ref.shape
-        let faceIndex = ref.ordinal
-        let uid = ref.uid
-        guard let face = Face(faceShape) else { return nil }
+    /// The presentation half of a face pick: everything `PickedFaceInfo` carries beyond the
+    /// identity in `ref`.
+    ///
+    /// Split out of `resolveFacePick` so a sub-shape that reached the selection some other way
+    /// (through `interactiveContext` directly, or by area selection) is enriched by the same
+    /// code rather than a second copy of it. `triangleIndex` is `nil` for those, which only
+    /// affects a `.perTriangle` scalar field: there is no triangle to sample.
+    private func enrichFace(ref: SubShapeRef, bodyID: String, triangleIndex: Int?)
+        -> PickedFaceInfo?
+    {
+        guard let face = Face(ref.shape) else { return nil }
 
         let isHoriz = face.isHorizontal()
         let isVert = face.isVertical()
@@ -1958,9 +2184,7 @@ public final class CADViewportService {
         let desc = "\(typeStr) face\(zStr), \(sizeStr)mm"
 
         return PickedFaceInfo(
-            shape: faceShape,
-            uid: uid,
-            faceIndex: faceIndex,
+            ref: ref,
             bodyID: bodyID,
             isHorizontal: isHoriz,
             isVertical: isVert,
@@ -1969,7 +2193,7 @@ public final class CADViewportService {
             area: faceArea,
             description: desc,
             scalarValue: scalarValue(
-                forBody: bodyID, faceIndex: faceIndex, triangleIndex: triangleIndex)
+                forBody: bodyID, faceIndex: ref.ordinal, triangleIndex: triangleIndex)
         )
     }
 
@@ -1998,11 +2222,14 @@ public final class CADViewportService {
         else {
             return nil
         }
+        return enrichEdge(ref: ref, bodyID: bodyID)
+    }
 
-        let edgeShape = ref.shape
-        let edgeIndex = ref.ordinal
-        let uid = ref.uid
-        guard let edge = Edge(edgeShape) else { return nil }
+    /// The presentation half of an edge pick.
+    ///
+    /// See `enrichFace(ref:bodyID:triangleIndex:)`.
+    private func enrichEdge(ref: SubShapeRef, bodyID: String) -> PickedEdgeInfo? {
+        guard let edge = Edge(ref.shape) else { return nil }
 
         let endpoints = edge.endpoints
         let typeStr: String
@@ -2020,9 +2247,7 @@ public final class CADViewportService {
         let desc = "\(typeStr) edge, \(String(format: "%.1f", edge.length))mm"
 
         return PickedEdgeInfo(
-            shape: edgeShape,
-            uid: uid,
-            edgeIndex: edgeIndex,
+            ref: ref,
             bodyID: bodyID,
             curveType: edge.curveType,
             length: edge.length,
@@ -2060,26 +2285,30 @@ public final class CADViewportService {
         else {
             return nil
         }
-
-        let vertexShape = ref.shape
-        let vertexIndex = ref.ordinal
-        let uid = ref.uid
-
         // In range whenever the resolver returned a ref: it bounds `pointIndex` by the
         // `pointCount` passed above, which is this array's own count.
-        let renderPosition = body.vertices[pointIndex]
-        let position =
-            vertexShape.vertices().first
-            ?? SIMD3<Double>(
-                Double(renderPosition.x), Double(renderPosition.y), Double(renderPosition.z)
-            )
+        return enrichVertex(ref: ref, bodyID: bodyID, renderPosition: body.vertices[pointIndex])
+    }
+
+    /// The presentation half of a vertex pick.
+    ///
+    /// See `enrichFace(ref:bodyID:triangleIndex:)`.
+    ///
+    /// `renderPosition` is the rendered point the pick landed on, used only when the resolved
+    /// `Shape` yields no vertex of its own; `nil` for a vertex that did not come from a pick,
+    /// which then simply has no fallback.
+    private func enrichVertex(ref: SubShapeRef, bodyID: String, renderPosition: SIMD3<Float>?)
+        -> PickedVertexInfo?
+    {
+        let fallback = renderPosition.map {
+            SIMD3<Double>(Double($0.x), Double($0.y), Double($0.z))
+        }
+        guard let position = ref.shape.vertices().first ?? fallback else { return nil }
         let desc = String(
             format: "Vertex at (%.1f, %.1f, %.1f)mm", position.x, position.y, position.z)
 
         return PickedVertexInfo(
-            shape: vertexShape,
-            uid: uid,
-            vertexIndex: vertexIndex,
+            ref: ref,
             bodyID: bodyID,
             position: position,
             description: desc

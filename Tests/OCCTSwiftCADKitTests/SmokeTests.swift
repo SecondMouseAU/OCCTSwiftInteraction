@@ -868,11 +868,11 @@ struct SmokeTests {
         #expect(service.selected == nil, "more than one entity is selected")
     }
 
-    /// Regression for #29: `selectionSummary` reports sensible aggregates: count by kind,
+    /// Regression for #29: `selectionMeasurements` reports sensible aggregates: count by kind,
     /// total face area, total edge length, and combined bounds.
     @MainActor
-    @Test("selectionSummary reports sensible aggregates")
-    func selectionSummaryReportsAggregates() {
+    @Test("selectionMeasurements reports sensible aggregates")
+    func selectionMeasurementsReportsAggregates() {
         guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
             Issue.record("Shape.box returned nil")
             return
@@ -881,7 +881,7 @@ struct SmokeTests {
         service.selectionModes = [.face, .edge, .vertex]
         service.load(box, id: "box")
 
-        #expect(service.selectionSummary == nil, "empty selection has no summary")
+        #expect(service.selectionMeasurements == nil, "empty selection has no summary")
 
         guard let facePick = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
             Issue.record("resolveFacePick returned nil")
@@ -889,7 +889,7 @@ struct SmokeTests {
         }
         service.select(.face(facePick))
 
-        guard let summary1 = service.selectionSummary else {
+        guard let summary1 = service.selectionMeasurements else {
             Issue.record("expected a summary for a non-empty selection")
             return
         }
@@ -905,7 +905,7 @@ struct SmokeTests {
         }
         service.select(.edge(edgePick), scheme: .add)
 
-        guard let summary2 = service.selectionSummary else {
+        guard let summary2 = service.selectionMeasurements else {
             Issue.record("expected a summary after adding an edge")
             return
         }
@@ -921,11 +921,11 @@ struct SmokeTests {
     }
 
     /// Regression for #29 review: a vertex-only selection must produce a zero-size (but
-    /// non-nil) bounds: the "point" case the bounds math of `selectionSummary` has to
+    /// non-nil) bounds: the "point" case the bounds math of `selectionMeasurements` has to
     /// handle alongside faces/edges, which contribute a real extent.
     @MainActor
-    @Test("selectionSummary reports a zero-size bounds for a vertex-only selection")
-    func selectionSummaryVertexOnlyBounds() {
+    @Test("selectionMeasurements reports a zero-size bounds for a vertex-only selection")
+    func selectionMeasurementsVertexOnlyBounds() {
         guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
             Issue.record("Shape.box returned nil")
             return
@@ -940,7 +940,7 @@ struct SmokeTests {
         }
         service.select(.vertex(vertexPick))
 
-        guard let summary = service.selectionSummary, let bounds = summary.bounds else {
+        guard let summary = service.selectionMeasurements, let bounds = summary.bounds else {
             Issue.record("expected a summary with bounds for a vertex-only selection")
             return
         }

@@ -70,7 +70,7 @@ OCCTSwiftIO built clean with zero errors while carrying three real breaks in its
 Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
 published URLs. No binary lives in this repo.
 
-**Expected baseline: 330 tests across 28 suites, all passing.**
+**Expected baseline: 343 tests across 30 suites, all passing.**
 
 ## Face identity is `IsSame`, and that decision is settled
 
@@ -113,9 +113,45 @@ Three behaviours look like the resolver's job and are not, so they stayed where 
 Pulling any of them down would drag presentation and viewport state into the bridge layer, which is
 the thing this consolidation exists to prevent.
 
-Still outstanding from the same epic: the two parallel selection systems (`select`,
-`clearSelection`, `remove`, `removeAll` in both `OCCTSwiftAIS` and `OCCTSwiftCADKit`) are issue #3,
-and each remaining collision gets its own behaviour matrix before either copy is deleted.
+## One selection, held by `InteractiveContext`
+
+Phase 3 of ecosystem#43, done in
+[OCCTSwiftInteraction#3](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/3).
+
+`OCCTSwiftAIS.InteractiveContext.selection` is the only selection store in this package.
+`OCCTSwiftCADKit.CADViewportService` used to keep a second one alongside the context it already
+owned; it now drives that one and projects it:
+
+- `CADViewportService.selection` is `interactiveContext.selection` enriched into `PickedEntity`
+  values. Mirrored into stored state so SwiftUI observation fires, exactly as `bodies` mirrors
+  `interactiveContext.bodies`. Ordered by (body id, kind, ordinal), since the store is a `Set`.
+- `CADViewportService.selectionModes` **is** `interactiveContext.selectionMode`, not a copy.
+  Initialised to `[.face]` at `init`, overriding the context's `[.body]` default.
+- `select`, `clearSelection` and the selection pruning inside `remove`/`removeAll` all go
+  through the context.
+
+`InteractiveContext.select(_:scheme:)` gained the four-scheme parameter from CADKit's version.
+`select(_:)` is untouched and still means `.add`; the scheme parameter is deliberately not
+defaulted, because a default would silently retune every existing call site to `.replace`.
+
+What did **not** merge, and why:
+
+- **`PickedFaceInfo`/`PickedEdgeInfo`/`PickedVertexInfo` survive** as presentation types, now
+  storing a `SubShapeRef` and forwarding `shape`/`uid`/`ordinal` to it. Two of their fields
+  (`scalarValue` for a per-triangle field, `description`) cannot be recovered from a ref after
+  the fact.
+- **The highlight systems stay separate.** AIS paints `triangleStyles`; CADKit builds aggregate
+  highlight bodies. CADKit already uses `triangleStyles` for scalar fields, so they would
+  overwrite each other. That is also why CADKit's bodies are not registered as context entries.
+- **The clip-plane pre-filter stays in CADKit.** It tests the picked primitive's position, which
+  an AIS `SelectionFilter` (which sees a resolved `SubShape`) cannot express.
+- **`Axis` in both targets was never a collision**: AIS's is nested inside `ManipulatorWidget`.
+- **`SelectionSummary` was never a duplicate of OCCTSwiftUX's.** Different fields, different
+  inputs, no shared consumer, and OCCTSwiftUX does not depend on this package at all. Resolved
+  by naming: CADKit's is now `SelectionMeasurements`, with a deprecated alias.
+
+`ComesFromDecomposition` is settled and is **not** going on `SubShapeRef`: `SubShape` is a sum
+type, so `ref == nil` already is "whole body", and the resolver can never mint a whole-body ref.
 
 ## Where things are
 
@@ -127,7 +163,7 @@ Each module kept its own documentation through the merge rather than having it c
 | Getting started | none | [guide](docs/guides/getting-started-OCCTSwiftAIS.md) | [guide](docs/guides/getting-started-OCCTSwiftCADKit.md) |
 | Module notes | this file | [docs/module-notes/OCCTSwiftAIS.md](docs/module-notes/OCCTSwiftAIS.md) | [docs/module-notes/OCCTSwiftCADKit.md](docs/module-notes/OCCTSwiftCADKit.md) |
 | okf component | [okf/components/OCCTSwiftTools.md](okf/components/OCCTSwiftTools.md) | [okf/components/OCCTSwiftAIS.md](okf/components/OCCTSwiftAIS.md) | [okf/components/OCCTSwiftCADKit.md](okf/components/OCCTSwiftCADKit.md) |
-| Changelog | [docs/CHANGELOG-OCCTSwiftTools.md](docs/CHANGELOG-OCCTSwiftTools.md) | [docs/CHANGELOG-OCCTSwiftAIS.md](docs/CHANGELOG-OCCTSwiftAIS.md) | none |
+| Changelog | [docs/CHANGELOG-OCCTSwiftTools.md](docs/CHANGELOG-OCCTSwiftTools.md) | [docs/CHANGELOG-OCCTSwiftAIS.md](docs/CHANGELOG-OCCTSwiftAIS.md) | [docs/CHANGELOG-OCCTSwiftCADKit.md](docs/CHANGELOG-OCCTSwiftCADKit.md) |
 
 `docs/module-notes/*.md` are the pre-merge `CLAUDE.md` files kept verbatim. They still speak as
 though their module is its own repository; read them for module-specific traps, not for repo layout.
