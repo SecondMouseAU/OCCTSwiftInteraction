@@ -2,44 +2,74 @@
 type: repo
 title: OCCTSwiftInteraction
 resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction
-tags: [cad, occt, bridge, viewport, converters, swift, kernel]
+tags: [cad, occt, bridge, viewport, selection, picking, identity, swift, kernel]
 description: Identity, selection and the assembled CAD viewport service. One package vending three targets (OCCTSwiftTools, OCCTSwiftAIS, OCCTSwiftCADKit), merged from three repositories so the layers version and release together.
-timestamp: 2026-06-22
+timestamp: 2026-08-19
 ---
 
 # OCCTSwiftInteraction
 
-> The bridge layer of the ecosystem: it turns OCCTSwift geometry (`Shape`, `Curve2D`/`Curve3D`,
-> `Surface`, `Wire`, point sets) into renderable `ViewportBody` instances with triangulated meshes
-> and GPU pick metadata, and provides one-shot CAD file loaders. It is the only repo that depends
-> on **both** sibling kernels, keeping OCCTSwift and OCCTSwiftViewport decoupled from each other.
+> Everything between raw geometry and a user pointing at it. Turns OCCTSwift geometry into
+> renderable `ViewportBody` instances with GPU pick metadata, gives a picked ordinal a durable
+> topological identity, holds the selection state built on top of that, and assembles the whole
+> thing into a SwiftUI CAD viewport service.
 
 ## Role in the ecosystem
 
 - **Cluster:** kernel
 - **Depends on:**
-  [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep kernel, ≥ v3.0.0),
-  [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) (Metal renderer / `ViewportBody`, ≥ v1.1.20), and
-  [OCCTSwiftIO](https://github.com/SecondMouseAU/OCCTSwiftIO) (headless file I/O, ≥ v1.0.1).
-- **Feeds:** OCCTSwiftAIS (selection / manipulators / dimensions) and any app that needs to display
-  OCCTSwift geometry in the viewport. The two kernels stay decoupled because the bridge lives here.
+  [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep kernel, >= v3.0.0),
+  [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) (Metal renderer and
+  `ViewportBody`, >= v1.1.26), and
+  [OCCTSwiftIO](https://github.com/SecondMouseAU/OCCTSwiftIO) (headless file I/O, >= v1.7.8).
+- **Feeds:** OCCTSwiftUX, OCCTMCP, OCCTSwiftScripts, OCCTParts, PadCAM, OCCTDesignLoop, OCCTStudio.
+- The two kernels below stay decoupled because the bridge lives here: OCCTSwiftViewport carries no
+  OCCT dependency at all.
+
+## Three targets, one package
+
+This repository is the merge of three former ones (ecosystem#42). The module boundaries survive as
+SwiftPM targets, so the layering is still compiler-enforced; what went away is three version lines
+that only ever moved together, three release cuts in strict order, and three CI setups.
+
+| Target | Owns | UI framework |
+|---|---|---|
+| [OCCTSwiftTools](components/OCCTSwiftTools.md) | Shape to ViewportBody conversion, CAD file loading, and the `Face`/`Edge`/`VertexIdentityTable`s that mint durable topological identity | **none, and must stay that way** |
+| [OCCTSwiftAIS](components/OCCTSwiftAIS.md) | Selection state, modes, schemes, filters, area selection, manipulator widgets, dimension annotations. Modeled on OCCT's own `AIS_*` | SwiftUI |
+| [OCCTSwiftCADKit](components/OCCTSwiftCADKit.md) | The assembled CAD viewport service: import, picking, clipping, camera framing | SwiftUI |
+
+`OCCTSwiftTools` having no UI import is load-bearing rather than incidental. Headless consumers take
+that product alone, and SwiftPM compiles only the targets reachable from the products a consumer
+names, so a UI import there would cost every headless build.
 
 ## Components
 
-See [`components/`](components/index.md) for the public converter and loader surface
-(`CADFileLoader`, `ExportManager`, the per-domain converters, and the script-manifest types).
+See [`components/`](components/index.md) for the three per-target bundles.
 
 ## References
 
-See [`references/`](references/index.md) for the API spec, changelog, the Swift Package Index page,
-and OpenCASCADE upstream.
+See [`references/`](references/index.md).
 
 ## Notes
 
-- Public API surface and roadmap are documented in
-  [SPEC.md](https://github.com/SecondMouseAU/OCCTSwiftTools/blob/main/SPEC.md).
-- Platform floor is the higher of OCCTSwift's and OCCTSwiftViewport's (macOS 15 / iOS 18).
-- Published to the Swift Package Index via `.spi.yml`. LGPL-2.1 (matching OCCT).
+- Per-target specs: [OCCTSwiftTools](../docs/spec/OCCTSwiftTools.md),
+  [OCCTSwiftAIS](../docs/spec/OCCTSwiftAIS.md). OCCTSwiftCADKit has no spec.
+- Migration from the three old packages: [docs/MIGRATION.md](../docs/MIGRATION.md).
+- Platform floor is the higher of OCCTSwift's and OCCTSwiftViewport's (macOS 15 / iOS 18). The
+  `visionOS`/`tvOS` claim is inherited from the Tools and AIS manifests and is **unverified for the
+  CADKit target**; confirm or narrow before 1.0.0.
+- Version line starts at `0.x`, reaching `1.0.0` once the picking consolidation (ecosystem#43) has
+  landed. The three old version lines do not continue here.
+- LGPL-2.1, matching OCCT.
+
+## Known open work
+
+- **Picking is resolved in more than one place** across these targets and across the wider fleet
+  (ecosystem#43). Four implementations exist, and two have already diverged. Read that issue before
+  writing anything that maps a `PickResult` to topology.
+- **`InteractiveContextMutationTests` fails 5 assertions**
+  ([#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1)), inherited from before the
+  merge. Do not fix it by relaxing the assertions.
 
 ## Policies
 
