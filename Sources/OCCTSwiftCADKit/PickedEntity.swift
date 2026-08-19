@@ -1,12 +1,19 @@
 import Foundation
 import OCCTSwift
+import OCCTSwiftTools
 import simd
 
 /// A pick result, generalised over which kind of sub-shape was hit.
 ///
-/// Face picks carry the existing `PickedFaceInfo`; edge and vertex picks carry their own info
-/// types alongside it, all sharing the same durable-identity shape (`shape`/`uid`, plus an
-/// ephemeral render-path ordinal) established for faces in `PickedFaceInfo`.
+/// The presentation half of a selection: each case wraps an `OCCTSwiftTools.SubShapeRef`
+/// (the identity, minted by `SubShapePickResolver`) together with the geometry
+/// `CADViewportService` reads off it for display. The selection *state* itself lives in
+/// `OCCTSwiftAIS.InteractiveContext` as `SubShape` values; see `CADViewportService.selection`.
+///
+/// There is deliberately no `.body` case. Whole-body selection is a `SubShape.body` in the
+/// interactive context, where AIS's whole-body fallback and its body-level highlight already
+/// live; this enum names the sub-shape kinds this service enriches. See the bakeoff on
+/// OCCTSwiftInteraction#3.
 public enum PickedEntity: Sendable, Equatable {
     case face(PickedFaceInfo)
     case edge(PickedEdgeInfo)
@@ -23,28 +30,46 @@ public enum PickedEntity: Sendable, Equatable {
         case .vertex(let info): return info.bodyID
         }
     }
+
+    /// The identity half of this pick.
+    ///
+    /// The same value the `OCCTSwiftAIS` selection state holds for it.
+    public var ref: SubShapeRef {
+        switch self {
+        case .face(let info): return info.ref
+        case .edge(let info): return info.ref
+        case .vertex(let info): return info.ref
+        }
+    }
 }
 
 /// Information about an edge picked in the viewport.
 ///
-/// `shape` and `uid` are the durable identity of the pick, captured at pick time from the
-/// picked body's `EdgeIdentityTable`. `edgeIndex` is the ephemeral render-path ordinal,
-/// valid only against the `ViewportBody`/`edgeIndices` it was minted from.
+/// A presentation type built from `OCCTSwiftTools.SubShapeRef`, exactly like `PickedFaceInfo`:
+/// `ref` is the identity, captured at pick time from the picked body's `EdgeIdentityTable`, and
+/// the rest is enrichment. `edgeIndex` is the ephemeral render-path ordinal, valid only against
+/// the `ViewportBody`/`edgeIndices` it was minted from.
 public struct PickedEdgeInfo: Sendable {
+    /// The identity of this pick.
+    ///
+    /// See `PickedFaceInfo.ref`.
+    public let ref: SubShapeRef
+
     /// The picked edge, as the exact `Shape` (wrapping a `TopoDS_Edge`) it was extracted from.
     ///
     /// Construct an `Edge` from it (`Edge(shape)`) for edge-specific queries.
-    public let shape: OCCTSwift.Shape
+    public var shape: OCCTSwift.Shape { ref.shape }
 
     /// Durable handle into the picked body's `BRepGraph`, when the graph was available at
     /// pick time. `nil` if graph construction failed for this body.
-    public let uid: BRepGraph.GraphUID?
+    public var uid: BRepGraph.GraphUID? { ref.uid }
 
     /// Render-path ordinal into this body's `edgeIndices`.
     ///
     /// Ephemeral: do not use it to re-derive the edge via `loadedShape.edges()[edgeIndex]`;
     /// use `shape` instead.
-    public let edgeIndex: Int
+    public var edgeIndex: Int { ref.ordinal }
+
     public let bodyID: String
     public let curveType: OCCTSwift.Edge.CurveType
     public let length: Double
@@ -52,6 +77,25 @@ public struct PickedEdgeInfo: Sendable {
     public let endPoint: SIMD3<Double>
     public let description: String
 
+    public init(
+        ref: SubShapeRef,
+        bodyID: String,
+        curveType: OCCTSwift.Edge.CurveType,
+        length: Double,
+        startPoint: SIMD3<Double>,
+        endPoint: SIMD3<Double>,
+        description: String
+    ) {
+        self.ref = ref
+        self.bodyID = bodyID
+        self.curveType = curveType
+        self.length = length
+        self.startPoint = startPoint
+        self.endPoint = endPoint
+        self.description = description
+    }
+
+    /// Source-compatible convenience for the pre-OCCTSwiftInteraction#3 shape of this type.
     public init(
         shape: OCCTSwift.Shape,
         uid: BRepGraph.GraphUID? = nil,
@@ -63,55 +107,70 @@ public struct PickedEdgeInfo: Sendable {
         endPoint: SIMD3<Double>,
         description: String
     ) {
-        self.shape = shape
-        self.uid = uid
-        self.edgeIndex = edgeIndex
-        self.bodyID = bodyID
-        self.curveType = curveType
-        self.length = length
-        self.startPoint = startPoint
-        self.endPoint = endPoint
-        self.description = description
+        self.init(
+            ref: SubShapeRef(shape: shape, uid: uid, ordinal: edgeIndex),
+            bodyID: bodyID,
+            curveType: curveType,
+            length: length,
+            startPoint: startPoint,
+            endPoint: endPoint,
+            description: description
+        )
     }
 }
 
 extension PickedEdgeInfo: Equatable {
-    /// Hand-written for the same reason as `PickedFaceInfo.==`: `Shape` has no usable
-    /// `Equatable`, and `uid` (when present on both sides) is authoritative over the
-    /// ephemeral ordinal.
+    /// Hand-written for the same reason as `PickedFaceInfo.==`, and by the same rule.
     public static func == (lhs: PickedEdgeInfo, rhs: PickedEdgeInfo) -> Bool {
-        switch (lhs.uid, rhs.uid) {
-        case (let l?, let r?): return l == r
-        case (nil, nil): return lhs.edgeIndex == rhs.edgeIndex && lhs.bodyID == rhs.bodyID
-        default: return false
-        }
+        isSamePick(lhs.ref, lhs.bodyID, rhs.ref, rhs.bodyID)
     }
 }
 
 /// Information about a vertex picked in the viewport.
 ///
-/// `shape` and `uid` are the durable identity of the pick, captured at pick time from the
-/// picked body's `VertexIdentityTable`. `vertexIndex` is the ephemeral render-path ordinal,
-/// valid only against the `ViewportBody`/`vertexIndices` it was minted from.
+/// A presentation type built from `OCCTSwiftTools.SubShapeRef`, exactly like `PickedFaceInfo`:
+/// `ref` is the identity, captured at pick time from the picked body's `VertexIdentityTable`.
+/// `vertexIndex` is the ephemeral render-path ordinal, valid only against the
+/// `ViewportBody`/`vertexIndices` it was minted from.
 public struct PickedVertexInfo: Sendable {
-    /// The picked vertex, as the exact `Shape` (wrapping a `TopoDS_Vertex`) it was extracted from.
+    /// The identity of this pick.
+    ///
+    /// See `PickedFaceInfo.ref`.
+    public let ref: SubShapeRef
+
+    /// The picked vertex, as the exact `Shape` (wrapping a `TopoDS_Vertex`) it was extracted
+    /// from.
     ///
     /// OCCTSwift exposes vertices positionally rather than as their own class: use
     /// `position`, or `shape.vertices().first`, for its world-space location.
-    public let shape: OCCTSwift.Shape
+    public var shape: OCCTSwift.Shape { ref.shape }
 
     /// Durable handle into the picked body's `BRepGraph`, when the graph was available at
     /// pick time. `nil` if graph construction failed for this body.
-    public let uid: BRepGraph.GraphUID?
+    public var uid: BRepGraph.GraphUID? { ref.uid }
 
     /// Render-path ordinal into this body's `vertexIndices`.
     ///
     /// Ephemeral.
-    public let vertexIndex: Int
+    public var vertexIndex: Int { ref.ordinal }
+
     public let bodyID: String
     public let position: SIMD3<Double>
     public let description: String
 
+    public init(
+        ref: SubShapeRef,
+        bodyID: String,
+        position: SIMD3<Double>,
+        description: String
+    ) {
+        self.ref = ref
+        self.bodyID = bodyID
+        self.position = position
+        self.description = description
+    }
+
+    /// Source-compatible convenience for the pre-OCCTSwiftInteraction#3 shape of this type.
     public init(
         shape: OCCTSwift.Shape,
         uid: BRepGraph.GraphUID? = nil,
@@ -120,21 +179,18 @@ public struct PickedVertexInfo: Sendable {
         position: SIMD3<Double>,
         description: String
     ) {
-        self.shape = shape
-        self.uid = uid
-        self.vertexIndex = vertexIndex
-        self.bodyID = bodyID
-        self.position = position
-        self.description = description
+        self.init(
+            ref: SubShapeRef(shape: shape, uid: uid, ordinal: vertexIndex),
+            bodyID: bodyID,
+            position: position,
+            description: description
+        )
     }
 }
 
 extension PickedVertexInfo: Equatable {
+    /// Hand-written for the same reason as `PickedFaceInfo.==`, and by the same rule.
     public static func == (lhs: PickedVertexInfo, rhs: PickedVertexInfo) -> Bool {
-        switch (lhs.uid, rhs.uid) {
-        case (let l?, let r?): return l == r
-        case (nil, nil): return lhs.vertexIndex == rhs.vertexIndex && lhs.bodyID == rhs.bodyID
-        default: return false
-        }
+        isSamePick(lhs.ref, lhs.bodyID, rhs.ref, rhs.bodyID)
     }
 }

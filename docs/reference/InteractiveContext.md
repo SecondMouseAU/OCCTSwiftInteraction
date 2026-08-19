@@ -5,7 +5,7 @@ parent: API Reference
 
 # InteractiveContext
 
-The per-scene interactive state object — one `InteractiveContext` to one `ViewportController`. It owns
+The per-scene interactive state object, one `InteractiveContext` to one `ViewportController`. It owns
 the array of `ViewportBody`s rendered by `MetalViewportView`, the current selection / hover, the
 presentation styles, and the dimension registry. `@MainActor`, `ObservableObject`.
 
@@ -21,7 +21,7 @@ Bind it via `MetalViewportView(controller: ctx.viewport, bodies: $ctx.bodies)` w
 
 ## Topics
 
-- [Published properties](#published-properties) · [display(_:style:)](#display_style) · [update(_:to:absorbing:operationName:)](#update_toabsorbingoperationname) · [remove(_:)](#remove_) · [removeAll()](#removeall) · [Selection mutation](#selection-mutation) · [Selection filters](#selection-filters) · [Area selection](#area-selection) · [setStyle(_:for:)](#setstyle_for) · [setHighlightStyle(_:)](#sethighlightstyle_) · [add(_:)](#add_) · [remove(_:)-dimension](#remove_-dimension) · [dimensions](#dimensions) · [refreshDimensionMeasurement(_:)](#refreshdimensionmeasurement_) · [remap(_:using:rebindingTo:)](#remap_usingrebindingto) · [isDeleted(_:in:)](#isdeleted_in)
+- [Published properties](#published-properties) · [display(_:style:)](#display_style) · [update(_:to:absorbing:operationName:)](#update_toabsorbingoperationname) · [remove(_:)](#remove_) · [removeAll()](#removeall) · [Selection mutation](#selection-mutation) · [displaysBody(withID:)](#displaysbodywithid) · [Selection filters](#selection-filters) · [Area selection](#area-selection) · [setStyle(_:for:)](#setstyle_for) · [setHighlightStyle(_:)](#sethighlightstyle_) · [add(_:)](#add_) · [remove(_:)-dimension](#remove_-dimension) · [dimensions](#dimensions) · [refreshDimensionMeasurement(_:)](#refreshdimensionmeasurement_) · [remap(_:using:rebindingTo:)](#remap_usingrebindingto) · [isDeleted(_:in:)](#isdeleted_in)
 
 ---
 
@@ -36,12 +36,12 @@ public let viewport: ViewportController
 public var highlightStyle: HighlightStyle                        // default .default
 ```
 
-- `bodies` — the bodies fed to `MetalViewportView`; bind via `$bodies`.
-- `selectionMode` — what kinds of pick produce a selection. **Changing it clears the current
+- `bodies`: the bodies fed to `MetalViewportView`; bind via `$bodies`.
+- `selectionMode`: what kinds of pick produce a selection. **Changing it clears the current
   selection.**
-- `selection` — the current selection (read-only; mutate via `select` / `deselect` / `clearSelection`
+- `selection`: the current selection (read-only; mutate via `select` / `deselect` / `clearSelection`
   or a pick). Observable.
-- `hover` — the currently hovered sub-shape (body granularity today), or `nil`.
+- `hover`: the currently hovered sub-shape (body granularity today), or `nil`.
 - **Example:**
 
 ```swift
@@ -62,7 +62,7 @@ Display a shape with topology-aware selection enabled. Tessellates the `Shape`, 
 public func display(_ shape: Shape, style: PresentationStyle = .default) -> InteractiveObject
 ```
 
-- **Parameters:** `shape` — the OCCTSwift `Shape`; `style` — initial presentation style.
+- **Parameters:** `shape`: the OCCTSwift `Shape`; `style`: initial presentation style.
 - **Returns:** the `InteractiveObject` scene handle.
 - **Example:**
 
@@ -71,17 +71,17 @@ let part = ais.display(Shape.box(width: 10, height: 5, depth: 3)!,
                        style: .highlighted)
 ```
 
-`display` also builds a `BRepGraph` from `shape` and retains it for the object's lifetime — see
+`display` also builds a `BRepGraph` from `shape` and retains it for the object's lifetime, see
 `update(_:to:absorbing:operationName:)`, below, for what that's for.
 
 ---
 
 ## update(_:to:absorbing:operationName:)
 
-Update a displayed object after a modelling operation that rebuilds its shape — a boolean, a fillet, a
+Update a displayed object after a modelling operation that rebuilds its shape, a boolean, a fillet, a
 chamfer, anything produced via one of OCCTSwift's `*WithFullHistory` methods run against `object.shape`.
 Absorbs the operation's history into the object's living `BRepGraph` (built once in `display`,
-retained across every subsequent `update` call — the input and result share one graph instance, so
+retained across every subsequent `update` call, the input and result share one graph instance, so
 every `SubShapeRef.uid` already held stays resolvable), rebuilds the displayed mesh, and remaps any
 current `selection` / `hover` sub-shapes referencing `object` forward via `remap(_:using:rebindingTo:)`.
 
@@ -95,11 +95,11 @@ public func update(
 ) -> InteractiveObject?
 ```
 
-- **Parameters:** `object` — the currently-displayed object being mutated; `newShape` — the operation's
-  result; `history` — the handle returned alongside it by any `*WithFullHistory` method; `operationName`
-  — a label recorded on every emitted history record.
+- **Parameters:** `object`: the currently-displayed object being mutated; `newShape`: the operation's
+  result; `history`: the handle returned alongside it by any `*WithFullHistory` method;
+  `operationName`: a label recorded on every emitted history record.
 - **Returns:** the updated `InteractiveObject` (same `id`, new `shape`), or `nil` if `object` isn't
-  displayed, has no living graph (construction failed at `display` time), or the absorb fails — in any
+  displayed, has no living graph (construction failed at `display` time), or the absorb fails, in any
   of those cases, `remove` and `display` fresh, accepting that the selection doesn't survive.
 - **Example:**
 
@@ -149,10 +149,18 @@ ais.removeAll()
 Add, remove, or clear sub-shapes. `select` / `deselect` use `Set` semantics (idempotent).
 
 ```swift
-public func select(_ subshape: SubShape)
-public func deselect(_ subshape: SubShape)
+public func select(_ subshape: SubShape)                            // == scheme: .add
+public func select(_ subshape: SubShape, scheme: SelectionScheme)
+public func deselect(_ subshape: SubShape)                          // == scheme: .remove
 public func clearSelection()
 ```
+
+- **`scheme`**: `.replace` assigns, `.add` inserts if absent, `.remove` drops it, `.xor` toggles
+  it. The same `SelectionScheme` semantics `selectRectangle` / `selectPolygon` use over a whole
+  match set.
+- **No default value on `scheme`**, deliberately. Defaulting it to `.replace` would silently
+  retune every existing `select(x)` call site from add to replace; `select(_:)` keeps its
+  original meaning and forwards to `.add`.
 
 - **Example:**
 
@@ -162,11 +170,32 @@ let face2 = part.shape.subShape(type: .face, index: 2)!
 ais.select(.face(part, ref: SubShapeRef(shape: face0, ordinal: 0)))   // additive
 ais.select(.face(part, ref: SubShapeRef(shape: face2, ordinal: 2)))
 ais.deselect(.face(part, ref: SubShapeRef(shape: face0, ordinal: 0)))
+ais.select(.face(part, ref: SubShapeRef(shape: face2, ordinal: 2)), scheme: .replace)
 ais.clearSelection()
 ```
 
-In practice most selections come from a pick — `handlePick` mints the `SubShapeRef` (uid included)
+In practice most selections come from a pick, `handlePick` mints the `SubShapeRef` (uid included)
 for you.
+
+**This is the package's only selection store.** `OCCTSwiftCADKit.CADViewportService` drives it
+rather than keeping one of its own (OCCTSwiftInteraction#3): its `selection` is this one
+projected into `PickedEntity` values, and its `selectionModes` **is** `selectionMode`. Mutating
+either side is visible from the other.
+
+---
+
+## displaysBody(withID:)
+
+```swift
+public func displaysBody(withID bodyID: String) -> Bool
+```
+
+Whether `bodyID` names a body this context displays as a selectable `InteractiveObject`, that is,
+one added via `display(_:style:)`. False for internal bodies (manipulator handles, dimensions),
+which are not selectable objects, and for bodies a host composited into `bodies` itself.
+
+For a host that shares this context's selection and clears it on an unresolved pick, this is the
+check that stops it from wiping a selection it never owned.
 
 ---
 
@@ -183,7 +212,7 @@ public func removeFilter(_ filter: any SelectionFilter)   // by reference identi
 public func removeAllFilters()
 ```
 
-- Installed filters combine with **AND** (a deliberate departure from OCCT's OR — see
+- Installed filters combine with **AND** (a deliberate departure from OCCT's OR, see
   [Selection Filters](SelectionFilters.md) for the rationale). Never gates programmatic `select(_:)`.
 - **Example:**
 
@@ -196,7 +225,7 @@ ais.removeAllFilters()
 
 ## Area selection
 
-Rectangle and lasso selection over a screen-space region — honours `selectionMode` and installed
+Rectangle and lasso selection over a screen-space region, honours `selectionMode` and installed
 `filters` exactly like a point pick. See [Area Selection](AreaSelection.md) for `AreaSelectionMode`,
 `SelectionScheme`, and the SwiftUI gesture integration (`AreaSelectionController`,
 `.attachAreaSelection(_:)`).
@@ -224,7 +253,7 @@ ais.selectRectangle(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 400, y: 300),
 
 ## setStyle(_:for:)
 
-Restyle a displayed object in place — updates the underlying `ViewportBody`'s color and visibility.
+Restyle a displayed object in place, updates the underlying `ViewportBody`'s color and visibility.
 
 ```swift
 public func setStyle(_ style: PresentationStyle, for object: InteractiveObject)
@@ -337,7 +366,7 @@ ais.refreshDimensionMeasurement(lin)
 Remap a `Selection` whose sub-shapes were captured against an earlier shape state into a new
 `Selection` against `newObject`, using history absorbed into `graph` via
 `BRepGraph.add(_:absorbing:inputRoots:operationName:)`. This is the lower-level primitive
-`update(_:to:absorbing:operationName:)` calls internally — reach for it directly only if you're
+`update(_:to:absorbing:operationName:)` calls internally, reach for it directly only if you're
 managing the `BRepGraph` yourself rather than going through `update`.
 
 ```swift
@@ -348,12 +377,12 @@ public func remap(
 ) -> Selection
 ```
 
-- **Parameters:** `selection` — the pre-mutation selection; `graph` — the `BRepGraph` that absorbed
-  the operation's history (input and result must share this one instance); `newObject` — the
+- **Parameters:** `selection`: the pre-mutation selection; `graph`: the `BRepGraph` that absorbed
+  the operation's history (input and result must share this one instance); `newObject`: the
   post-mutation scene object the result references.
-- **Returns:** a `Selection` against `newObject`, resolved through each sub-shape's `SubShapeRef.uid` —
+- **Returns:** a `Selection` against `newObject`, resolved through each sub-shape's `SubShapeRef.uid`,
   never a stored index. `1 → 1` (modified in place) keeps the same node re-resolved to a fresh uid;
-  `1 → N` (e.g. a face split by a cut) expands into N entries; `1 → 0` (deleted) is dropped — see
+  `1 → N` (e.g. a face split by a cut) expands into N entries; `1 → 0` (deleted) is dropped, see
   `isDeleted(_:in:)`. A sub-shape with no `uid` is dropped: there's nothing durable to resolve it by.
   `.body(_)` always rebinds to `newObject`.
 - **Example:**
@@ -367,7 +396,7 @@ for sub in remapped.subshapes { ais.select(sub) }
 
 ## isDeleted(_:in:)
 
-Whether a sub-shape's durable node was explicitly consumed by history absorbed into `graph` — as
+Whether a sub-shape's durable node was explicitly consumed by history absorbed into `graph`: as
 opposed to simply never being mentioned by any recorded operation. `remap`'s silent drop can't tell
 these apart on its own; both look like "absent from the result."
 
@@ -376,7 +405,7 @@ public func isDeleted(_ subshape: SubShape, in graph: BRepGraph) -> Bool
 ```
 
 - **Returns:** `false` for `.body` sub-shapes, and for any sub-shape with no `uid` or whose `uid` isn't
-  `graph`'s own — there's no node in `graph` to ask about.
+  `graph`'s own, there's no node in `graph` to ask about.
 - **Example:**
 
 ```swift

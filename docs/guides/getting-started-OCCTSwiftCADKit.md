@@ -62,7 +62,7 @@ display-mode / standard-view controls (bottom-trailing) built in.
 single-shape convenience: each **replaces** every other model body. For loading several
 parts or an assembly side by side, see [§4](#4-multi-body-and-assembly-loading-optional).
 
-Call `loadFile(from:)` with a file URL — the extension picks the format
+Call `loadFile(from:)` with a file URL, the extension picks the format
 (`.step`/`.stp`, `.stl`, `.brep`). The camera auto-focuses on the loaded shape. Run it
 from `.task` or a button action.
 
@@ -97,7 +97,7 @@ struct CADScreen: View {
 ### Importing from a file picker (iOS)
 
 When you only have `Data` (from `.fileImporter` or drag-and-drop), use
-`loadFromData(_:filename:)` — the filename's extension drives format detection.
+`loadFromData(_:filename:)`: the filename's extension drives format detection.
 
 ```swift
 .fileImporter(isPresented: $showImporter, allowedContentTypes: [.data]) { result in
@@ -121,8 +121,8 @@ viewport.loadShape(box, id: "model")
 
 ## 4. Multi-body and assembly loading (optional)
 
-`load(_:id:transform:)` and `loadFile(from:id:progress:)` display several parts — or
-several of an assembly's occurrences — as distinct, addressable **entities**, coexisting
+`load(_:id:transform:)` and `loadFile(from:id:progress:)` display several parts, or
+several of an assembly's occurrences, as distinct, addressable **entities**, coexisting
 rather than replacing one another. Unlike the deprecated single-shape overloads, camera
 focus is *not* automatic; call `focus(on:)` once you've loaded what should be visible.
 
@@ -132,7 +132,7 @@ viewport.load(coverShape, id: "cover", transform: [
     1, 0, 0,
     0, 1, 0,
     0, 0, 1,
-    0, 0, 45,       // 45mm along Z — a rigid 12-element affine matrix:
+    0, 0, 45,       // 45mm along Z, a rigid 12-element affine matrix:
 ])                  // 9 rotation elements (row-major 3x3), then translation.
 viewport.focus(on: ["housing", "cover"])
 ```
@@ -165,7 +165,7 @@ for hit in viewport.selection {
 }
 ```
 
-The multi-entity API and the deprecated single-shape overloads are safe to mix — they
+The multi-entity API and the deprecated single-shape overloads are safe to mix, they
 share one internal entity registry, so `loadShape(_:id:)`/`loadFile(from:progress:)`
 (which still replace every model body) register what they load there too, and
 `loadedShapes`/`visibility`/`removeAll()`/`entityID(forBodyID:)` all see it. `loadedShape`
@@ -174,25 +174,31 @@ was loaded.
 
 ### Memory behavior
 
-Each occurrence loaded via `load(_:id:transform:)` is tessellated independently — v1 does
+Each occurrence loaded via `load(_:id:transform:)` is tessellated independently, v1 does
 not deduplicate geometry across repeated instances of the same underlying part (an
 assembly's "product and occurrence" model, where placement lives on the occurrence and
 definitions are shared, is not implemented). Measured on this machine: loading 1245
-occurrences of a plain 10×8×6mm box (a synthetic proxy — not the actual reference
+occurrences of a plain 10×8×6mm box (a synthetic proxy, not the actual reference
 corpus's own geometry, which is more complex) cost **~646 MB** resident memory, about
 0.52 MB/occurrence. Real parts with more complex geometry (fillets, holes, threads) will
 cost more per occurrence than this proxy. For an assembly with many repeated instances of
 a small number of unique products, sharing tessellated geometry across occurrences of the
-same product would very likely reduce memory substantially — worth a follow-up if
+same product would very likely reduce memory substantially, worth a follow-up if
 per-occurrence memory becomes a real constraint at your assembly's scale.
 
 ## 5. Handle a pick
 
 Face picking is enabled by default. When the user taps a face, the service updates its
-`selection` property (`[PickedEntity]`) — a real viewport pick always replaces the whole
+`selection` property (`[PickedEntity]`), a real viewport pick always replaces the whole
 selection with the one entity hit, so `selection` is `[.face(PickedFaceInfo)]` for a
 single face pick. Because `CADViewportService` is `@Observable`, read `selection` directly
 in your view to react.
+
+`selection` is a projection of `viewport.interactiveContext.selection`, not a second
+selection: since OCCTSwiftInteraction#3 this service drives the interactive context's
+selection rather than running one alongside it. A pick on empty space clears that shared
+selection; a pick on a body the interactive context displays itself is left for the
+context to resolve.
 
 ```swift
 struct CADScreen: View {
@@ -221,8 +227,8 @@ struct CADScreen: View {
 ```
 
 The picked entity is highlighted in the viewport automatically. To do further geometric
-analysis, construct a `Face` from `face.shape` — the durable identity captured at pick
-time — rather than re-deriving it from `face.faceIndex`:
+analysis, construct a `Face` from `face.shape`: the durable identity captured at pick
+time, rather than re-deriving it from `face.faceIndex`:
 
 ```swift
 if case .face(let face)? = viewport.selection.first, let occtFace = Face(face.shape) {
@@ -230,19 +236,19 @@ if case .face(let face)? = viewport.selection.first, let occtFace = Face(face.sh
 }
 ```
 
-`face.faceIndex` is the ephemeral render-path ordinal the pick came from — valid only
+`face.faceIndex` is the ephemeral render-path ordinal the pick came from, valid only
 against that body's own tessellation. Don't use it to subscript
 `loadedShape.faces()[face.faceIndex]`: once a face is shared between two shells, that
 enumeration counts the shared face once per shell, so the same ordinal can name a
 different face than the one actually picked. `face.uid` additionally carries a durable
-`BRepGraph.GraphUID` when a graph was available at pick time — the handle that survives
+`BRepGraph.GraphUID` when a graph was available at pick time, the handle that survives
 a later mutation an ordinal alone does not.
 
 <!-- 3D render TODO: viewport with a picked face highlighted and the selection banner -->
 
 `selectedFace: PickedFaceInfo?` and `selected: PickedEntity?` still work as deprecated
-conveniences — each non-nil only when the selection is exactly one entity (and, for
-`selectedFace`, only when that entity is a face) — for callers not yet migrated to
+conveniences, each non-nil only when the selection is exactly one entity (and, for
+`selectedFace`, only when that entity is a face), for callers not yet migrated to
 `selection`.
 
 ## 6. Edge and vertex picking (optional)
@@ -273,13 +279,20 @@ for entity in viewport.selection {
 
 A body whose `ViewportBody` has no `edgeIndices`/`vertices` populated (not edge/vertex
 pickable, e.g. a loose mesh with no recovered solid) simply never produces an edge/vertex
-pick on that body — face picking on the same body is unaffected. `selectionModes` also
+pick on that body, face picking on the same body is unaffected. `selectionModes` also
 gates face picking itself; remove `.face` to disable it.
 
-`SelectionMode` is `OCCTSwiftAIS.SelectionMode` — the same type
-`InteractiveContext.selectionMode` uses — but `CADViewportService.selectionModes` is an
-entirely separate, independent selection system: the two don't share state, and
-`SelectionMode.body` has no effect here (there's no whole-body `PickedEntity` case).
+`selectionModes` **is** `interactiveContext.selectionMode`, not a copy of it: it is the
+same `OCCTSwiftAIS.SelectionMode` set, and reading or writing either reads or writes the
+other. `CADViewportService` initialises it to `[.face]`, overriding the interactive
+context's own `[.body]` default. Assigning a different set clears the selection, which is
+the interactive context's documented behaviour for `selectionMode`.
+
+`SelectionMode.body` selects a `SubShape.body` in the interactive context, for objects
+displayed there directly via `interactiveContext.display(_:style:)`. It produces no
+`PickedEntity`, because there is no whole-body case: read
+`viewport.interactiveContext.selection` for those. `viewport.selection` is the sub-shape
+projection.
 
 ## 7. Multi-selection (optional)
 
@@ -287,24 +300,30 @@ A real viewport pick always replaces the whole `selection` (see [§5](#5-handle-
 Build a multi-selection programmatically with `select(_:scheme:)`:
 
 ```swift
-viewport.select(faceA)                       // .replace (default) — selection = [faceA]
+viewport.select(faceA)                       // .replace (default), selection = [faceA]
 viewport.select(faceB, scheme: .add)         // selection = [faceA, faceB]
 viewport.select(faceA, scheme: .remove)      // selection = [faceB]
-viewport.select(faceB, scheme: .xor)         // toggles faceB off — selection = []
+viewport.select(faceB, scheme: .xor)         // toggles faceB off, selection = []
 ```
 
-`SelectionScheme` is `OCCTSwiftAIS.SelectionScheme` (`.replace`/`.add`/`.remove`/`.xor`) —
+`SelectionScheme` is `OCCTSwiftAIS.SelectionScheme` (`.replace`/`.add`/`.remove`/`.xor`),
 the same combination semantics `selectRectangle`/`selectPolygon` area selection uses on
-the AIS side. Membership follows `PickedEntity`'s own durable-identity `Equatable` (`uid`
-when both sides have one), so the same face/edge/vertex is recognized as already-selected
-even if it was picked at a different ephemeral ordinal.
+the AIS side. `select(_:scheme:)` delegates to `interactiveContext.select(_:scheme:)`,
+which holds the selection. Membership follows `SubShapeRef`'s own durable-identity rule
+(`uid` when both sides have one, else the ordinal plus the body), so the same
+face/edge/vertex is recognized as already-selected even if it was picked at a different
+ephemeral ordinal.
 
-Every selected entity is highlighted — a translucent yellow triangle patch aggregating
+`viewport.selection` is ordered by (body id, kind, ordinal) rather than by when each entry
+was selected: the underlying store is a `Set<SubShape>`, so there is no insertion order
+left to preserve.
+
+Every selected entity is highlighted, a translucent yellow triangle patch aggregating
 every selected face, a bright cyan polyline aggregating every selected edge's segments, a
 bright magenta point sprite per selected vertex.
 
 ```swift
-if let summary = viewport.selectionSummary {
+if let summary = viewport.selectionMeasurements {
     print(summary.faceCount, summary.edgeCount, summary.vertexCount)
     print(summary.totalArea, summary.totalLength)   // sums over selected faces/edges
     print(summary.bounds)                            // combined ShapeBounds, or nil
@@ -320,8 +339,8 @@ single-selection conveniences.
 
 ## 8. Overlays (optional)
 
-Anything that isn't part of the imported model — stock boxes, toolpaths, flat-pattern
-outlines, annotations — goes through named overlay layers. They composite with the model
+Anything that isn't part of the imported model, stock boxes, toolpaths, flat-pattern
+outlines, annotations, goes through named overlay layers. They composite with the model
 and selection on every rebuild, in ascending `id` order.
 
 ```swift
@@ -333,8 +352,8 @@ viewport.clearAllOverlays()
 
 ## 9. Scalar field display (optional)
 
-Paint a scalar value over a loaded body — deviation, curvature, wall thickness, confidence,
-anything indexed by face or triangle — with `setScalarField(_:forBody:)`:
+Paint a scalar value over a loaded body, deviation, curvature, wall thickness, confidence,
+anything indexed by face or triangle, with `setScalarField(_:forBody:)`:
 
 ```swift
 let deviationField = ScalarField(
@@ -348,12 +367,12 @@ let deviationField = ScalarField(
 viewport.setScalarField(deviationField, forBody: "candidate")
 ```
 
-Updating or clearing a field (`setScalarField(nil, forBody:)`) rebuilds that body — its
+Updating or clearing a field (`setScalarField(nil, forBody:)`) rebuilds that body, its
 geometry is unchanged, but currently this does re-upload the whole body, not just the
 style buffer. That's a deliberate workaround, not the design: `OCCTSwiftViewport`'s own
 `ViewportBody.triangleStyles` is documented to support a cheap in-place mutation instead,
 but this was empirically confirmed (rendering before/after and comparing pixels) to
-silently not update an already-rendered body against its currently-pinned floor — the
+silently not update an already-rendered body against its currently-pinned floor, the
 renderer only rebuilds GPU buffers when a body's `generation` changes, and an in-place
 mutation never changes it. Once that's fixed upstream, this can switch back to the cheap
 path with no change to `setScalarField`'s own signature.
@@ -362,12 +381,12 @@ path with no change to `setScalarField`'s own signature.
 
 ```swift
 .viridis, .magma, .turbo              // sequential ramps for an unsigned magnitude
-.diverging(center: 0)                 // two-sided ramp — use for signed deviation
+.diverging(center: 0)                 // two-sided ramp, use for signed deviation
 .threshold(levels: [0.5, 1.0])        // discrete pass/warn/fail bands
 .custom([(0.0, blue), (2.0, red)])    // explicit (value, color) stops, linearly interpolated
 ```
 
-A face pick reports its scalar value directly — no separate lookup needed:
+A face pick reports its scalar value directly, no separate lookup needed:
 
 ```swift
 if case .face(let face)? = viewport.selection.first, viewport.selection.count == 1 {
@@ -377,7 +396,7 @@ if case .face(let face)? = viewport.selection.first, viewport.selection.count ==
 }
 ```
 
-The legend is part of the feature, not a nicety — read it to render a color bar with real
+The legend is part of the feature, not a nicety, read it to render a color bar with real
 tick labels rather than a decorative gradient:
 
 ```swift
@@ -388,13 +407,13 @@ if let legend = viewport.scalarFieldLegend {
 ```
 
 `scalarFieldLegend` reports the most recently set field (across whichever body it's on),
-falling back to another still-active field on a different body if that one is cleared —
+falling back to another still-active field on a different body if that one is cleared,
 only going `nil` once no body has an active field at all; `scalarField(forBody:)` reads any
 particular body's field directly.
 
 **Performance:** rebuilding a body's triangle styles scales linearly with triangle count.
 Measured on this machine: a single body with 25,132 triangles took ~4.3ms per
-`setScalarField` call (~0.17µs/triangle) — a synthetic proxy (a finely-tessellated
+`setScalarField` call (~0.17µs/triangle), a synthetic proxy (a finely-tessellated
 cylinder), not the actual reference corpus's own geometry, but representative of the cost
 shape for a body at that scale.
 
@@ -424,7 +443,7 @@ Four modes:
 .wipe(axis: .x, position: 0)          // spatially split: reference below `position`, candidate above
 ```
 
-`.deviation` doesn't compute anything itself — CADKit stays free of measurement
+`.deviation` doesn't compute anything itself, CADKit stays free of measurement
 responsibility, matching the same trade-off `setScalarField` makes elsewhere. Compute the
 per-face/per-triangle distance from candidate to reference yourself and set it first:
 
@@ -433,26 +452,26 @@ viewport.setScalarField(deviationField, forBody: "candidate")
 viewport.setComparison(ComparisonView(referenceID: "reference", candidateID: "candidate", mode: .deviation))
 ```
 
-Calling `setComparison` again — with a different mode, or updated `position`/
-`referenceOpacity` for the same mode, e.g. while the user drags a wipe slider — first
+Calling `setComparison` again, with a different mode, or updated `position`/
+`referenceOpacity` for the same mode, e.g. while the user drags a wipe slider, first
 undoes whatever the previous comparison did before applying the new one, so calls don't
 compound. `setComparison(nil)` restores both entities to their plain display without
 reloading either one.
 
 `.wipe` is a plain CPU-side triangle filter (each body keeps only the triangles on its
-side of the plane), not `ViewportController.clipPlanes` — that mechanism clips the whole
+side of the plane), not `ViewportController.clipPlanes`: that mechanism clips the whole
 scene uniformly, so it can't show the reference and candidate differently. A side effect:
 a wiped body's wireframe edges and vertex-picking aren't preserved, only its shaded
-triangles — the split is a review affordance, not a full re-tessellation.
+triangles, the split is a review affordance, not a full re-tessellation.
 
-`.overlay`/`.sideBySide` mutate a body's color/transform in place — cheap, since the
+`.overlay`/`.sideBySide` mutate a body's color/transform in place, cheap, since the
 renderer reads both fresh every frame rather than caching them (unlike the scalar-field
 style buffer above). `.wipe` rebuilds each side's body (a fresh `generation`, like
 `setScalarField` does), scaled to that body's triangle count.
 
 ## 11. Clipping and section planes (optional)
 
-Cut away geometry to see inside a part — internal bores, pockets, ribs — or inspect exact
+Cut away geometry to see inside a part, internal bores, pockets, ribs, or inspect exact
 cross-sections along a prismatic axis:
 
 ```swift
@@ -460,13 +479,13 @@ let planeID = viewport.addClippingPlane(origin: .zero, normal: SIMD3(0, 0, 1))
 ```
 
 Geometry on the side the normal points away from is hidden. By default
-(`showCapSurface: true`) the cut also shows solid material rather than looking hollow — this
+(`showCapSurface: true`) the cut also shows solid material rather than looking hollow, this
 is a genuine B-Rep split and retessellation of the affected body(ies), not a shader trick
 (`OCCTSwiftViewport` has no shader-level capping), so it costs real per-body geometry work on
 every clipping-plane change, unlike the instant, GPU-only hollow clip underneath it.
 
 For the common "step a plane along a prismatic axis" case, `sectionSweep` reuses a single
-dedicated plane instead of accumulating one per call — safe to call every frame of a drag:
+dedicated plane instead of accumulating one per call, safe to call every frame of a drag:
 
 ```swift
 viewport.sectionSweep(axis: SIMD3(0, 0, 1), position: sliderValue)
@@ -479,7 +498,7 @@ drag (cheap, instant hollow clip) and only turn it back on once the drag settles
 viewport.clippingPlanes[0].showCapSurface = isDragging ? false : true
 ```
 
-Multiple planes compose — both the hollow clip and, for cap-enabled planes, the cut itself
+Multiple planes compose, both the hollow clip and, for cap-enabled planes, the cut itself
 (a sequential chain of splits, so the visible remainder is their intersection):
 
 ```swift
@@ -487,7 +506,7 @@ viewport.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface:
 viewport.addClippingPlane(origin: .zero, normal: SIMD3(0, 1, 0), showCapSurface: false)
 ```
 
-Picking respects active clipping planes — a face/edge/vertex pick's own position is tested
+Picking respects active clipping planes, a face/edge/vertex pick's own position is tested
 against every enabled plane before it resolves, even though `OCCTSwiftViewport`'s own GPU
 pick pass doesn't do this itself, so clipped-away geometry never steals a pick.
 
@@ -496,15 +515,15 @@ viewport.removeClippingPlane(id: planeID)   // clears just that one; clippingPla
 ```
 
 **Reload behavior:** capping DOES automatically re-apply when you reload an entity (even
-under an id already in use) — every loader ends by syncing clipping state, so the new
+under an id already in use), every loader ends by syncing clipping state, so the new
 geometry is clipped/capped immediately, with no further clipping-plane call needed. A
 `ScalarField` set via `setScalarField(_:forBody:)` is different: it does NOT survive a
-reload (or a genuine re-cut from capping) — its ordinals are tied to the specific
+reload (or a genuine re-cut from capping), its ordinals are tied to the specific
 tessellation they were computed against, so the caller re-applies it after.
 
 ## 12. Escalation: asking a bounded question about geometry (optional)
 
-The runtime half of a human-in-the-loop model — an agent (an MCP-connected reconstruction
+The runtime half of a human-in-the-loop model, an agent (an MCP-connected reconstruction
 pipeline, say) asks a question grounded in specific geometry and awaits an answer, without
 needing to own the UI itself:
 
@@ -544,22 +563,22 @@ Two things make this more than a dialog box:
 
 - **The request's entities are highlighted**, so the question is grounded in visible
   geometry rather than a floating description.
-- **The human can answer by picking geometry instead of choosing a candidate** —
+- **The human can answer by picking geometry instead of choosing a candidate**,
   `respondWithCurrentSelection()` wraps whatever `selection` currently holds in
   `.picked(...)`, for "none of those, this one."
 
 `EscalationCardView` is one adaptive layout (capped to a comfortable phone-width column)
-rather than separate macOS/iOS view types — usable as a floating panel on a larger surface
+rather than separate macOS/iOS view types, usable as a floating panel on a larger surface
 too. If a previous escalation is still pending when you call `present(_:)` again, it's
 resolved `.deferred` first, so calling it repeatedly is always safe. Removing (or reloading)
-an entity a pending escalation references — or a full `removeAll()` — auto-resolves it
+an entity a pending escalation references, or a full `removeAll()`: auto-resolves it
 `.rejected` rather than leaving `present(_:)` suspended over geometry that's gone.
 
 ## Next steps
 
 - See [`docs/reference/CADViewportService.md`](../reference/CADViewportService.md) for the
   full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
-  `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionSummary` /
+  `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionMeasurements` /
   `ScalarField` / `ColorMap` / `ScalarFieldLegend` / `ComparisonView` / `ComparisonMode` /
   `Axis` / `ClippingPlane` / `EscalationRequest` / `EscalationCandidate` /
   `EscalationResponse` / `FaceBounds` types, and `CADViewportError`.

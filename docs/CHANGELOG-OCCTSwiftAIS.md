@@ -9,6 +9,37 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
+### `InteractiveContext.selection` is now the package's only selection store
+
+Closes [OCCTSwiftInteraction#3](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/3),
+phase 3 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43).
+
+`OCCTSwiftCADKit.CADViewportService` used to keep a selection alongside the `InteractiveContext`
+it already owned. It now drives this one and projects it. Nothing here changes meaning for an
+existing AIS-only consumer; the additions are:
+
+**New: `select(_:scheme:)`.** The four-scheme combination (`.replace` / `.add` / `.remove` /
+`.xor`) that `CADViewportService.select(_:scheme:)` had and this context did not, applied to a
+single sub-shape. The existing `select(_:)` and `deselect(_:)` are unchanged and now forward to
+`.add` and `.remove`. The scheme parameter is deliberately **not** defaulted: a default of
+`.replace` would silently retune every existing `select(x)` call site from add to replace.
+
+**New: `displaysBody(withID:)`.** Whether a body id names an object this context displays, as
+opposed to one a host composited into `bodies` itself. A host sharing this selection needs it to
+avoid clearing a selection it does not own when a pick it cannot resolve arrives.
+
+**Internal: `applySelection(_:scheme:)`.** The scheme rules, written once. `select(_:scheme:)`
+passes a single-element set; area selection passes a whole match set, replacing the copy of the
+same four-case switch that lived in `AreaSelection.swift`.
+
+**Behaviour worth knowing for a host.** A pick on an object displayed here, and a pick on a
+`CADViewportService` model body, now write the same selection, so one replaces the other. That is
+the consolidation, not a regression.
+
+**Tests:** 3 new here (`InteractiveContextSchemeTests`: the four schemes, `select(_:)` still
+meaning add, and `displaysBody(withID:)`), 10 new in the CADKit target's `SharedSelectionTests`.
+330 to 343 in 28 to 30 suites, all passing, none deleted or weakened.
+
 ### Pick resolution moved to `OCCTSwiftTools`
 
 Closes [OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2),

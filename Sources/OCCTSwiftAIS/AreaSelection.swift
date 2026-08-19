@@ -160,12 +160,7 @@ extension InteractiveContext {
             }
         }
 
-        switch scheme {
-        case .replace: setSelection(Selection(matched))
-        case .add: setSelection(Selection(selection.subshapes.union(matched)))
-        case .remove: setSelection(Selection(selection.subshapes.subtracting(matched)))
-        case .xor: setSelection(Selection(selection.subshapes.symmetricDifference(matched)))
-        }
+        applySelection(matched, scheme: scheme)
     }
 
     private func project(

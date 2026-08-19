@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftViewport
 import Testing
 
 @testable import OCCTSwiftAIS
@@ -64,5 +65,77 @@ struct SelectionTests {
             .face(obj, ref: SubShapeRef(shape: shape, ordinal: 9999)),  // whole solid, not a face
         ])
         #expect(s.faces.count == 1)
+    }
+}
+
+/// The scheme parameter added to `InteractiveContext.select` in
+/// OCCTSwiftInteraction#3 (phase 3 of ecosystem#43), when `OCCTSwiftCADKit` stopped keeping a
+/// parallel selection and its four-scheme `select(_:scheme:)` merged into this one.
+@Suite("Selection schemes on InteractiveContext")
+@MainActor
+struct InteractiveContextSchemeTests {
+
+    private func makeFixture() throws -> (InteractiveContext, SubShape, SubShape) {
+        let ctx = InteractiveContext(viewport: ViewportController())
+        let shape = try #require(Shape.box(width: 4, height: 4, depth: 4))
+        let object = InteractiveObject(shape: shape)
+        let a = SubShape.face(object, ref: try faceRef(object, 0))
+        let b = SubShape.face(object, ref: try faceRef(object, 1))
+        return (ctx, a, b)
+    }
+
+    @Test("select(_:scheme:) implements replace/add/remove/xor")
+    func t_selectScheme_implementsAllFour() throws {
+        let (ctx, a, b) = try makeFixture()
+
+        ctx.select(a, scheme: .replace)
+        #expect(ctx.selection.subshapes == [a])
+
+        ctx.select(b, scheme: .add)
+        #expect(ctx.selection.subshapes == [a, b])
+
+        ctx.select(a, scheme: .add)
+        #expect(ctx.selection.count == 2, "add is idempotent")
+
+        ctx.select(a, scheme: .remove)
+        #expect(ctx.selection.subshapes == [b])
+
+        ctx.select(a, scheme: .xor)
+        #expect(ctx.selection.subshapes == [a, b])
+
+        ctx.select(a, scheme: .xor)
+        #expect(ctx.selection.subshapes == [b])
+
+        ctx.select(a, scheme: .replace)
+        #expect(ctx.selection.subshapes == [a], "replace discards the rest")
+    }
+
+    /// The reason `select(_:scheme:)` has no default value for `scheme`: giving the existing
+    /// one-argument `select` a defaulted `.replace` would have retuned every existing call
+    /// site from add to replace, silently.
+    @Test("select(_:) still means add, not replace")
+    func t_selectWithoutScheme_stillMeansAdd() throws {
+        let (ctx, a, b) = try makeFixture()
+
+        ctx.select(a)
+        ctx.select(b)
+        #expect(ctx.selection.subshapes == [a, b])
+
+        ctx.deselect(a)
+        #expect(ctx.selection.subshapes == [b])
+    }
+
+    @Test("displaysBody(withID:) reports only objects this context displays")
+    func t_displaysBody_reportsDisplayedObjectsOnly() throws {
+        let ctx = InteractiveContext(viewport: ViewportController())
+        let shape = try #require(Shape.box(width: 4, height: 4, depth: 4))
+        let object = ctx.display(shape)
+
+        let bodyID = try #require(ctx.bodyID(for: object))
+        #expect(ctx.displaysBody(withID: bodyID))
+        #expect(!ctx.displaysBody(withID: "some.other.body"))
+
+        ctx.remove(object)
+        #expect(!ctx.displaysBody(withID: bodyID))
     }
 }
