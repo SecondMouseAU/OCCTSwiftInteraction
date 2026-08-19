@@ -307,7 +307,7 @@ bright magenta point sprite per selected vertex.
 if let summary = viewport.selectionSummary {
     print(summary.faceCount, summary.edgeCount, summary.vertexCount)
     print(summary.totalArea, summary.totalLength)   // sums over selected faces/edges
-    print(summary.bounds)                            // combined ShapeBounds, or nil if empty
+    print(summary.bounds)                            // combined ShapeBounds, or nil
 }
 ```
 

@@ -454,7 +454,10 @@ struct SmokeTests {
 
         // Vertex enumeration order isn't part of the contract, so just check the resolved
         // position is within the box's own bounds rather than asserting an exact corner.
-        let bounds = box.bounds
+        guard let bounds = box.bounds else {
+            Issue.record("expected a 4mm box to have bounds")
+            return
+        }
         #expect(
             vertexPick.position.x >= bounds.min.x - 0.01
                 && vertexPick.position.x <= bounds.max.x + 0.01)
@@ -599,8 +602,49 @@ struct SmokeTests {
             Issue.record("expected \"part\" to still be loaded")
             return
         }
-        let bounds = reloaded.bounds
+        guard let bounds = reloaded.bounds else {
+            Issue.record("expected the reloaded box to have bounds")
+            return
+        }
         #expect(bounds.max.x - bounds.min.x > 7, "expected the second (bigger) load to have won")
+    }
+
+    /// Regression for #58: a shape with a void bounding box reports no bounds rather than a
+    /// zero-size box at the world origin, and `focus(on:)` declines to reframe on it.
+    ///
+    /// Before OCCTSwift 3.0.0 the kernel fabricated `(0,0,0)-(0,0,0)` here, which this
+    /// service could not tell from a real zero-size shape at the origin, so the camera got
+    /// aimed at the origin instead.
+    @MainActor
+    @Test("A shape with no bounding box reports nil bounds, and focus declines to reframe")
+    func voidBoundsDeclineRatherThanDefaultToTheOrigin() {
+        guard let empty = Shape.builderMakeCompound() else {
+            Issue.record("Shape.builderMakeCompound returned nil")
+            return
+        }
+        #expect(empty.bounds == nil, "an empty compound has a void Bnd_Box")
+
+        let service = CADViewportService()
+        service.load(empty, id: "empty")
+        #expect(service.shapeBounds == nil)
+
+        // `load(_:id:transform:)` never auto-focuses, so any camera animation running after
+        // this line would have to be `focus(on:)`'s own.
+        service.focus(on: ["empty"])
+        #expect(
+            !service.controller.cameraController.isAnimating,
+            "nothing to frame, so the camera should be left where it is")
+
+        // Control, so the check above is discriminating rather than asserting an inert
+        // viewport: the same call on a shape that does have bounds reframes.
+        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let framing = CADViewportService()
+        framing.load(box, id: "box")
+        framing.focus(on: ["box"])
+        #expect(framing.controller.cameraController.isAnimating)
     }
 
     /// Regression for #28: `transform` places the shape before tessellating it.
@@ -628,8 +672,10 @@ struct SmokeTests {
             Issue.record("expected both entities to be loaded")
             return
         }
-        let plainBounds = plain.bounds
-        let movedBounds = moved.bounds
+        guard let plainBounds = plain.bounds, let movedBounds = moved.bounds else {
+            Issue.record("expected both loaded boxes to have bounds")
+            return
+        }
         #expect(abs((movedBounds.min.x - plainBounds.min.x) - 10) < 0.01)
         #expect(abs((movedBounds.min.y - plainBounds.min.y) - 20) < 0.01)
         #expect(abs((movedBounds.min.z - plainBounds.min.z) - 30) < 0.01)
