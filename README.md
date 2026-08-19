@@ -59,10 +59,11 @@ Your `import` lines do not change. See [docs/MIGRATION.md](docs/MIGRATION.md).
 - Historical changelogs: [OCCTSwiftTools](docs/CHANGELOG-OCCTSwiftTools.md),
   [OCCTSwiftAIS](docs/CHANGELOG-OCCTSwiftAIS.md)
 
-## Known issues
+## Face identity
 
-`InteractiveContextMutationTests` fails 5 assertions, carried over from before the merge and tracked
-as [OCCTSwiftAIS#46](https://github.com/SecondMouseAU/OCCTSwiftAIS/issues/46). The test asserts a
-`Shape.faces()` enumeration split that OCCTSwift 2.0.0 erased. Fixing it requires deciding whether
-face identity keys on `faces()` or `orientedFaces()`, which is also the first step of the picking
-consolidation.
+Face identity keys on OCCT's `TopoDS_Shape::IsSame`: same `TShape`, same `Location`, orientation may
+differ ([#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1)). So `faces()`, the
+enumeration deduplicated through `TopTools_IndexedMapOfShape`, is what `FaceIdentityTable` is built
+from, and a face shared between two shells is one selectable thing rather than two. A caller that
+needs to know which use of a shared face was picked reads orientation off the returned shape, which
+is how OCCT answers the same question.

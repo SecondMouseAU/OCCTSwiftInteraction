@@ -67,9 +67,10 @@ See [`references/`](references/index.md).
 - **Picking is resolved in more than one place** across these targets and across the wider fleet
   (ecosystem#43). Four implementations exist, and two have already diverged. Read that issue before
   writing anything that maps a `PickResult` to topology.
-- **`InteractiveContextMutationTests` fails 5 assertions**
-  ([#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1)), inherited from before the
-  merge. Do not fix it by relaxing the assertions.
+- **Face identity is decided and settled**: OCCT's `IsSame` semantics, so `faces()` (deduplicated)
+  is the enumeration behind `FaceIdentityTable` and a face shared between two shells is one identity
+  ([#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1), phase 0 of ecosystem#43).
+  Encode it rather than re-deciding it.
 
 ## Policies
 

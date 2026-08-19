@@ -20,8 +20,9 @@ name: tests
 # macOS-only: the OCCTSwift dependency ships as a macOS xcframework, the same
 # reasoning OCCTSwiftScripts' own tests.yml uses.
 #
-# Baseline at merge: 314 tests across 27 suites, of which 5 fail (OCCTSwiftAIS#46,
-# pre-existing and inherited from before the merge).
+# Baseline at merge was 314 tests across 27 suites, of which 5 failed (OCCTSwiftAIS#46,
+# inherited from before the merge). Green since OCCTSwiftInteraction#1 settled face
+# identity on `IsSame` and rewrote the stale half of that test: 314 tests, 0 failures.
 
 on:
   push:

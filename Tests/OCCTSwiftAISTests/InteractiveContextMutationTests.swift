@@ -90,8 +90,15 @@ struct InteractiveContextMutationTests {
     /// them) but drives it through `InteractiveContext.display` + real synthesized
     /// picks rather than calling `FaceIdentityTable` directly: this is the
     /// consumer-side regression #31 calls for: every face pick on a multi-shell
-    /// solid with a shared face must resolve to the correct sub-shape, not a
-    /// neighbour shifted by the shared face's index collapse.
+    /// solid with a shared face must resolve to the correct sub-shape.
+    ///
+    /// Face identity keys on OCCT's `IsSame` (OCCTSwiftInteraction#1): same TShape,
+    /// same Location, orientation may differ. A face shared between two shells is
+    /// therefore ONE identity, not two, and `faces()`, deduplicated through
+    /// `TopTools_IndexedMapOfShape`, is the enumeration that encodes it. The
+    /// contract under test is unchanged by that decision: picks landing on either
+    /// shell's copy of the shared face must resolve to the same durable identity,
+    /// and neither shell's copy may go missing on the way to the GPU.
     @Test func t_sharedFaceBetweenShells_everyPickResolvesToCorrectSubShape() throws {
         let box = try #require(Shape.box(width: 10, height: 10, depth: 10))
         let boxFaces = box.subShapes(ofType: .face)
@@ -103,37 +110,118 @@ struct InteractiveContextMutationTests {
             Shape.shellFromFaces([sharedFace, boxFaces[3], boxFaces[4], boxFaces[5]]))
         let compound = try #require(Shape.compound([shellA, shellB]))
 
-        // Raw render-path traversal counts the shared face once per shell (7);
-        // `subShapes(ofType:)` collapses it to 6: the exact divergence #42/#31
-        // are about. FaceIdentityTable.shapes is built from the former.
-        #expect(compound.faces().count == 7)
+        // Under `IsSame` the shared face is one face, so both deduplicated
+        // enumerations report 6 (they are one traversal now: OCCTSwift #541/#613
+        // routed `faces()` through the same `TopTools_IndexedMapOfShape` that
+        // backs `subShapes(ofType:)`). The occurrence count lives on
+        // `orientedFaces()` instead: 7, one entry per (face, owning shell) pair.
+        // Both numbers are right and answer different questions.
+        // `FaceIdentityTable` is built from the 6, per the decision.
+        #expect(compound.faces().count == 6)
         #expect(compound.subShapes(ofType: .face).count == 6)
+        #expect(compound.orientedFaces().count == 7)
 
         let ctx = makeContext()
         ctx.selectionMode = [.face]
         let obj = ctx.display(compound)
         let identity = try #require(ctx.faceIdentityTable(for: obj))
-        #expect(identity.shapes.count == 7)
+        #expect(identity.shapes.count == 6)
 
-        // Ordinal 0 (shellA's copy) and ordinal 3 (shellB's copy, right after
-        // shellA's 3 faces) must carry the SAME durable uid.
-        let uid0 = try #require(identity.uid(forOrdinal: 0))
-        let uid3 = try #require(identity.uid(forOrdinal: 3))
-        #expect(uid0 == uid3)
-        // Sanity: the equality above isn't vacuous, an unshared ordinal differs.
-        let uid1 = try #require(identity.uid(forOrdinal: 1))
-        #expect(uid1 != uid0)
+        // Locate the shared face by identity, not by position: an ordinal is an
+        // artifact of enumeration order, `isSame` is the decision's own primitive
+        // and is what makes this assertion survive a reordering of the fixture.
+        let sharedOrdinal = try #require(identity.shapes.firstIndex { $0.isSame(as: sharedFace) })
+        let sharedUID = try #require(identity.uid(forOrdinal: sharedOrdinal))
+        // Sanity: everything below is non-vacuous, no OTHER face carries that uid.
+        for ordinal in identity.shapes.indices where ordinal != sharedOrdinal {
+            #expect(identity.uid(forOrdinal: ordinal) != sharedUID)
+        }
 
-        // Drive it through the real pick path for EVERY ordinal: each must
-        // resolve to a genuine face, and the two shared-face ordinals must
-        // resolve to the same uid via `handlePick`, not just via the table.
         let body = try #require(ctx.sourceBody(for: obj))
         #expect(!body.faceIndices.isEmpty)
+        #expect(body.faceIndices.count == body.indices.count / 3)
+
+        // `vertexData` is interleaved [px, py, pz, nx, ny, nz] with stride 6.
+        func meshVertices(of triangle: Int) -> [UInt32] {
+            Array(body.indices[(triangle * 3)..<(triangle * 3 + 3)])
+        }
+        func centroid(of triangle: Int) -> SIMD3<Float> {
+            let corners = meshVertices(of: triangle).map { vertex -> SIMD3<Float> in
+                let base = Int(vertex) * 6
+                return SIMD3(
+                    body.vertexData[base], body.vertexData[base + 1], body.vertexData[base + 2])
+            }
+            return (corners[0] + corners[1] + corners[2]) / 3
+        }
+        /// Split `triangles` into connected components by shared mesh vertex.
+        /// Each owning shell tessellates the shared face into its own triangles
+        /// over its own vertices, so one component per shell's copy.
+        func copiesByVertexConnectivity(_ triangles: [Int]) -> [[Int]] {
+            var pending = triangles
+            var components: [[Int]] = []
+            while let seed = pending.popLast() {
+                var component = [seed]
+                var pool = Set(meshVertices(of: seed))
+                var grew = true
+                while grew {
+                    grew = false
+                    for (offset, triangle) in pending.enumerated().reversed()
+                    where !pool.isDisjoint(with: meshVertices(of: triangle)) {
+                        component.append(triangle)
+                        pool.formUnion(meshVertices(of: triangle))
+                        pending.remove(at: offset)
+                        grew = true
+                    }
+                }
+                components.append(component.sorted())
+            }
+            return components.sorted { ($0.first ?? 0) < ($1.first ?? 0) }
+        }
+
+        // THE regression. Under dedup, "both ordinals agree" is true by
+        // construction and so proves nothing; what can still silently break is a
+        // shell's copy of the shared face never reaching the mesh at all. The
+        // mesher walks face OCCURRENCES and stamps each with the deduplicated
+        // index, so the shared ordinal must own two independent triangulations.
+        let sharedTriangles = body.faceIndices.indices.filter {
+            Int(body.faceIndices[$0]) == sharedOrdinal
+        }
+        let copies = copiesByVertexConnectivity(sharedTriangles)
+        #expect(
+            copies.count == 2,
+            "both shells' copies of the shared face should be tessellated, got \(copies.count)")
+        if copies.count == 2 {
+            // And the second copy is the shared face again rather than a
+            // neighbour mis-stamped with its ordinal: same triangles, same place.
+            // This reads mesh geometry, not the identity table, so it is not
+            // circular with the uid assertions below.
+            let placesA = copies[0].map(centroid).sorted { ($0.x, $0.y, $0.z) < ($1.x, $1.y, $1.z) }
+            let placesB = copies[1].map(centroid).sorted { ($0.x, $0.y, $0.z) < ($1.x, $1.y, $1.z) }
+            #expect(placesA.count == placesB.count)
+            for (a, b) in zip(placesA, placesB) {
+                #expect(
+                    simd_distance(a, b) < 1e-4,
+                    "the two copies should cover the same face, got \(a) versus \(b)")
+            }
+        }
+        var copyByTriangle: [Int: Int] = [:]
+        for (copyIdx, copy) in copies.enumerated() {
+            for triangle in copy { copyByTriangle[triangle] = copyIdx }
+        }
+
+        // Drive it through the real pick path: every ordinal must resolve to a
+        // genuine face, and EVERY triangle of the shared face, from both shells'
+        // copies, must resolve to the one shared uid via `handlePick` rather than
+        // only via the table.
         var seenOrdinals: Set<Int> = []
-        var uidByOrdinal: [Int: BRepGraph.GraphUID] = [:]
+        var uidsByCopy: [[BRepGraph.GraphUID?]] = Array(repeating: [], count: copies.count)
         for (triIdx, faceOrdinalRaw) in body.faceIndices.enumerated() {
             let ordinal = Int(faceOrdinalRaw)
-            guard ordinal >= 0, !seenOrdinals.contains(ordinal) else { continue }
+            guard ordinal >= 0 else { continue }
+            let isShared = ordinal == sharedOrdinal
+            // Every triangle of the shared face; one per ordinal otherwise, which
+            // is all the reachability coverage the unshared faces need.
+            guard isShared || !seenOrdinals.contains(ordinal) else { continue }
             seenOrdinals.insert(ordinal)
 
             let raw = UInt32(triIdx) << 16
@@ -148,14 +236,21 @@ struct InteractiveContextMutationTests {
             #expect(pickedObj == obj)
             let resolvedFace: Face? = OCCTSwift.Face(ref.shape)
             #expect(resolvedFace != nil, "ordinal \(ordinal) should resolve to a genuine face")
-            uidByOrdinal[ordinal] = ref.uid
+            guard isShared else { continue }
+            #expect(
+                ref.shape.isSame(as: sharedFace),
+                "triangle \(triIdx) carries the shared ordinal so it should resolve to that face")
+            if let copyIdx = copyByTriangle[triIdx] { uidsByCopy[copyIdx].append(ref.uid) }
         }
         #expect(
-            seenOrdinals.count == 7,
-            "every one of the 7 render-path ordinals should be reachable by a pick")
-        #expect(
-            uidByOrdinal[0] != nil && uidByOrdinal[0] == uidByOrdinal[3],
-            "picks landing on either shell's copy of the shared face must resolve to the same durable identity"
-        )
+            seenOrdinals.count == 6,
+            "every one of the 6 distinct faces should be reachable by a pick")
+        for (copyIdx, uids) in uidsByCopy.enumerated() {
+            #expect(!uids.isEmpty, "copy \(copyIdx) of the shared face should have been picked")
+            #expect(
+                uids.allSatisfy { $0 == sharedUID },
+                "picks landing on either shell's copy of the shared face must resolve to the same durable identity"
+            )
+        }
     }
 }
