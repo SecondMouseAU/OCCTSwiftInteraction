@@ -19,6 +19,8 @@ import OCCTSwift
 /// a vertex pick doesn't have to re-walk the shape's vertex map itself, or hand-roll the
 /// `graph.findNode(for:)` plus `graph.uid(ofNodeKind:index:)` resolution `FaceIdentityTable` already
 /// does for faces.
+/// See the durable identity cookbook (`topology-graph-uids.md`) for what identity means
+/// here and how the three tables differ.
 public struct VertexIdentityTable: Sendable {
     /// Indexed by the ordinal stored in `ViewportBody.vertexIndices`.
     ///

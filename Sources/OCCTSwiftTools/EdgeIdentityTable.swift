@@ -22,6 +22,8 @@ import OCCTSwift
 /// rebuilds it on every call), or hand-roll the `graph.findNode(for:)` plus `graph.uid(ofNodeKind:index:)`
 /// resolution `FaceIdentityTable` already does for faces. It also means edge identity keeps working
 /// even if OCCT's edge traversal ever stopped deduplicating the way it does today.
+/// See the durable identity cookbook (`topology-graph-uids.md`) for what identity means
+/// here and how the three tables differ.
 public struct EdgeIdentityTable: Sendable {
     /// Indexed by the ordinal stored in `ViewportBody.edgeIndices`.
     ///
