@@ -46,7 +46,7 @@ public final class InteractiveContext: ObservableObject {
             if oldValue != selection { updateSelectionVisuals() }
         }
     }
-    @Published public private(set) var hover: SubShape? = nil
+    @Published public private(set) var hover: OCCTSwiftTools.SubShape? = nil
 
     /// Filters gating `handlePick` / `handleHover`, never programmatic
     /// `select(_:)`.
@@ -68,7 +68,7 @@ public final class InteractiveContext: ObservableObject {
     // MARK: - Registry
 
     private struct Entry {
-        let object: InteractiveObject
+        let object: OCCTSwiftTools.InteractiveObject
         let bodyID: String
         let metadata: CADBodyMetadata?
         /// Per-ordinal (Shape, GraphUID) correspondence captured at tessellation
@@ -122,8 +122,10 @@ public final class InteractiveContext: ObservableObject {
     /// picks against it mint `SubShapeRef`s with `uid == nil` (ordinal-only:
     /// `remap` then has nothing durable to resolve them by).
     @discardableResult
-    public func display(_ shape: Shape, style: PresentationStyle = .default) -> InteractiveObject {
-        let object = InteractiveObject(shape: shape)
+    public func display(_ shape: Shape, style: PresentationStyle = .default)
+        -> OCCTSwiftTools.InteractiveObject
+    {
+        let object = OCCTSwiftTools.InteractiveObject(shape: shape)
         let bodyID = "ais.\(object.id.uuidString)"
         let rgba = SIMD4<Float>(style.color, 1.0 - style.transparency)
 
@@ -173,11 +175,11 @@ public final class InteractiveContext: ObservableObject {
     /// from "wasn't selected".
     @discardableResult
     public func update(
-        _ object: InteractiveObject,
+        _ object: OCCTSwiftTools.InteractiveObject,
         to newShape: Shape,
         absorbing history: ShapeHistoryRef,
         operationName: String
-    ) -> InteractiveObject? {
+    ) -> OCCTSwiftTools.InteractiveObject? {
         guard let entry = entriesByID[object.id], let graph = entry.graph else { return nil }
         guard let inputRoot = graph.findNode(for: entry.object.shape) else { return nil }
         let rootRef = BRepGraph.NodeRef(kind: inputRoot.kind, index: inputRoot.index)
@@ -189,7 +191,7 @@ public final class InteractiveContext: ObservableObject {
             return nil
         }
 
-        let updated = InteractiveObject(id: object.id, shape: newShape)
+        let updated = OCCTSwiftTools.InteractiveObject(id: object.id, shape: newShape)
         let rgba = SIMD4<Float>(entry.style.color, 1.0 - entry.style.transparency)
         let (body, metadata, faceIdentity, edgeIdentity, vertexIdentity) =
             CADFileLoader.shapeToBodyMetadataAndIdentities(
@@ -224,7 +226,7 @@ public final class InteractiveContext: ObservableObject {
         return updated
     }
 
-    public func remove(_ object: InteractiveObject) {
+    public func remove(_ object: OCCTSwiftTools.InteractiveObject) {
         guard let entry = entriesByID.removeValue(forKey: object.id) else { return }
         entriesByBodyID.removeValue(forKey: entry.bodyID)
         bodies.removeAll { $0.id == entry.bodyID }
@@ -257,7 +259,7 @@ public final class InteractiveContext: ObservableObject {
     /// existing `select(x)` call site keeps meaning "add", which is what it has
     /// always meant. A defaulted `scheme:` would have silently retuned all of
     /// them to `.replace`.
-    public func select(_ subshape: SubShape) {
+    public func select(_ subshape: OCCTSwiftTools.SubShape) {
         select(subshape, scheme: .add)
     }
 
@@ -272,11 +274,11 @@ public final class InteractiveContext: ObservableObject {
     /// Semantics match `SelectionScheme` everywhere else in this target, including area
     /// selection: `.replace` assigns, `.add` inserts if absent, `.remove` drops it, `.xor`
     /// toggles it.
-    public func select(_ subshape: SubShape, scheme: SelectionScheme) {
+    public func select(_ subshape: OCCTSwiftTools.SubShape, scheme: SelectionScheme) {
         applySelection([subshape], scheme: scheme)
     }
 
-    public func deselect(_ subshape: SubShape) {
+    public func deselect(_ subshape: OCCTSwiftTools.SubShape) {
         select(subshape, scheme: .remove)
     }
 
@@ -290,7 +292,7 @@ public final class InteractiveContext: ObservableObject {
     /// single-element set, `AreaSelection.swift` passes a rectangle/lasso match set.
     /// Internal, since `select`/`deselect`/`clearSelection` are the intended public
     /// mutation surface.
-    func applySelection(_ incoming: Set<SubShape>, scheme: SelectionScheme) {
+    func applySelection(_ incoming: Set<OCCTSwiftTools.SubShape>, scheme: SelectionScheme) {
         let current = selection.subshapes
         switch scheme {
         case .replace: selection = Selection(incoming)
@@ -339,13 +341,13 @@ public final class InteractiveContext: ObservableObject {
     /// it further. Here, installed filters combine with **AND**: a candidate
     /// must pass *every* installed filter. Express OR explicitly with
     /// `AnyOfFilter` when you actually want it.
-    func passesInstalledFilters(_ candidate: SubShape) -> Bool {
+    func passesInstalledFilters(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         filters.allSatisfy { $0.accepts(candidate) }
     }
 
     // MARK: - Style
 
-    public func setStyle(_ style: PresentationStyle, for object: InteractiveObject) {
+    public func setStyle(_ style: PresentationStyle, for object: OCCTSwiftTools.InteractiveObject) {
         guard var entry = entriesByID[object.id] else { return }
         entry.style = style
         entriesByID[object.id] = entry
@@ -364,7 +366,7 @@ public final class InteractiveContext: ObservableObject {
     // MARK: - Internal accessors (used by ManipulatorWidget, AreaSelection)
 
     /// Every currently-displayed object, in no particular order.
-    func displayedObjects() -> [InteractiveObject] {
+    func displayedObjects() -> [OCCTSwiftTools.InteractiveObject] {
         entriesByID.values.map(\.object)
     }
 
@@ -373,12 +375,12 @@ public final class InteractiveContext: ObservableObject {
     ///
     /// Area selection skips hidden objects: it shouldn't select what isn't
     /// visible on screen.
-    func isVisible(_ object: InteractiveObject) -> Bool {
+    func isVisible(_ object: OCCTSwiftTools.InteractiveObject) -> Bool {
         entriesByID[object.id]?.style.visible ?? false
     }
 
     /// The body ID currently associated with `object`, or nil if not displayed.
-    func bodyID(for object: InteractiveObject) -> String? {
+    func bodyID(for object: OCCTSwiftTools.InteractiveObject) -> String? {
         entriesByID[object.id]?.bodyID
     }
 
@@ -397,7 +399,7 @@ public final class InteractiveContext: ObservableObject {
 
     /// The source `ViewportBody` for `object`, or nil if the object is not displayed
     /// or its tessellation produced no mesh.
-    func sourceBody(for object: InteractiveObject) -> ViewportBody? {
+    func sourceBody(for object: OCCTSwiftTools.InteractiveObject) -> ViewportBody? {
         guard let id = entriesByID[object.id]?.bodyID else { return nil }
         return bodies.first { $0.id == id }
     }
@@ -410,15 +412,15 @@ public final class InteractiveContext: ObservableObject {
     /// falling back to the graph's raw node index, which isn't a
     /// tessellation ordinal), and by area selection to enumerate every
     /// candidate sub-shape's `Shape`.
-    func faceIdentityTable(for object: InteractiveObject) -> FaceIdentityTable? {
+    func faceIdentityTable(for object: OCCTSwiftTools.InteractiveObject) -> FaceIdentityTable? {
         entriesByID[object.id]?.faceIdentity
     }
 
-    func edgeIdentityTable(for object: InteractiveObject) -> EdgeIdentityTable? {
+    func edgeIdentityTable(for object: OCCTSwiftTools.InteractiveObject) -> EdgeIdentityTable? {
         entriesByID[object.id]?.edgeIdentity
     }
 
-    func vertexIdentityTable(for object: InteractiveObject) -> VertexIdentityTable? {
+    func vertexIdentityTable(for object: OCCTSwiftTools.InteractiveObject) -> VertexIdentityTable? {
         entriesByID[object.id]?.vertexIdentity
     }
 
@@ -516,11 +518,13 @@ public final class InteractiveContext: ObservableObject {
         }
         // Renderer publishes hover at body granularity; face/edge hover requires
         // a per-triangle hover stream that doesn't exist yet.
-        let candidate: SubShape? = selectionMode.contains(.body) ? .body(entry.object) : nil
+        let candidate: OCCTSwiftTools.SubShape? =
+            selectionMode.contains(.body) ? .body(entry.object) : nil
         hover = candidate.flatMap { passesInstalledFilters($0) ? $0 : nil }
     }
 
-    private func resolveSubShape(from result: PickResult, entry: Entry) -> SubShape? {
+    private func resolveSubShape(from result: PickResult, entry: Entry) -> OCCTSwiftTools.SubShape?
+    {
         switch result.kind {
         case .face:
             return resolveFaceSubShape(from: result, entry: entry)
@@ -537,7 +541,9 @@ public final class InteractiveContext: ObservableObject {
     /// with the identity rules: "the pick names the object rather than one of its faces" is a
     /// selection-mode decision, not an identity one. OCCT draws the same line, carrying it as
     /// `SelectMgr_EntityOwner::ComesFromDecomposition()` on the owner.
-    private func resolveFaceSubShape(from result: PickResult, entry: Entry) -> SubShape? {
+    private func resolveFaceSubShape(from result: PickResult, entry: Entry) -> OCCTSwiftTools
+        .SubShape?
+    {
         if selectionMode.contains(.face), let metadata = entry.metadata,
             let ref = SubShapePickResolver.resolveFace(
                 triangleIndex: result.triangleIndex,
@@ -553,7 +559,9 @@ public final class InteractiveContext: ObservableObject {
         return nil
     }
 
-    private func resolveEdgeSubShape(from result: PickResult, entry: Entry) -> SubShape? {
+    private func resolveEdgeSubShape(from result: PickResult, entry: Entry) -> OCCTSwiftTools
+        .SubShape?
+    {
         guard selectionMode.contains(.edge),
             let body = bodies.first(where: { $0.id == entry.bodyID }),
             let ref = SubShapePickResolver.resolveEdge(
@@ -565,7 +573,9 @@ public final class InteractiveContext: ObservableObject {
         return .edge(entry.object, ref: ref)
     }
 
-    private func resolveVertexSubShape(from result: PickResult, entry: Entry) -> SubShape? {
+    private func resolveVertexSubShape(from result: PickResult, entry: Entry) -> OCCTSwiftTools
+        .SubShape?
+    {
         guard selectionMode.contains(.vertex),
             let body = bodies.first(where: { $0.id == entry.bodyID }),
             let ref = SubShapePickResolver.resolveVertex(

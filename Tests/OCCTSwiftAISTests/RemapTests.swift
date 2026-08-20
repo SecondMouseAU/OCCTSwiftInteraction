@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 
@@ -43,7 +44,9 @@ struct RemapTests {
         let newObj = ctx.display(newShape)
         let graph = try #require(BRepGraph(shape: newShape))
 
-        let old = Selection([.face(oldObj, ref: SubShapeRef(shape: oldObj.shape, ordinal: 0))])
+        let old = Selection([
+            .face(oldObj, ref: OCCTSwiftTools.SubShapeRef(shape: oldObj.shape, ordinal: 0))
+        ])
         let remapped = ctx.remap(old, using: graph, rebindingTo: newObj)
 
         #expect(remapped.isEmpty)
@@ -66,7 +69,9 @@ struct RemapTests {
         let graph = try #require(BRepGraph(shape: newShape))  // a different instance
 
         let old = Selection([
-            .face(oldObj, ref: SubShapeRef(shape: oldShape, uid: foreignUID, ordinal: 0))
+            .face(
+                oldObj,
+                ref: OCCTSwiftTools.SubShapeRef(shape: oldShape, uid: foreignUID, ordinal: 0))
         ])
         let remapped = ctx.remap(old, using: graph, rebindingTo: newObj)
 
@@ -109,10 +114,12 @@ struct RemapTests {
         graph.add(result, absorbing: history, inputRoots: [root], operationName: "channel-cut")
 
         let ctx = makeContext()
-        let oldObj = InteractiveObject(shape: base)
-        let newObj = InteractiveObject(shape: result)
+        let oldObj = OCCTSwiftTools.InteractiveObject(shape: base)
+        let newObj = OCCTSwiftTools.InteractiveObject(shape: result)
         let old = Selection([
-            .face(oldObj, ref: SubShapeRef(shape: bottomFace, uid: uid, ordinal: bottomIndex))
+            .face(
+                oldObj,
+                ref: OCCTSwiftTools.SubShapeRef(shape: bottomFace, uid: uid, ordinal: bottomIndex))
         ])
 
         let remapped = ctx.remap(old, using: graph, rebindingTo: newObj)
@@ -159,10 +166,12 @@ struct RemapTests {
         #expect(strips.count == 2)
 
         let ctx = makeContext()
-        let oldObj = InteractiveObject(shape: base)
-        let newObj = InteractiveObject(shape: result)
+        let oldObj = OCCTSwiftTools.InteractiveObject(shape: base)
+        let newObj = OCCTSwiftTools.InteractiveObject(shape: result)
         let old = Selection([
-            .face(oldObj, ref: SubShapeRef(shape: topFace, uid: uid, ordinal: topIndex))
+            .face(
+                oldObj, ref: OCCTSwiftTools.SubShapeRef(shape: topFace, uid: uid, ordinal: topIndex)
+            )
         ])
 
         let remapped = ctx.remap(old, using: graph, rebindingTo: newObj)
@@ -209,10 +218,10 @@ struct RemapTests {
             graph.historyIsDeleted(pinned), "the fully-consumed face should be reported as deleted")
 
         let ctx = makeContext()
-        let oldObj = InteractiveObject(shape: base)
-        let newObj = InteractiveObject(shape: result)
-        let oldSub = SubShape.face(
-            oldObj, ref: SubShapeRef(shape: topFace, uid: uid, ordinal: topIndex))
+        let oldObj = OCCTSwiftTools.InteractiveObject(shape: base)
+        let newObj = OCCTSwiftTools.InteractiveObject(shape: result)
+        let oldSub = OCCTSwiftTools.SubShape.face(
+            oldObj, ref: OCCTSwiftTools.SubShapeRef(shape: topFace, uid: uid, ordinal: topIndex))
         let old = Selection([oldSub])
 
         let remapped = ctx.remap(old, using: graph, rebindingTo: newObj)
@@ -252,11 +261,13 @@ struct RemapTests {
         graph.add(result, absorbing: history, inputRoots: [root], operationName: "channel-cut")
 
         let ctx = makeContext()
-        let oldObj = InteractiveObject(shape: base)
-        let newObj = InteractiveObject(shape: result)
+        let oldObj = OCCTSwiftTools.InteractiveObject(shape: base)
+        let newObj = OCCTSwiftTools.InteractiveObject(shape: result)
         let old = Selection([
             .body(oldObj),
-            .face(oldObj, ref: SubShapeRef(shape: bottomFace, uid: uid, ordinal: bottomIndex)),
+            .face(
+                oldObj,
+                ref: OCCTSwiftTools.SubShapeRef(shape: bottomFace, uid: uid, ordinal: bottomIndex)),
         ])
 
         let remapped = ctx.remap(old, using: graph, rebindingTo: newObj)

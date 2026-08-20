@@ -150,7 +150,7 @@ public final class CADViewportService {
     /// landed on, and `description` is formatted at pick time. A sub-shape selected some other
     /// way (through the context directly, or by area selection) is enriched on demand instead,
     /// and gets `scalarValue == nil` for a per-triangle field.
-    var selectionInfo: [SubShape: PickedEntity] = [:]
+    var selectionInfo: [OCCTSwiftTools.SubShape: PickedEntity] = [:]
 
     // MARK: - Durable identity (per loaded body)
 

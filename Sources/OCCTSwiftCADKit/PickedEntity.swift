@@ -34,7 +34,7 @@ public enum PickedEntity: Sendable, Equatable {
     /// The identity half of this pick.
     ///
     /// The same value the `OCCTSwiftAIS` selection state holds for it.
-    public var ref: SubShapeRef {
+    public var ref: OCCTSwiftTools.SubShapeRef {
         switch self {
         case .face(let info): return info.ref
         case .edge(let info): return info.ref
@@ -53,7 +53,7 @@ public struct PickedEdgeInfo: Sendable {
     /// The identity of this pick.
     ///
     /// See `PickedFaceInfo.ref`.
-    public let ref: SubShapeRef
+    public let ref: OCCTSwiftTools.SubShapeRef
 
     /// The picked edge, as the exact `Shape` (wrapping a `TopoDS_Edge`) it was extracted from.
     ///
@@ -78,7 +78,7 @@ public struct PickedEdgeInfo: Sendable {
     public let description: String
 
     public init(
-        ref: SubShapeRef,
+        ref: OCCTSwiftTools.SubShapeRef,
         bodyID: String,
         curveType: OCCTSwift.Edge.CurveType,
         length: Double,
@@ -108,7 +108,7 @@ public struct PickedEdgeInfo: Sendable {
         description: String
     ) {
         self.init(
-            ref: SubShapeRef(shape: shape, uid: uid, ordinal: edgeIndex),
+            ref: OCCTSwiftTools.SubShapeRef(shape: shape, uid: uid, ordinal: edgeIndex),
             bodyID: bodyID,
             curveType: curveType,
             length: length,
@@ -136,7 +136,7 @@ public struct PickedVertexInfo: Sendable {
     /// The identity of this pick.
     ///
     /// See `PickedFaceInfo.ref`.
-    public let ref: SubShapeRef
+    public let ref: OCCTSwiftTools.SubShapeRef
 
     /// The picked vertex, as the exact `Shape` (wrapping a `TopoDS_Vertex`) it was extracted
     /// from.
@@ -159,7 +159,7 @@ public struct PickedVertexInfo: Sendable {
     public let description: String
 
     public init(
-        ref: SubShapeRef,
+        ref: OCCTSwiftTools.SubShapeRef,
         bodyID: String,
         position: SIMD3<Double>,
         description: String
@@ -180,7 +180,7 @@ public struct PickedVertexInfo: Sendable {
         description: String
     ) {
         self.init(
-            ref: SubShapeRef(shape: shape, uid: uid, ordinal: vertexIndex),
+            ref: OCCTSwiftTools.SubShapeRef(shape: shape, uid: uid, ordinal: vertexIndex),
             bodyID: bodyID,
             position: position,
             description: description

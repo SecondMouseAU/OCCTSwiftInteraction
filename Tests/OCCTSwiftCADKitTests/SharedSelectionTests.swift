@@ -224,7 +224,7 @@ struct SharedSelectionTests {
     /// `SubShapeRef`, so `shape`/`uid`/`faceIndex` have to keep agreeing with the ref they now
     /// forward to, and the memberwise initialiser has to keep building one.
     @MainActor
-    @Test("The picked-info types forward identity to their SubShapeRef")
+    @Test("The picked-info types forward identity to their OCCTSwiftTools.SubShapeRef")
     func pickedInfoForwardsToItsRef() {
         guard let (service, entity) = loadedService() else {
             Issue.record("fixture setup failed")
@@ -265,7 +265,7 @@ struct SharedSelectionTests {
             Issue.record("Shape.box returned nil")
             return
         }
-        let ref = SubShapeRef(shape: face, uid: nil, ordinal: 0)
+        let ref = OCCTSwiftTools.SubShapeRef(shape: face, uid: nil, ordinal: 0)
         let bounds = FaceBounds(minX: 0, maxX: 4, minY: 0, maxY: 4)
         func info(_ bodyID: String) -> PickedFaceInfo {
             PickedFaceInfo(

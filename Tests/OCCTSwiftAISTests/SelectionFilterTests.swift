@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 import simd
@@ -31,8 +32,9 @@ struct SelectionFilterTests {
         var sawPlanar = false
         for i in 0..<cyl.subShapeCount(ofType: .face) {
             let faceShape = try #require(cyl.subShape(type: .face, index: i))
-            let obj = InteractiveObject(shape: cyl)
-            let candidate = SubShape.face(obj, ref: SubShapeRef(shape: faceShape, ordinal: i))
+            let obj = OCCTSwiftTools.InteractiveObject(shape: cyl)
+            let candidate = OCCTSwiftTools.SubShape.face(
+                obj, ref: OCCTSwiftTools.SubShapeRef(shape: faceShape, ordinal: i))
             let face = try #require(Face(faceShape))
             switch face.surfaceType {
             case .cylinder:
@@ -66,8 +68,9 @@ struct SelectionFilterTests {
         var sawLine = false
         for i in 0..<cyl.edgeCount {
             let edgeShape = try #require(cyl.subShape(type: .edge, index: i))
-            let obj = InteractiveObject(shape: cyl)
-            let candidate = SubShape.edge(obj, ref: SubShapeRef(shape: edgeShape, ordinal: i))
+            let obj = OCCTSwiftTools.InteractiveObject(shape: cyl)
+            let candidate = OCCTSwiftTools.SubShape.edge(
+                obj, ref: OCCTSwiftTools.SubShapeRef(shape: edgeShape, ordinal: i))
             let edge = try #require(Edge(edgeShape))
             switch edge.curveType {
             case .circle:
@@ -93,7 +96,9 @@ struct SelectionFilterTests {
         let faceShape = try #require(obj.shape.subShape(type: .face, index: 0))
         let filter = ShapeTypeFilter([.face])
 
-        #expect(filter.accepts(.face(obj, ref: SubShapeRef(shape: faceShape, ordinal: 0))))
+        #expect(
+            filter.accepts(
+                .face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: faceShape, ordinal: 0))))
         #expect(!filter.accepts(.body(obj)))
     }
 
@@ -105,8 +110,8 @@ struct SelectionFilterTests {
         let faces = obj.shape.faces()
         let cylindricalIdx = try #require(faces.firstIndex { $0.surfaceType == .cylinder })
         let cylindricalShape = try #require(Shape.fromFace(faces[cylindricalIdx]))
-        let candidate = SubShape.face(
-            obj, ref: SubShapeRef(shape: cylindricalShape, ordinal: cylindricalIdx))
+        let candidate = OCCTSwiftTools.SubShape.face(
+            obj, ref: OCCTSwiftTools.SubShapeRef(shape: cylindricalShape, ordinal: cylindricalIdx))
 
         // AllOf(cylindrical-surface, radius < 10) accepts a radius-4 cylinder face.
         let smallRadius = AllOfFilter([

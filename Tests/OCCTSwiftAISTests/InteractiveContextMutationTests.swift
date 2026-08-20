@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 import simd
@@ -33,7 +34,10 @@ struct InteractiveContextMutationTests {
         let bottomShape = try #require(identity0.shape(forOrdinal: bottomIndex))
         let bottomUID = try #require(identity0.uid(forOrdinal: bottomIndex))
         ctx.select(
-            .face(obj, ref: SubShapeRef(shape: bottomShape, uid: bottomUID, ordinal: bottomIndex)))
+            .face(
+                obj,
+                ref: OCCTSwiftTools.SubShapeRef(
+                    shape: bottomShape, uid: bottomUID, ordinal: bottomIndex)))
         #expect(ctx.selection.count == 1)
         _ = faces
 
@@ -76,7 +80,7 @@ struct InteractiveContextMutationTests {
     @Test func t_update_returnsNilForUndisplayedObject() throws {
         let ctx = makeContext()
         let shape = try #require(Shape.box(width: 4, height: 4, depth: 4))
-        let obj = InteractiveObject(shape: shape)  // never displayed
+        let obj = OCCTSwiftTools.InteractiveObject(shape: shape)  // never displayed
         let tool = try #require(Shape.box(width: 1, height: 1, depth: 1))
         let (result, history) = try #require(shape.subtractedWithFullHistory(tool))
         let updated = ctx.update(obj, to: result, absorbing: history, operationName: "noop")

@@ -1,5 +1,6 @@
 import Foundation
 import OCCTSwift
+import OCCTSwiftTools
 
 /// Restricts what `InteractiveContext` accepts as pickable.
 ///
@@ -14,7 +15,7 @@ import OCCTSwift
 /// `Dimension` conformers are removed by `ObjectIdentifier`.
 public protocol SelectionFilter: AnyObject, Sendable {
     /// Return `true` to keep `candidate` selectable/hoverable.
-    func accepts(_ candidate: SubShape) -> Bool
+    func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool
 }
 
 /// Restricts `.face` candidates to faces whose surface classifies as one of
@@ -31,7 +32,7 @@ public final class SurfaceTypeFilter: SelectionFilter, @unchecked Sendable {
         self.kinds = kinds
     }
 
-    public func accepts(_ candidate: SubShape) -> Bool {
+    public func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         guard case .face(_, let ref) = candidate else { return true }
         guard let face = Face(ref.shape) else { return false }
         return kinds.contains(face.surfaceType)
@@ -49,7 +50,7 @@ public final class CurveTypeFilter: SelectionFilter, @unchecked Sendable {
         self.kinds = kinds
     }
 
-    public func accepts(_ candidate: SubShape) -> Bool {
+    public func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         guard case .edge(_, let ref) = candidate else { return true }
         guard let edge = Edge(ref.shape) else { return false }
         return kinds.contains(edge.curveType)
@@ -68,7 +69,7 @@ public final class ShapeTypeFilter: SelectionFilter, @unchecked Sendable {
         self.modes = modes
     }
 
-    public func accepts(_ candidate: SubShape) -> Bool {
+    public func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         switch candidate {
         case .body: return modes.contains(.body)
         case .face: return modes.contains(.face)
@@ -87,7 +88,7 @@ public final class AllOfFilter: SelectionFilter, @unchecked Sendable {
         self.filters = filters
     }
 
-    public func accepts(_ candidate: SubShape) -> Bool {
+    public func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         filters.allSatisfy { $0.accepts(candidate) }
     }
 }
@@ -101,7 +102,7 @@ public final class AnyOfFilter: SelectionFilter, @unchecked Sendable {
         self.filters = filters
     }
 
-    public func accepts(_ candidate: SubShape) -> Bool {
+    public func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         filters.contains { $0.accepts(candidate) }
     }
 }
@@ -114,7 +115,7 @@ public final class NotFilter: SelectionFilter, @unchecked Sendable {
         self.filter = filter
     }
 
-    public func accepts(_ candidate: SubShape) -> Bool {
+    public func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         !filter.accepts(candidate)
     }
 }
@@ -122,13 +123,13 @@ public final class NotFilter: SelectionFilter, @unchecked Sendable {
 /// Closure escape hatch for app-specific predicates, e.g. a radius threshold
 /// on a circular edge that no built-in filter expresses.
 public final class PredicateFilter: SelectionFilter, @unchecked Sendable {
-    private let predicate: @Sendable (SubShape) -> Bool
+    private let predicate: @Sendable (OCCTSwiftTools.SubShape) -> Bool
 
-    public init(_ predicate: @escaping @Sendable (SubShape) -> Bool) {
+    public init(_ predicate: @escaping @Sendable (OCCTSwiftTools.SubShape) -> Bool) {
         self.predicate = predicate
     }
 
-    public func accepts(_ candidate: SubShape) -> Bool {
+    public func accepts(_ candidate: OCCTSwiftTools.SubShape) -> Bool {
         predicate(candidate)
     }
 }

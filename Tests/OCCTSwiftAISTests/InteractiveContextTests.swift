@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 
@@ -42,8 +43,8 @@ struct InteractiveContextTests {
         let ctx = makeContext()
         let a = ctx.display(try makeBox())
         let b = ctx.display(try makeBox())
-        ctx.select(.face(a, ref: SubShapeRef(shape: a.shape, ordinal: 0)))
-        ctx.select(.face(b, ref: SubShapeRef(shape: b.shape, ordinal: 0)))
+        ctx.select(.face(a, ref: OCCTSwiftTools.SubShapeRef(shape: a.shape, ordinal: 0)))
+        ctx.select(.face(b, ref: OCCTSwiftTools.SubShapeRef(shape: b.shape, ordinal: 0)))
         #expect(ctx.selection.count == 2)
 
         ctx.remove(a)
@@ -71,7 +72,8 @@ struct InteractiveContextTests {
     @Test func t_select_isIdempotent() throws {
         let ctx = makeContext()
         let obj = ctx.display(try makeBox())
-        let face = SubShape.face(obj, ref: SubShapeRef(shape: obj.shape, ordinal: 0))
+        let face = OCCTSwiftTools.SubShape.face(
+            obj, ref: OCCTSwiftTools.SubShapeRef(shape: obj.shape, ordinal: 0))
         ctx.select(face)
         ctx.select(face)
         ctx.select(face)
@@ -81,7 +83,8 @@ struct InteractiveContextTests {
     @Test func t_deselect_removesEntry() throws {
         let ctx = makeContext()
         let obj = ctx.display(try makeBox())
-        let face = SubShape.face(obj, ref: SubShapeRef(shape: obj.shape, ordinal: 0))
+        let face = OCCTSwiftTools.SubShape.face(
+            obj, ref: OCCTSwiftTools.SubShapeRef(shape: obj.shape, ordinal: 0))
         ctx.select(face)
         ctx.deselect(face)
         #expect(ctx.selection.isEmpty)
@@ -90,8 +93,8 @@ struct InteractiveContextTests {
     @Test func t_clearSelection_emptiesSet() throws {
         let ctx = makeContext()
         let obj = ctx.display(try makeBox())
-        ctx.select(.face(obj, ref: SubShapeRef(shape: obj.shape, ordinal: 0)))
-        ctx.select(.face(obj, ref: SubShapeRef(shape: obj.shape, ordinal: 1)))
+        ctx.select(.face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: obj.shape, ordinal: 0)))
+        ctx.select(.face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: obj.shape, ordinal: 1)))
         ctx.clearSelection()
         #expect(ctx.selection.isEmpty)
     }
@@ -100,7 +103,7 @@ struct InteractiveContextTests {
         let ctx = makeContext()
         let obj = ctx.display(try makeBox())
         ctx.selectionMode = [.face]
-        ctx.select(.face(obj, ref: SubShapeRef(shape: obj.shape, ordinal: 0)))
+        ctx.select(.face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: obj.shape, ordinal: 0)))
         #expect(ctx.selection.count == 1)
         ctx.selectionMode = [.body]
         #expect(ctx.selection.isEmpty)
@@ -145,7 +148,7 @@ struct InteractiveContextTests {
         let body = try #require(ctx.bodies.first)
 
         // Pre-populate via the additive API to confirm replacement, not addition.
-        ctx.select(.face(obj, ref: SubShapeRef(shape: obj.shape, ordinal: 99)))
+        ctx.select(.face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: obj.shape, ordinal: 99)))
         #expect(ctx.selection.count == 1)
 
         let triIdx = 0

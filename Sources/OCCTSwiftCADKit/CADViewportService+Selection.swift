@@ -59,7 +59,7 @@ extension CADViewportService {
 
     /// The interactive context's name for `entity`: its `SubShapeRef` plus the
     /// `InteractiveObject` standing for the body it was picked on.
-    private func subShape(for entity: PickedEntity) -> SubShape {
+    private func subShape(for entity: PickedEntity) -> OCCTSwiftTools.SubShape {
         let object = object(forBody: entity.bodyID, fallbackShape: entity.ref.shape)
         switch entity {
         case .face(let info): return .face(object, ref: info.ref)
@@ -75,7 +75,7 @@ extension CADViewportService {
     /// is no body shape to point at. It never affects identity: `InteractiveObject` compares
     /// and hashes by `id` alone.
     private func object(forBody bodyID: String, fallbackShape: OCCTSwift.Shape)
-        -> InteractiveObject
+        -> OCCTSwiftTools.InteractiveObject
     {
         let id: UUID
         if let existing = bodyObjectIDs[bodyID] {
@@ -85,7 +85,7 @@ extension CADViewportService {
             bodyObjectIDs[bodyID] = id
             objectBodyIDs[id] = bodyID
         }
-        return InteractiveObject(id: id, shape: bodyShapes[bodyID] ?? fallbackShape)
+        return OCCTSwiftTools.InteractiveObject(id: id, shape: bodyShapes[bodyID] ?? fallbackShape)
     }
 
     /// Re-projects the interactive context's selection into `selection` and rebuilds the
@@ -127,7 +127,7 @@ extension CADViewportService {
     ///
     /// `nil` for a `.body` sub-shape (no whole-body `PickedEntity` case), for a body this
     /// service does not have geometry for, and for anything whose enrichment fails.
-    private func pickedEntity(for subShape: SubShape) -> PickedEntity? {
+    private func pickedEntity(for subShape: OCCTSwiftTools.SubShape) -> PickedEntity? {
         if let cached = selectionInfo[subShape] { return cached }
         guard let bodyID = objectBodyIDs[subShape.object.id] else { return nil }
         switch subShape {
@@ -304,7 +304,7 @@ extension CADViewportService {
     /// (through `interactiveContext` directly, or by area selection) is enriched by the same
     /// code rather than a second copy of it. `triangleIndex` is `nil` for those, which only
     /// affects a `.perTriangle` scalar field: there is no triangle to sample.
-    private func enrichFace(ref: SubShapeRef, bodyID: String, triangleIndex: Int?)
+    private func enrichFace(ref: OCCTSwiftTools.SubShapeRef, bodyID: String, triangleIndex: Int?)
         -> PickedFaceInfo?
     {
         guard let face = Face(ref.shape) else { return nil }
@@ -375,7 +375,7 @@ extension CADViewportService {
     /// The presentation half of an edge pick.
     ///
     /// See `enrichFace(ref:bodyID:triangleIndex:)`.
-    private func enrichEdge(ref: SubShapeRef, bodyID: String) -> PickedEdgeInfo? {
+    private func enrichEdge(ref: OCCTSwiftTools.SubShapeRef, bodyID: String) -> PickedEdgeInfo? {
         guard let edge = Edge(ref.shape) else { return nil }
 
         let endpoints = edge.endpoints
@@ -444,7 +444,9 @@ extension CADViewportService {
     /// `renderPosition` is the rendered point the pick landed on, used only when the resolved
     /// `Shape` yields no vertex of its own; `nil` for a vertex that did not come from a pick,
     /// which then simply has no fallback.
-    private func enrichVertex(ref: SubShapeRef, bodyID: String, renderPosition: SIMD3<Float>?)
+    private func enrichVertex(
+        ref: OCCTSwiftTools.SubShapeRef, bodyID: String, renderPosition: SIMD3<Float>?
+    )
         -> PickedVertexInfo?
     {
         let fallback = renderPosition.map {

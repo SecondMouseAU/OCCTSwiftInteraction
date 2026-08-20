@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 import simd
@@ -31,7 +32,7 @@ struct ManipulatorWidgetTests {
         return SIMD2<Float>(ndc3.x, ndc3.y)
     }
 
-    private func widgetBodies(_ ctx: InteractiveContext, target: InteractiveObject)
+    private func widgetBodies(_ ctx: InteractiveContext, target: OCCTSwiftTools.InteractiveObject)
         -> [ViewportBody]
     {
         let prefix = "ais.widget.\(target.id.uuidString)."
@@ -371,7 +372,8 @@ struct ManipulatorWidgetTests {
     // MARK: - Helpers
 
     private func arrowTransform(
-        in ctx: InteractiveContext, target: InteractiveObject, axis: ManipulatorWidget.Axis
+        in ctx: InteractiveContext, target: OCCTSwiftTools.InteractiveObject,
+        axis: ManipulatorWidget.Axis
     ) -> simd_float4x4? {
         let id = "ais.widget.\(target.id.uuidString).\(suffix(for: axis))"
         return ctx.bodies.first(where: { $0.id == id })?.transform
