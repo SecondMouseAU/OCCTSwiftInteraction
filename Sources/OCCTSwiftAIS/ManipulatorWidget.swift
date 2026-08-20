@@ -1,5 +1,6 @@
 import Foundation
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import simd
 
@@ -65,7 +66,7 @@ public final class ManipulatorWidget: ObservableObject {
 
     // MARK: - Inputs
 
-    public let target: InteractiveObject
+    public let target: OCCTSwiftTools.InteractiveObject
     public let mode: Mode
 
     /// Length of each arrow / radius reference for rings.
@@ -144,7 +145,7 @@ public final class ManipulatorWidget: ObservableObject {
 
     // MARK: - Init
 
-    public init(target: InteractiveObject, mode: Mode = .translate) {
+    public init(target: OCCTSwiftTools.InteractiveObject, mode: Mode = .translate) {
         self.target = target
         self.mode = mode
     }

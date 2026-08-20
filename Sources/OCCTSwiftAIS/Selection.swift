@@ -1,5 +1,6 @@
 import Foundation
 import OCCTSwift
+import OCCTSwiftTools
 
 /// Categories of sub-shape that can be selected.
 public enum SelectionMode: Hashable, Sendable {
@@ -11,9 +12,9 @@ public enum SelectionMode: Hashable, Sendable {
 
 /// Snapshot of selected sub-shapes.
 public struct Selection: Hashable, Sendable {
-    public let subshapes: Set<SubShape>
+    public let subshapes: Set<OCCTSwiftTools.SubShape>
 
-    public init(_ subshapes: Set<SubShape> = []) {
+    public init(_ subshapes: Set<OCCTSwiftTools.SubShape> = []) {
         self.subshapes = subshapes
     }
 
@@ -21,7 +22,7 @@ public struct Selection: Hashable, Sendable {
     public var count: Int { subshapes.count }
 
     /// Distinct interactive objects represented in this selection.
-    public var bodies: Set<InteractiveObject> {
+    public var bodies: Set<OCCTSwiftTools.InteractiveObject> {
         Set(subshapes.map(\.object))
     }
 

@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 import simd
@@ -36,7 +37,7 @@ struct ManipulatorRotateTests {
         return SIMD2<Float>(ndc3.x, ndc3.y)
     }
 
-    private func widgetBodies(_ ctx: InteractiveContext, target: InteractiveObject)
+    private func widgetBodies(_ ctx: InteractiveContext, target: OCCTSwiftTools.InteractiveObject)
         -> [ViewportBody]
     {
         let prefix = "ais.widget.\(target.id.uuidString)."
@@ -45,7 +46,7 @@ struct ManipulatorRotateTests {
 
     /// Build a target whose pivot is the world origin (centered box).
     private func makeRotateContext() throws -> (
-        InteractiveContext, InteractiveObject, ManipulatorWidget
+        InteractiveContext, OCCTSwiftTools.InteractiveObject, ManipulatorWidget
     ) {
         let ctx = makeContext()
         let obj = ctx.display(try makeBox())

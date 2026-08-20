@@ -131,6 +131,7 @@ let package = Package(
             name: "OCCTSwiftCADKitTests",
             dependencies: ["OCCTSwiftCADKit"],
             path: "Tests/OCCTSwiftCADKitTests",
+            resources: [.copy("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]

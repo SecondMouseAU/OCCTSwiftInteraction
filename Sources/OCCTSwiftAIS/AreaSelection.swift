@@ -1,5 +1,6 @@
 import Foundation
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import simd
 
@@ -101,7 +102,7 @@ extension InteractiveContext {
         let vpMatrix =
             camera.projectionMatrix(aspectRatio: viewport.lastAspectRatio) * camera.viewMatrix
 
-        var matched: Set<SubShape> = []
+        var matched: Set<OCCTSwiftTools.SubShape> = []
         for object in displayedObjects() {
             guard isVisible(object) else { continue }
 
@@ -111,7 +112,7 @@ extension InteractiveContext {
             if selectionMode.contains(.body), let bounds = object.shape.bounds {
                 let corners = boundingBoxCorners(lo: bounds.min, hi: bounds.max)
                 let points = project(corners, vpMatrix: vpMatrix, viewportSize: viewportSize)
-                let candidate = SubShape.body(object)
+                let candidate = OCCTSwiftTools.SubShape.body(object)
                 if test(points), passesInstalledFilters(candidate) {
                     matched.insert(candidate)
                 }
@@ -123,8 +124,9 @@ extension InteractiveContext {
                     let points = project(
                         shape.vertices(), vpMatrix: vpMatrix, viewportSize: viewportSize)
                     let uid = table.uid(forOrdinal: ordinal)
-                    let candidate = SubShape.face(
-                        object, ref: SubShapeRef(shape: shape, uid: uid, ordinal: ordinal))
+                    let candidate = OCCTSwiftTools.SubShape.face(
+                        object,
+                        ref: OCCTSwiftTools.SubShapeRef(shape: shape, uid: uid, ordinal: ordinal))
                     if test(points), passesInstalledFilters(candidate) {
                         matched.insert(candidate)
                     }
@@ -137,8 +139,9 @@ extension InteractiveContext {
                     let points = project(
                         shape.vertices(), vpMatrix: vpMatrix, viewportSize: viewportSize)
                     let uid = table.uid(forOrdinal: ordinal)
-                    let candidate = SubShape.edge(
-                        object, ref: SubShapeRef(shape: shape, uid: uid, ordinal: ordinal))
+                    let candidate = OCCTSwiftTools.SubShape.edge(
+                        object,
+                        ref: OCCTSwiftTools.SubShapeRef(shape: shape, uid: uid, ordinal: ordinal))
                     if test(points), passesInstalledFilters(candidate) {
                         matched.insert(candidate)
                     }
@@ -151,8 +154,9 @@ extension InteractiveContext {
                     let points = project(
                         shape.vertices(), vpMatrix: vpMatrix, viewportSize: viewportSize)
                     let uid = table.uid(forOrdinal: ordinal)
-                    let candidate = SubShape.vertex(
-                        object, ref: SubShapeRef(shape: shape, uid: uid, ordinal: ordinal))
+                    let candidate = OCCTSwiftTools.SubShape.vertex(
+                        object,
+                        ref: OCCTSwiftTools.SubShapeRef(shape: shape, uid: uid, ordinal: ordinal))
                     if test(points), passesInstalledFilters(candidate) {
                         matched.insert(candidate)
                     }

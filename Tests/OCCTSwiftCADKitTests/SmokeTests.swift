@@ -78,9 +78,9 @@ struct SmokeTests {
     @Test("The moved sub-shape types resolve when both targets are imported")
     func movedSubShapeTypesResolveFromBothTargets() throws {
         let box = try #require(Shape.box(width: 2, height: 2, depth: 2))
-        let object = InteractiveObject(shape: box)
-        let ref = SubShapeRef(shape: box, ordinal: 0)
-        let sub: SubShape = .face(object, ref: ref)
+        let object = OCCTSwiftTools.InteractiveObject(shape: box)
+        let ref = OCCTSwiftTools.SubShapeRef(shape: box, ordinal: 0)
+        let sub: OCCTSwiftTools.SubShape = .face(object, ref: ref)
 
         #expect(sub.object == object)
         #expect(sub.ref == ref)

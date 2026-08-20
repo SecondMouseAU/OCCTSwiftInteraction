@@ -1,5 +1,6 @@
 import Foundation
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import simd
 
@@ -34,8 +35,8 @@ public protocol Dimension: AnyObject, Sendable {
 public final class LinearDimension: Dimension, @unchecked Sendable {
 
     public let id: String
-    public let from: SubShape
-    public let to: SubShape
+    public let from: OCCTSwiftTools.SubShape
+    public let to: OCCTSwiftTools.SubShape
 
     /// If non-nil, both anchors are orthogonally projected onto this plane
     /// before the distance is measured: the dimension reports the **in-plane**
@@ -46,8 +47,8 @@ public final class LinearDimension: Dimension, @unchecked Sendable {
     public var customLabel: String?
 
     public init(
-        from: SubShape,
-        to: SubShape,
+        from: OCCTSwiftTools.SubShape,
+        to: OCCTSwiftTools.SubShape,
         plane: WorkPlane? = nil,
         customLabel: String? = nil,
         id: String? = nil
@@ -98,14 +99,14 @@ public final class LinearDimension: Dimension, @unchecked Sendable {
 public final class AngularDimension: Dimension, @unchecked Sendable {
 
     public let id: String
-    public let armA: SubShape
-    public let apex: SubShape
-    public let armB: SubShape
+    public let armA: OCCTSwiftTools.SubShape
+    public let apex: OCCTSwiftTools.SubShape
+    public let armB: OCCTSwiftTools.SubShape
     public var customLabel: String?
 
     public init(
-        arms: (SubShape, SubShape),
-        apex: SubShape,
+        arms: (OCCTSwiftTools.SubShape, OCCTSwiftTools.SubShape),
+        apex: OCCTSwiftTools.SubShape,
         customLabel: String? = nil,
         id: String? = nil
     ) {
@@ -160,7 +161,7 @@ public final class AngularDimension: Dimension, @unchecked Sendable {
 public final class RadialDimension: Dimension, @unchecked Sendable {
 
     public let id: String
-    public let circularEdge: SubShape
+    public let circularEdge: OCCTSwiftTools.SubShape
 
     /// If true, the rendered label uses ⌀ and the diameter; otherwise R and the radius.
     public var showDiameter: Bool
@@ -168,7 +169,7 @@ public final class RadialDimension: Dimension, @unchecked Sendable {
     public var customLabel: String?
 
     public init(
-        circularEdge: SubShape,
+        circularEdge: OCCTSwiftTools.SubShape,
         showDiameter: Bool = false,
         customLabel: String? = nil,
         id: String? = nil
@@ -228,7 +229,7 @@ enum DimensionAnchor {
 
     /// nil when the sub-shape has no resolvable anchor, e.g. a shape whose
     /// bounding box is void.
-    static func resolve(_ subshape: SubShape) -> SIMD3<Float>? {
+    static func resolve(_ subshape: OCCTSwiftTools.SubShape) -> SIMD3<Float>? {
         switch subshape {
         case .body(let obj):
             return resolveBody(obj)
@@ -241,14 +242,14 @@ enum DimensionAnchor {
         }
     }
 
-    private static func resolveBody(_ obj: InteractiveObject) -> SIMD3<Float>? {
+    private static func resolveBody(_ obj: OCCTSwiftTools.InteractiveObject) -> SIMD3<Float>? {
         // Bbox center of the source shape.
         guard let bounds = obj.shape.bounds else { return nil }
         let center = (bounds.min + bounds.max) * 0.5
         return SIMD3<Float>(Float(center.x), Float(center.y), Float(center.z))
     }
 
-    private static func resolveFace(_ ref: SubShapeRef) -> SIMD3<Float>? {
+    private static func resolveFace(_ ref: OCCTSwiftTools.SubShapeRef) -> SIMD3<Float>? {
         // Bbox center of the face: cheap, robust for axis-aligned faces.
         // Curved faces would be better served by the area-weighted centroid
         // (`ShapeMeasurements.faceCentroids` from OCCTSwift) but that's an
@@ -258,14 +259,14 @@ enum DimensionAnchor {
         return SIMD3<Float>(Float(center.x), Float(center.y), Float(center.z))
     }
 
-    private static func resolveEdge(_ ref: SubShapeRef) -> SIMD3<Float>? {
+    private static func resolveEdge(_ ref: OCCTSwiftTools.SubShapeRef) -> SIMD3<Float>? {
         guard let edge = OCCTSwift.Edge(ref.shape) else { return nil }
         let ends = edge.endpoints
         let mid = (ends.start + ends.end) * 0.5
         return SIMD3<Float>(Float(mid.x), Float(mid.y), Float(mid.z))
     }
 
-    private static func resolveVertex(_ ref: SubShapeRef) -> SIMD3<Float>? {
+    private static func resolveVertex(_ ref: OCCTSwiftTools.SubShapeRef) -> SIMD3<Float>? {
         guard let p = ref.shape.vertices().first else { return nil }
         return SIMD3<Float>(Float(p.x), Float(p.y), Float(p.z))
     }
@@ -275,7 +276,9 @@ enum DimensionAnchor {
     ///
     /// The `pointOnCircle` is the edge's start endpoint, guaranteed to lie
     /// on the circle when the edge is a circular arc / closed circle.
-    static func resolveCircle(_ subshape: SubShape) -> (SIMD3<Float>, SIMD3<Float>, Float)? {
+    static func resolveCircle(_ subshape: OCCTSwiftTools.SubShape) -> (
+        SIMD3<Float>, SIMD3<Float>, Float
+    )? {
         guard case .edge(_, let ref) = subshape,
             let edge = OCCTSwift.Edge(ref.shape),
             edge.isCircle,

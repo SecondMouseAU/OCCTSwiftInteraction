@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import Testing
 
 @testable import OCCTSwiftAIS
@@ -7,18 +8,24 @@ import Testing
 /// shape at `index`, with no durable `uid`, for tests exercising geometry
 /// resolution (dimension anchors, `Selection` accessors) that don't need a
 /// `BRepGraph` in the loop.
-func faceRef(_ object: InteractiveObject, _ index: Int) throws -> SubShapeRef {
-    SubShapeRef(
+func faceRef(_ object: OCCTSwiftTools.InteractiveObject, _ index: Int) throws
+    -> OCCTSwiftTools.SubShapeRef
+{
+    OCCTSwiftTools.SubShapeRef(
         shape: try #require(object.shape.subShape(type: .face, index: index)), ordinal: index)
 }
 
-func edgeRef(_ object: InteractiveObject, _ index: Int) throws -> SubShapeRef {
-    SubShapeRef(
+func edgeRef(_ object: OCCTSwiftTools.InteractiveObject, _ index: Int) throws
+    -> OCCTSwiftTools.SubShapeRef
+{
+    OCCTSwiftTools.SubShapeRef(
         shape: try #require(object.shape.subShape(type: .edge, index: index)), ordinal: index)
 }
 
-func vertexRef(_ object: InteractiveObject, _ index: Int) throws -> SubShapeRef {
-    SubShapeRef(
+func vertexRef(_ object: OCCTSwiftTools.InteractiveObject, _ index: Int) throws
+    -> OCCTSwiftTools.SubShapeRef
+{
+    OCCTSwiftTools.SubShapeRef(
         shape: try #require(object.shape.subShape(type: .vertex, index: index)), ordinal: index)
 }
 
@@ -41,21 +48,30 @@ func facesWithCentroids(of shape: OCCTSwift.Shape) -> [(index: Int, centroid: SI
 /// uid they'd otherwise have to duplicate `InteractiveContext`'s own minting
 /// logic to reconstruct. See `SubShapeRef`'s equality docs for why a uid-less
 /// ref never equals a uid-carrying one via `==`.
-func containsFace(_ subshapes: Set<SubShape>, _ object: InteractiveObject, ordinal: Int) -> Bool {
+func containsFace(
+    _ subshapes: Set<OCCTSwiftTools.SubShape>, _ object: OCCTSwiftTools.InteractiveObject,
+    ordinal: Int
+) -> Bool {
     subshapes.contains { sub in
         guard case .face(let o, let ref) = sub else { return false }
         return o == object && ref.ordinal == ordinal
     }
 }
 
-func containsEdge(_ subshapes: Set<SubShape>, _ object: InteractiveObject, ordinal: Int) -> Bool {
+func containsEdge(
+    _ subshapes: Set<OCCTSwiftTools.SubShape>, _ object: OCCTSwiftTools.InteractiveObject,
+    ordinal: Int
+) -> Bool {
     subshapes.contains { sub in
         guard case .edge(let o, let ref) = sub else { return false }
         return o == object && ref.ordinal == ordinal
     }
 }
 
-func containsVertex(_ subshapes: Set<SubShape>, _ object: InteractiveObject, ordinal: Int) -> Bool {
+func containsVertex(
+    _ subshapes: Set<OCCTSwiftTools.SubShape>, _ object: OCCTSwiftTools.InteractiveObject,
+    ordinal: Int
+) -> Bool {
     subshapes.contains { sub in
         guard case .vertex(let o, let ref) = sub else { return false }
         return o == object && ref.ordinal == ordinal

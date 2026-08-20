@@ -14,7 +14,10 @@ import simd
 /// Written once rather than three times: before OCCTSwiftInteraction#3 each of the three info
 /// types carried its own hand-rolled copy of this, each commented "mirrors
 /// `OCCTSwiftAIS.SubShapeRef.==` exactly", which is three chances for one rule to drift.
-func isSamePick(_ lhs: SubShapeRef, _ lhsBodyID: String, _ rhs: SubShapeRef, _ rhsBodyID: String)
+func isSamePick(
+    _ lhs: OCCTSwiftTools.SubShapeRef, _ lhsBodyID: String, _ rhs: OCCTSwiftTools.SubShapeRef,
+    _ rhsBodyID: String
+)
     -> Bool
 {
     guard lhs == rhs else { return false }
@@ -41,7 +44,7 @@ func isSamePick(_ lhs: SubShapeRef, _ lhsBodyID: String, _ rhs: SubShapeRef, _ r
 public struct PickedFaceInfo: Sendable {
     /// The identity of this pick: the exact `Shape` the face was tessellated from, its durable
     /// `BRepGraph.GraphUID` when a graph was available, and the render-path ordinal.
-    public let ref: SubShapeRef
+    public let ref: OCCTSwiftTools.SubShapeRef
 
     /// The picked face, as the exact `Shape` (wrapping a `TopoDS_Face`) it was tessellated from.
     ///
@@ -76,7 +79,7 @@ public struct PickedFaceInfo: Sendable {
     public let scalarValue: Double?
 
     public init(
-        ref: SubShapeRef,
+        ref: OCCTSwiftTools.SubShapeRef,
         bodyID: String,
         isHorizontal: Bool,
         isVertical: Bool,
@@ -113,7 +116,7 @@ public struct PickedFaceInfo: Sendable {
         scalarValue: Double? = nil
     ) {
         self.init(
-            ref: SubShapeRef(shape: shape, uid: uid, ordinal: faceIndex),
+            ref: OCCTSwiftTools.SubShapeRef(shape: shape, uid: uid, ordinal: faceIndex),
             bodyID: bodyID,
             isHorizontal: isHorizontal,
             isVertical: isVertical,

@@ -1,5 +1,6 @@
 import Foundation
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 import simd
@@ -181,7 +182,7 @@ struct AreaSelectionTests {
         let faces = obj.shape.faces()
         let face0Shape = try #require(Shape.fromFace(faces[0]))
         let face1Shape = try #require(Shape.fromFace(faces[1]))
-        ctx.select(.face(obj, ref: SubShapeRef(shape: face0Shape, ordinal: 0)))
+        ctx.select(.face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: face0Shape, ordinal: 0)))
 
         let rect = try screenRect(for: face1Shape, ctx: ctx)
         ctx.selectRectangle(
@@ -200,7 +201,7 @@ struct AreaSelectionTests {
         let faces = obj.shape.faces()
         let face0Shape = try #require(Shape.fromFace(faces[0]))
         let face1Shape = try #require(Shape.fromFace(faces[1]))
-        ctx.select(.face(obj, ref: SubShapeRef(shape: face0Shape, ordinal: 0)))
+        ctx.select(.face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: face0Shape, ordinal: 0)))
 
         let rect = try screenRect(for: face1Shape, ctx: ctx)
         ctx.selectRectangle(
@@ -224,7 +225,9 @@ struct AreaSelectionTests {
         let table = try #require(ctx.faceIdentityTable(for: obj))
         ctx.select(
             .face(
-                obj, ref: SubShapeRef(shape: face0Shape, uid: table.uid(forOrdinal: 0), ordinal: 0))
+                obj,
+                ref: OCCTSwiftTools.SubShapeRef(
+                    shape: face0Shape, uid: table.uid(forOrdinal: 0), ordinal: 0))
         )
 
         let rect = try screenRect(for: face0Shape, ctx: ctx)
@@ -245,7 +248,9 @@ struct AreaSelectionTests {
         let table = try #require(ctx.faceIdentityTable(for: obj))
         ctx.select(
             .face(
-                obj, ref: SubShapeRef(shape: face0Shape, uid: table.uid(forOrdinal: 0), ordinal: 0))
+                obj,
+                ref: OCCTSwiftTools.SubShapeRef(
+                    shape: face0Shape, uid: table.uid(forOrdinal: 0), ordinal: 0))
         )
 
         let rect = try screenRect(for: face0Shape, ctx: ctx)

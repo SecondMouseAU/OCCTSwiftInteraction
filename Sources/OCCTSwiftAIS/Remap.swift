@@ -36,12 +36,12 @@ extension InteractiveContext {
     public func remap(
         _ selection: Selection,
         using graph: BRepGraph,
-        rebindingTo newObject: InteractiveObject
+        rebindingTo newObject: OCCTSwiftTools.InteractiveObject
     ) -> Selection {
         let faceUIDs = faceIdentityTable(for: newObject)?.uids
         let edgeUIDs = edgeIdentityTable(for: newObject)?.uids
         let vertexUIDs = vertexIdentityTable(for: newObject)?.uids
-        var result: Set<SubShape> = []
+        var result: Set<OCCTSwiftTools.SubShape> = []
         for sub in selection.subshapes {
             switch sub {
             case .body:
@@ -77,7 +77,7 @@ extension InteractiveContext {
     /// `.body` sub-shapes and sub-shapes with no `uid`, or whose `uid` isn't
     /// `graph's` own, always return `false`: there's no node in `graph` to
     /// ask about.
-    public func isDeleted(_ subshape: SubShape, in graph: BRepGraph) -> Bool {
+    public func isDeleted(_ subshape: OCCTSwiftTools.SubShape, in graph: BRepGraph) -> Bool {
         guard let ref = subshape.ref, let uid = ref.uid,
             let node = graph.node(forUID: uid)
         else { return false }
@@ -92,11 +92,11 @@ extension InteractiveContext {
     }
 
     private func remapRef(
-        _ ref: SubShapeRef,
+        _ ref: OCCTSwiftTools.SubShapeRef,
         kind: BRepGraph.NodeKind,
         graph: BRepGraph,
         uids: [BRepGraph.GraphUID?]?
-    ) -> [SubShapeRef] {
+    ) -> [OCCTSwiftTools.SubShapeRef] {
         guard let uid = ref.uid, let node = graph.node(forUID: uid) else { return [] }
         let original = BRepGraph.NodeRef(kind: kind, index: node.index)
         let successors = graph.findDerivedOrSelf(of: original).filter { $0.kind == kind }
@@ -110,7 +110,7 @@ extension InteractiveContext {
             if let newUID, let matched = uids?.firstIndex(of: newUID) {
                 ordinal = matched
             }
-            return SubShapeRef(shape: shape, uid: newUID, ordinal: ordinal)
+            return OCCTSwiftTools.SubShapeRef(shape: shape, uid: newUID, ordinal: ordinal)
         }
     }
 }

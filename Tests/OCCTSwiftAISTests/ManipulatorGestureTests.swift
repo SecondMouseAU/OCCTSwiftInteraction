@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import SwiftUI
 import Testing
@@ -190,7 +191,7 @@ struct ManipulatorGestureTests {
         // A widget that was never installed has nil context: the coordinator
         // should bail without crashing.
         let shape = OCCTSwift.Shape.box(width: 1, height: 1, depth: 1)!
-        let obj = InteractiveObject(shape: shape)
+        let obj = OCCTSwiftTools.InteractiveObject(shape: shape)
         let widget = ManipulatorWidget(target: obj)
         let coord = ManipulatorGestureCoordinator(widget: widget)
         coord.onChanged(location: CGPoint(x: 0, y: 0), translation: CGSize.zero, in: Self.viewSize)

@@ -1,4 +1,5 @@
 import OCCTSwift
+import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 import simd
@@ -225,9 +226,9 @@ struct EdgeVertexSelectionTests {
         let vertex1 = try #require(obj.shape.subShape(type: .vertex, index: 1))
         let s = Selection([
             .body(obj),
-            .face(obj, ref: SubShapeRef(shape: obj.shape, ordinal: 0)),
-            .vertex(obj, ref: SubShapeRef(shape: vertex0, ordinal: 0)),
-            .vertex(obj, ref: SubShapeRef(shape: vertex1, ordinal: 1)),
+            .face(obj, ref: OCCTSwiftTools.SubShapeRef(shape: obj.shape, ordinal: 0)),
+            .vertex(obj, ref: OCCTSwiftTools.SubShapeRef(shape: vertex0, ordinal: 0)),
+            .vertex(obj, ref: OCCTSwiftTools.SubShapeRef(shape: vertex1, ordinal: 1)),
         ])
         #expect(s.vertices.count == 2)
     }
