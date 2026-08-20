@@ -2857,4 +2857,107 @@ struct SmokeTests {
         let responseB = await taskB.value
         #expect(responseB == .chose(candidateID: "yes"), "B must resolve with its own real answer")
     }
+
+    /// Regression for OCCTSwiftUX#12 / OCCTSwiftCADKit#19 (ecosystem#18), the camera half of
+    /// the OCCTSwift#302 multibody ripple.
+    ///
+    /// `loadFile(from:id:progress:)` registers a multibody file as ONE entity owning N bodies,
+    /// and framing used to run off `shape(id:)`, which returns only that entity's first body.
+    /// So the camera zoomed to body 0 and the rest of the assembly rendered off screen.
+    ///
+    /// Asserts the union rather than the camera because `focus(on:)` animates toward the
+    /// framing over 0.3s, so `cameraState` read straight afterwards is mid-interpolation.
+    ///
+    /// Seeds the two-body entity through the internal `entities`/`installIdentity` seams: this
+    /// package ships no multi-body file on disk.
+    @MainActor
+    @Test("Framing spans every body of a multi-body entity, not just the first")
+    func framingSpansEveryBodyOfAMultiBodyEntity() {
+        guard let near = Shape.box(width: 2, height: 2, depth: 2),
+            let farUnplaced = Shape.box(width: 2, height: 2, depth: 2)
+        else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        guard
+            let far = farUnplaced.transformed(matrix: [
+                1, 0, 0,
+                0, 1, 0,
+                0, 0, 1,
+                20, 0, 0,
+            ])
+        else {
+            Issue.record("Shape.transformed returned nil")
+            return
+        }
+        guard let nearBounds = near.bounds, let farBounds = far.bounds else {
+            Issue.record("expected both boxes to have bounds")
+            return
+        }
+
+        let service = CADViewportService()
+        service.modelBodies.append(
+            _ViewportBody(
+                id: "asm-0", vertexData: [0, 0, 0, 0, 0, 1], indices: [0], edges: [],
+                color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)))
+        service.modelBodies.append(
+            _ViewportBody(
+                id: "asm-1", vertexData: [20, 0, 0, 0, 0, 1], indices: [0], edges: [],
+                color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)))
+        service.installIdentity([
+            "asm-0": ShapeIdentity(shape: near),
+            "asm-1": ShapeIdentity(shape: far),
+        ])
+        service.entities["asm"] = CADViewportService.Entity(bodyIDs: ["asm-0", "asm-1"])
+
+        guard let box = service.combinedBounds(ofEntities: ["asm"]) else {
+            Issue.record("expected a two-body entity to produce bounds")
+            return
+        }
+
+        #expect(box.min.x == min(nearBounds.min.x, farBounds.min.x))
+        #expect(box.max.x == max(nearBounds.max.x, farBounds.max.x))
+
+        // The discriminating pair: framing body 0 alone would stop at its own far face, well
+        // short of the second body 20 units away. Both must hold, or the union collapsed back
+        // to one body.
+        #expect(
+            box.max.x > nearBounds.max.x,
+            "the union must reach past the first body, or the camera frames body 0 only")
+        #expect(
+            box.max.x - box.min.x > 20,
+            "the span must cover both bodies and the gap between them")
+    }
+
+    /// The single-body case is unchanged: one entity with one body frames exactly that body.
+    ///
+    /// Guards against the multi-body fix widening the common case.
+    @MainActor
+    @Test("Framing a single-body entity still matches that body's own bounds")
+    func framingSingleBodyEntityIsUnchanged() {
+        guard let box = Shape.box(width: 4, height: 4, depth: 4), let expected = box.bounds else {
+            Issue.record("Shape.box returned nil, or had no bounds")
+            return
+        }
+        let service = CADViewportService()
+        service.load(box, id: "solo")
+
+        guard let actual = service.combinedBounds(ofEntities: ["solo"]) else {
+            Issue.record("expected a loaded single body to produce bounds")
+            return
+        }
+        // Compared with a tolerance, not for exact equality: `load` tessellates the shape, and
+        // the bounding box read afterwards is computed over the triangulation, so it lands
+        // within a rounding step of the pre-tessellation one rather than on it. The point of
+        // this test is that the single-body case still frames that one body, not that OCCT
+        // returns bit-identical doubles either side of a mesh.
+        for i in 0..<3 {
+            #expect(abs(actual.min[i] - expected.min[i]) < 1e-9)
+            #expect(abs(actual.max[i] - expected.max[i]) < 1e-9)
+        }
+
+        #expect(
+            service.combinedBounds(ofEntities: ["never-loaded"]) == nil,
+            "an unloaded id contributes nothing")
+    }
 }

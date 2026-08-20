@@ -819,23 +819,56 @@ public final class CADViewportService {
     /// No-op if none of `ids` are currently loaded, or if none of the loaded ones has a
     /// bounding box.
     public func focus(on ids: [String]) {
-        let shapes = ids.compactMap { shape(id: $0) }
-        guard !shapes.isEmpty else { return }
+        guard let box = combinedBounds(ofEntities: ids) else { return }
+        frameCamera(on: box)
+    }
 
+    /// The union of every body's bounding box across the named entities, or `nil` if none of
+    /// them is loaded or none has bounds.
+    ///
+    /// **Unions over `Entity.bodyIDs`, not `shape(id:)`.** `shape(id:)` returns only an
+    /// entity's *first* body, and a multibody file loaded through
+    /// `loadFile(from:id:progress:)` is one entity owning N bodies. Framing off `shape(id:)`
+    /// therefore zoomed to body 0 and left the rest of the assembly off screen, which is
+    /// OCCTSwiftUX#12 / OCCTSwiftCADKit#19, the camera half of the OCCTSwift#302 multibody
+    /// ripple. Before OCCTSwift v1.11.3 a multibody file came back as one lumped shape, so
+    /// "the first shape" genuinely was the whole model and this read correctly.
+    ///
+    /// The same first-body-only assumption was already fixed once in `applySideBySide`, whose
+    /// regression test records it as "fine for the roughly-frame-the-camera use in
+    /// `focus(on:)`". It was not fine; that is what this method exists to correct.
+    ///
+    /// Internal so tests can assert the union directly. The camera itself animates toward the
+    /// framing over 0.3s, so `cameraState` right after a `focus(on:)` is mid-interpolation and
+    /// cannot answer what was framed.
+    func combinedBounds(ofEntities ids: [String])
+        -> (min: SIMD3<Double>, max: SIMD3<Double>)?
+    {
         var minPt = SIMD3<Double>(repeating: .infinity)
         var maxPt = SIMD3<Double>(repeating: -.infinity)
-        for s in shapes {
-            guard let b = s.bounds else { continue }
-            minPt = SIMD3(min(minPt.x, b.min.x), min(minPt.y, b.min.y), min(minPt.z, b.min.z))
-            maxPt = SIMD3(max(maxPt.x, b.max.x), max(maxPt.y, b.max.y), max(maxPt.z, b.max.z))
+        for id in ids {
+            guard let entity = entities[id] else { continue }
+            for bodyID in entity.bodyIDs {
+                guard let b = bodyShapes[bodyID]?.bounds else { continue }
+                minPt = SIMD3(min(minPt.x, b.min.x), min(minPt.y, b.min.y), min(minPt.z, b.min.z))
+                maxPt = SIMD3(max(maxPt.x, b.max.x), max(maxPt.y, b.max.y), max(maxPt.z, b.max.z))
+            }
         }
-        guard minPt.x.isFinite else { return }
+        guard minPt.x.isFinite else { return nil }
+        return (minPt, maxPt)
+    }
+
+    /// Points the camera at the centre of `box`, far enough back to hold its largest dimension.
+    ///
+    /// The one place that turns a bounding box into a camera move.
+    private func frameCamera(on box: (min: SIMD3<Double>, max: SIMD3<Double>)) {
         let center = SIMD3<Float>(
-            Float((minPt.x + maxPt.x) / 2),
-            Float((minPt.y + maxPt.y) / 2),
-            Float((minPt.z + maxPt.z) / 2)
+            Float((box.min.x + box.max.x) / 2),
+            Float((box.min.y + box.max.y) / 2),
+            Float((box.min.z + box.max.z) / 2)
         )
-        let maxDim = Float(max(maxPt.x - minPt.x, max(maxPt.y - minPt.y, maxPt.z - minPt.z)))
+        let maxDim = Float(
+            max(box.max.x - box.min.x, max(box.max.y - box.min.y, box.max.z - box.min.z)))
         controller.focusOn(point: center, distance: maxDim * 2.5)
     }
 
@@ -1668,17 +1701,28 @@ public final class CADViewportService {
         return SIMD3<Float>(world.x, world.y, world.z)
     }
 
-    /// No-op if nothing is loaded, or if the loaded shape has no bounding box: leaving the
-    /// camera where it is beats aiming it at the world origin.
+    /// Frames everything the deprecated single-shape loaders just put on screen.
+    ///
+    /// Both callers (`loadFile(from:progress:)` and `loadShape(_:id:)`) call
+    /// `resetAllModelState()` first, so `entities` holds exactly their own load, and framing
+    /// all of it is the same thing as framing what they loaded.
+    ///
+    /// It frames **every** body rather than `currentSingleShape`, which is the fix for
+    /// OCCTSwiftUX#12 / OCCTSwiftCADKit#19: `loadFile(from:progress:)` sets
+    /// `legacyLoadedShape` to `result.shapes.first`, so on a multibody file the camera used to
+    /// zoom to body 0 while the other bodies rendered off screen.
+    ///
+    /// No-op if nothing is loaded, or if nothing loaded has a bounding box: leaving the camera
+    /// where it is beats aiming it at the world origin. The `currentSingleShape` fallback
+    /// preserves the old behaviour for any loader path that populates `legacyLoadedShape`
+    /// without installing identity, which nothing does today.
     private func focusOnLoadedShape() {
+        if let box = combinedBounds(ofEntities: Array(entities.keys)) {
+            frameCamera(on: box)
+            return
+        }
         guard let shape = currentSingleShape, let b = shape.bounds else { return }
-        let center = SIMD3<Float>(
-            Float((b.min.x + b.max.x) / 2),
-            Float((b.min.y + b.max.y) / 2),
-            Float((b.min.z + b.max.z) / 2)
-        )
-        let maxDim = Float(max(b.max.x - b.min.x, max(b.max.y - b.min.y, b.max.z - b.min.z)))
-        controller.focusOn(point: center, distance: maxDim * 2.5)
+        frameCamera(on: b)
     }
 
     // MARK: - Shape Info
