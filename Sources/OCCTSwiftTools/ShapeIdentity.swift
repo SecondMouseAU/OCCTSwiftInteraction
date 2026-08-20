@@ -42,6 +42,12 @@ import OCCTSwift
 /// - **Vertices**: `Shape.subShapes(ofType: .vertex)`, the traversal behind
 ///   `ViewportBody.vertexIndices`.
 ///
+/// The face and edge enumerations need a `Face`/`Edge` to `Shape` conversion on the way, and both
+/// conversions are failable, so those two tables hold `[Shape?]` and a failed conversion becomes a
+/// hole at its own ordinal rather than a missing element (OCCTSwiftInteraction#9). The vertex
+/// enumeration returns `Shape` values already and needs no conversion, which is why it alone holds
+/// `[Shape]`.
+///
 /// Face identity keys on OCCT's `TopoDS_Shape::IsSame` (settled in
 /// [OCCTSwiftInteraction#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1)), so a
 /// face shared between two shells is one entry rather than two, and `graph.findNode(for:)` matches
@@ -89,10 +95,43 @@ public struct ShapeIdentity: Sendable {
     ///   - shape: the shape to enumerate.
     ///   - graph: a graph built from `shape`, or `nil` for shapes-only tables.
     public init(shape: Shape, graph: BRepGraph?) {
+        self.init(
+            shape: shape, graph: graph, faceToShape: Shape.fromFace, edgeToShape: Shape.fromEdge)
+    }
+
+    /// The construction itself, with the two failable sub-shape conversions supplied by the caller.
+    ///
+    /// Internal rather than private so a test can drive a conversion failure, which no public API
+    /// can provoke: every `Face` and `Edge` the enumerations hand back already holds a live OCCT
+    /// handle, so the bridge calls behind `Shape.fromFace` / `Shape.fromEdge` do not fail for one.
+    /// Same treatment, and same reason, as `CADFileLoader.edgePolylineOnlyBridge`.
+    ///
+    /// - Parameters:
+    ///   - shape: the shape to enumerate.
+    ///   - graph: a graph built from `shape`, or `nil` for shapes-only tables.
+    ///   - faceToShape: how a `Face` becomes a `Shape`, `Shape.fromFace` in production.
+    ///   - edgeToShape: how an `Edge` becomes a `Shape`, `Shape.fromEdge` in production.
+    init(
+        shape: Shape,
+        graph: BRepGraph?,
+        faceToShape: (Face) -> Shape?,
+        edgeToShape: (Edge) -> Shape?
+    ) {
         self.shape = shape
         self.graph = graph
-        let faceShapes = shape.faces().compactMap { Shape.fromFace($0) }
-        let edgeShapes = shape.edges().compactMap { Shape.fromEdge($0) }
+        // `map`, never `compactMap`. These arrays are indexed by the render-path ordinal, which
+        // the mesher assigns from the unfiltered enumeration, so dropping a failed conversion
+        // would move every later ordinal down one and the table would then name the sub-shape
+        // after the one the pick hit (OCCTSwiftInteraction#9). A `nil` element means "no identity
+        // at this ordinal", which costs one face its durable handle instead of corrupting its
+        // neighbours, and `SubShapePickResolver` already reads that as a miss and re-derives from
+        // the shape.
+        let faceShapes = shape.faces().map(faceToShape)
+        let edgeShapes = shape.edges().map(edgeToShape)
+        // The vertex path takes no conversion at all: `subShapes(ofType:)` returns `Shape` values,
+        // so its alignment holds for free and its table stays non-optional. That asymmetry is the
+        // point, so do not add a conversion here to match the other two, and do not take the other
+        // two back to `compactMap` to match this one.
         let vertexShapes = shape.subShapes(ofType: .vertex)
         self.faces = FaceIdentityTable(
             shapes: faceShapes, uids: Self.uids(for: faceShapes, in: graph))
@@ -119,12 +158,15 @@ public struct ShapeIdentity: Sendable {
     ///
     /// Written once and shared by all three kinds. `findNode(for:)` matches on OCCT's `IsSame`,
     /// which is the identity these tables are enumerated by, so a face shared between two shells
-    /// resolves to the one node naming it. An individual element is `nil` only when that
-    /// sub-shape has no node in the graph.
-    private static func uids(for shapes: [Shape], in graph: BRepGraph?) -> [BRepGraph.GraphUID?]? {
+    /// resolves to the one node naming it. An individual element is `nil` when that sub-shape has
+    /// no node in the graph, and also when there is no sub-shape at that ordinal at all, which
+    /// keeps `uids` the same length and the same index space as `shapes`.
+    ///
+    /// Takes `[Shape?]` so the vertex table's `[Shape]` promotes on the way in.
+    private static func uids(for shapes: [Shape?], in graph: BRepGraph?) -> [BRepGraph.GraphUID?]? {
         guard let graph else { return nil }
         return shapes.map { sub in
-            guard let node = graph.findNode(for: sub) else { return nil }
+            guard let sub, let node = graph.findNode(for: sub) else { return nil }
             return graph.uid(ofNodeKind: Int(node.kind.rawValue), index: node.index)
         }
     }

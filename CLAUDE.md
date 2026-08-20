@@ -70,7 +70,7 @@ OCCTSwiftIO built clean with zero errors while carrying three real breaks in its
 Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
 published URLs. No binary lives in this repo.
 
-**Expected baseline: 357 tests across 32 suites, all passing.**
+**Expected baseline: 360 tests across 32 suites, all passing.**
 
 ## Face identity is `IsSame`, and that decision is settled
 
@@ -142,10 +142,19 @@ down by geometry, not by index, and it was mutation-checked.
 shape to a BREP string: measured at 5.0ms against a 14-face solid whose mesh takes 9.6ms. Headless
 consumers of `load` (OCCTDesignLoop's reprojection, batch render and parts extraction) never pick.
 
+**A table's index space is the ordinal space, and that is load-bearing**
+([#9](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/9)). Ordinals index the *full*
+enumeration, because that is what the mesher walks, so the face and edge tables are built with
+`map`, never `compactMap`: a dropped element moves every later ordinal down one and the table then
+names the sub-shape after the one the pick hit, silently. That is why `FaceIdentityTable.shapes` and
+`EdgeIdentityTable.shapes` are `[Shape?]`. `VertexIdentityTable.shapes` is `[Shape]` because
+`subShapes(ofType: .vertex)` needs no failable conversion; keep that asymmetry, in both directions.
+
 The bridge's edge-polyline-only branch (`mesh(...)` returned nil) used to substitute an empty
 `FaceIdentityTable` and now builds the ordinary one. It is reachable from tests only through the
 internal `edgePolylineOnlyBridge` seam, because a wire, an edge and a lone vertex all mesh to an
-empty `Mesh` rather than to nil.
+empty `Mesh` rather than to nil. `ShapeIdentity.init` has an internal seam of the same kind, taking
+the two sub-shape conversions as parameters, because no public API can make one of them fail.
 
 ## One selection, held by `InteractiveContext`
 
@@ -218,11 +227,22 @@ Per-type reference for all three targets is in [docs/reference/](docs/reference/
   Covenant text.
 - **Release pattern**: commit, push, tag, and create a GitHub release with notes.
 
+## Platforms are iOS and macOS, and that is settled
+
+`Package.swift` declares `.iOS(.v18)` and `.macOS(.v15)`. Nothing else, and do not add anything
+else: `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`,
+`ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0
+release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS
+or tvOS cannot link at all.
+
+The manifest declared `.visionOS(.v1)` and `.tvOS(.v18)` until the 1.0.0 sweep, inherited from the
+union of what the three pre-merge manifests declared. The claim was never true for any of the three.
+Root cause is filed upstream as
+[OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
+
 ## Still to finish after the merge
 
 - `okf/index.md` describes the OCCTSwiftTools half in more detail than the other two.
-- The CADKit target's `visionOS`/`tvOS` build is unverified. `Package.swift` keeps the union of what
-  the three declared, and CADKit declared only iOS and macOS. Confirm or narrow before 1.0.0.
 
 ## Ecosystem context worth reading before non-trivial changes
 

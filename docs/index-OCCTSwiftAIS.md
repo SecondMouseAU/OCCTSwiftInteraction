@@ -7,7 +7,7 @@ nav_order: 1
 
 High-level **Application Interactive Services** for the OCCTSwift / OCCTSwiftViewport stack —
 selection-from-topology, manipulator widgets, dimension annotations, and standard scene objects,
-all in pure Swift for **macOS / iOS / visionOS / tvOS**.
+all in pure Swift for **macOS / iOS**.
 
 OCCTSwiftAIS sits at the **top of the OCCT layered stack**: it adds scene-management semantics
 (selection on topology, manipulators, dimensions) as a thin Swift layer above the kernel
@@ -92,6 +92,6 @@ Then add `.product(name: "OCCTSwiftAIS", package: "OCCTSwiftAIS")` to your targe
 transitively pulls `OCCTSwiftTools`, `OCCTSwiftViewport`, and `OCCTSwift` — no need to declare
 them separately.
 
-- **Platforms:** macOS 15+, iOS 18+, visionOS 1+, tvOS 18+ (arm64). Same floor as OCCTSwiftViewport.
+- **Platforms:** macOS 15+ and iOS 18+ (arm64), and only those two. Same floor as OCCTSwiftViewport, and the same set the kernel ships: `OCCT.xcframework` carries `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, so nothing links on visionOS or tvOS ([OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978)).
 - **License:** LGPL 2.1 (matching OCCT).
 - **Source:** [github.com/SecondMouseAU/OCCTSwiftAIS](https://github.com/SecondMouseAU/OCCTSwiftAIS)

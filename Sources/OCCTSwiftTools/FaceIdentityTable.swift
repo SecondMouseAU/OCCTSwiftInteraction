@@ -59,20 +59,26 @@ public struct FaceIdentityTable: Sendable {
     /// Built from `Shape.faces()`, the same enumeration the mesher uses to assign that ordinal,
     /// so `shapes[ordinal]` is always the exact face tessellated into the triangles carrying that
     /// ordinal.
-    public let shapes: [Shape]
+    ///
+    /// An element is `nil` when that face's `Face` to `Shape` conversion failed. Optional so that
+    /// the index space is the ordinal space by construction: a shorter array would silently move
+    /// every later face down one and name the wrong one (OCCTSwiftInteraction#9). A `nil` entry
+    /// costs that one ordinal its captured shape and its uid, and no other.
+    public let shapes: [Shape?]
 
     /// Durable per-ordinal handle, minted from the `BRepGraph` supplied when the table was built.
     ///
-    /// `nil` when no graph was supplied. When present, an individual element is `nil` only if
-    /// that ordinal's face could not be resolved in the graph.
+    /// `nil` when no graph was supplied. When present, an individual element is `nil` if that
+    /// ordinal's face could not be resolved in the graph, or has no entry in `shapes`.
     public let uids: [BRepGraph.GraphUID?]?
 
-    public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil) {
+    public init(shapes: [Shape?], uids: [BRepGraph.GraphUID?]? = nil) {
         self.shapes = shapes
         self.uids = uids
     }
 
-    /// The `Shape` a render-path face ordinal was tessellated from.
+    /// The `Shape` a render-path face ordinal was tessellated from, or `nil` if the ordinal is out
+    /// of range or its conversion failed when the table was built.
     public func shape(forOrdinal ordinal: Int) -> Shape? {
         shapes.indices.contains(ordinal) ? shapes[ordinal] : nil
     }

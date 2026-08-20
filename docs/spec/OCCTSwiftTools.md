@@ -6,8 +6,8 @@ This document is a brief for the next agent (Claude or human) picking up impleme
 
 The bridge product between two intentionally-decoupled siblings:
 
-- **[OCCTSwift](https://github.com/gsdali/OCCTSwift)** — Swift wrapper around OpenCASCADE's modeling kernel. No Metal, no rendering. Currently shipping `v0.168.0` against OCCT 8.0.0-beta1 with macOS / iOS / visionOS / tvOS slices.
-- **[OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport)** — Pure-Metal viewport renderer. No OCCT dependency. Renders abstract `ViewportBody` objects.
+- **[OCCTSwift](https://github.com/gsdali/OCCTSwift)**: Swift wrapper around OpenCASCADE's modeling kernel. No Metal, no rendering. Currently shipping `v0.168.0` against OCCT 8.0.0-beta1 with macOS / iOS slices (`ios-arm64`, `ios-arm64-simulator`, `macos-arm64`, and no others).
+- **[OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport)**: Pure-Metal viewport renderer. No OCCT dependency. Renders abstract `ViewportBody` objects.
 
 `OCCTSwiftTools` is the only library that depends on **both**. It converts `OCCTSwift.Shape` (B-Rep topology + meshable surfaces) into `OCCTSwiftViewport.ViewportBody` (vertex / index / face-id buffers consumable by the Metal renderer), plus CAD file I/O wrappers that need both kernels working together.
 
@@ -164,7 +164,7 @@ Match OCCTSwift's conventions exactly. Cribbed verbatim from that repo's CLAUDE.
 
 - **License**: LGPL 2.1 (same as OCCT itself, with the OCCT_LGPL_EXCEPTION). Copy from OCCTSwift.
 - **swift-tools-version**: 6.1. Language mode: `.v6`.
-- **Platforms**: `.iOS(.v15)`, `.macOS(.v12)`, `.visionOS(.v1)`, `.tvOS(.v15)`. (OCCTSwiftViewport requires iOS 18 / macOS 15 — when it does, OCCTSwiftTools' platform floor is the higher of the two: `.iOS(.v18)`, `.macOS(.v15)`. Use the higher pair.)
+- **Platforms**: `.iOS(.v18)`, `.macOS(.v15)`, and nothing else. (The higher of OCCTSwift's and OCCTSwiftViewport's floors, and the only two platforms `OCCT.xcframework` ships a slice for. This line used to add `.visionOS(.v1)` / `.tvOS(.v15)`, which was never true: [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).)
 - **Tests**: Swift Testing (`@Suite` / `@Test` / `#expect`). Never `#expect(x != nil); #expect(x!.isValid)` — Swift Testing does not short-circuit. Always `if let x { #expect(x.isValid) }`.
 - **Test naming**: `@Test func` names must NOT shadow API method names used inside the test body (test runner gets confused). Prefix with `t_` or use descriptive English.
 - **OCCT race**: when running tests, set `OCCT_SERIAL=1 swift test --parallel --num-workers 1`. There's a known NCollection container-overflow race in OCCT on arm64 macOS that segfaults parallel runs.

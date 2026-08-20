@@ -47,7 +47,7 @@ OCCT_SERIAL=1 swift test --parallel --num-workers 1
 swift test --filter OCCTSwiftAISTests.<TestName>
 ```
 
-Toolchain floor: **swift-tools-version 6.1**, Swift language mode `.v6`. Platforms: iOS 18 / macOS 15 / visionOS 1 / tvOS 18 (matches the higher of OCCTSwift / OCCTSwiftViewport).
+Toolchain floor: **swift-tools-version 6.1**, Swift language mode `.v6`. Platforms: iOS 18 / macOS 15, and nothing else (the higher of OCCTSwift / OCCTSwiftViewport, and the only two platforms `OCCT.xcframework` ships a slice for). This line read "iOS 18 / macOS 15 / visionOS 1 / tvOS 18" pre-merge and was wrong then too: [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 
 ## Conventions inherited from OCCTSwift
 

@@ -166,10 +166,11 @@ struct EdgeIdentityTableTests {
             }
             let expectedUID = graph.uid(ofNodeKind: Int(kind.rawValue), index: index)
             guard
-                let ordinal = (0..<edgeTable.shapes.count).first(where: {
-                    graph.findNode(for: edgeTable.shapes[$0]).map {
-                        $0.kind == kind && $0.index == index
-                    } ?? false
+                let ordinal = (0..<edgeTable.shapes.count).first(where: { candidate in
+                    guard let edgeShape = edgeTable.shape(forOrdinal: candidate),
+                        let node = graph.findNode(for: edgeShape)
+                    else { return false }
+                    return node.kind == kind && node.index == index
                 })
             else {
                 Issue.record("no table ordinal resolves to the shared edge's graph node")

@@ -366,7 +366,7 @@ Match OCCTSwift's conventions exactly. Cribbed verbatim:
 
 - **License**: LGPL 2.1 (matching OCCT). Copy from OCCTSwift.
 - **swift-tools-version**: 6.1. Language mode: `.v6`.
-- **Platforms**: `.iOS(.v18)`, `.macOS(.v15)`, `.visionOS(.v1)`, `.tvOS(.v18)`. (Higher of OCCTSwift / OCCTSwiftViewport floors.)
+- **Platforms**: `.iOS(.v18)`, `.macOS(.v15)`, and nothing else. (Higher of OCCTSwift / OCCTSwiftViewport floors, and the only two platforms `OCCT.xcframework` ships a slice for. The `.visionOS(.v1)` / `.tvOS(.v18)` this line used to carry was never true: [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).)
 - **Tests**: Swift Testing (`@Suite` / `@Test` / `#expect`). Never `#expect(x != nil); #expect(x!.field)` — Swift Testing doesn't short-circuit. Always `if let x { #expect(x.field) }`.
 - **Test naming**: `@Test func` names must NOT shadow API method names used inside the test body. Prefix with `t_` or use descriptive English.
 - **OCCT race**: tests that exercise OCCT geometry need `OCCT_SERIAL=1 swift test --parallel --num-workers 1` (NCollection container-overflow race on arm64 macOS).

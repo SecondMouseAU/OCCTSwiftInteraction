@@ -29,17 +29,18 @@ deduplicating the way it does today.
 
 ```swift
 public struct EdgeIdentityTable: Sendable {
-    public let shapes: [Shape]
+    public let shapes: [Shape?]
     public let uids: [BRepGraph.GraphUID?]?
 
-    public init(shapes: [Shape], uids: [BRepGraph.GraphUID?]? = nil)
+    public init(shapes: [Shape?], uids: [BRepGraph.GraphUID?]? = nil)
     public func shape(forOrdinal ordinal: Int) -> Shape?
     public func uid(forOrdinal ordinal: Int) -> BRepGraph.GraphUID?
 }
 ```
 
 - `shapes` is indexed by the ordinal stored in `ViewportBody.edgeIndices`, built from `Shape.edges()`.
-- `uids` is populated only when a `BRepGraph` was supplied to the entry point that produced this table. Each element is `nil` if that ordinal's edge could not be resolved in the graph.
+- An element is `nil` when that edge's `Edge` to `Shape` conversion failed. See [ordinal alignment](ShapeIdentity#ordinal-alignment-is-the-invariant) for why the array is optional rather than short.
+- `uids` is populated only when a `BRepGraph` was supplied to the entry point that produced this table. Each element is `nil` if that ordinal's edge could not be resolved in the graph, or has no entry in `shapes`.
 - `shape(forOrdinal:)` / `uid(forOrdinal:)` return `nil` for an out-of-range ordinal (or, for `uid(forOrdinal:)`, when no graph was supplied at all).
 
 Obtained from [`ShapeIdentity`](ShapeIdentity), which is the one builder for all three tables, from

@@ -37,6 +37,7 @@ public struct VertexIdentityTable: Sendable {
 ```
 
 - `shapes` is indexed by the ordinal stored in `ViewportBody.vertexIndices`, built from `Shape.subShapes(ofType: .vertex)`.
+- `[Shape]`, not the `[Shape?]` its two siblings hold, and deliberately so: that traversal returns `Shape` values directly, with no failable `Face`/`Edge` conversion in the way, so nothing here can drop an element and shift every later ordinal. See [ordinal alignment](ShapeIdentity#ordinal-alignment-is-the-invariant).
 - `uids` is populated only when a `BRepGraph` was supplied to the entry point that produced this table. Each element is `nil` if that ordinal's vertex could not be resolved in the graph.
 - `shape(forOrdinal:)` / `uid(forOrdinal:)` return `nil` for an out-of-range ordinal (or, for `uid(forOrdinal:)`, when no graph was supplied at all).
 
