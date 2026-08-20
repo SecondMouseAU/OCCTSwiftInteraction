@@ -38,38 +38,6 @@ public struct CADViewportView: View {
         self.onClearSelection = onClearSelection
     }
 
-    /// Single-entity convenience for callers not yet using multi-selection.
-    @available(*, deprecated, message: "Use the `selection:` initializer parameter instead.")
-    public init(
-        bodies: [_ViewportBody],
-        controller: _ViewportController,
-        selected: PickedEntity?,
-        onClearSelection: (() -> Void)? = nil
-    ) {
-        self.init(
-            bodies: bodies,
-            controller: controller,
-            selection: selected.map { [$0] } ?? [],
-            onClearSelection: onClearSelection
-        )
-    }
-
-    /// Face-only convenience for callers not yet using edge/vertex picking.
-    @available(*, deprecated, message: "Use the `selection:` initializer parameter instead.")
-    public init(
-        bodies: [_ViewportBody],
-        controller: _ViewportController,
-        selectedFace: PickedFaceInfo?,
-        onClearSelection: (() -> Void)? = nil
-    ) {
-        self.init(
-            bodies: bodies,
-            controller: controller,
-            selection: selectedFace.map { [.face($0)] } ?? [],
-            onClearSelection: onClearSelection
-        )
-    }
-
     public var body: some View {
         GeometryReader { proxy in
             _MetalViewportView(controller: controller, bodies: .constant(bodies))

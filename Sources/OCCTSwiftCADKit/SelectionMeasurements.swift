@@ -47,5 +47,3 @@ public struct SelectionMeasurements: Sendable, Equatable {
 
 /// Renamed to `SelectionMeasurements` in OCCTSwiftInteraction#3, to stop colliding by name with
 /// the unrelated `OCCTSwiftUXKit.SelectionSummary`.
-@available(*, deprecated, renamed: "SelectionMeasurements")
-public typealias SelectionSummary = SelectionMeasurements

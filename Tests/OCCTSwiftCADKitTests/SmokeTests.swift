@@ -170,7 +170,7 @@ struct SmokeTests {
         }
 
         let service = CADViewportService()
-        service.loadShape(compound, id: "shared")
+        service.load(compound, id: "shared")
 
         guard let pickA = service.resolveFacePick(bodyID: "shared", triangleIndex: triForShellA)
         else {
@@ -209,7 +209,7 @@ struct SmokeTests {
     /// identity into this service.
     ///
     /// `sharedFaceBetweenShellsResolvesToSameUID` above only exercises the single-body path
-    /// of `loadShape`; this test drives more than one body at once, including the shared-face
+    /// of a single-body load; this test drives more than one body at once, including the shared-face
     /// fixture, to prove the shared face still collapses to one `GraphUID` per body and that
     /// two bodies' identity does not collide. `metadata` is seeded directly since `loadFile`
     /// needs a real multi-body file on disk, which this package's tests don't ship.
@@ -353,7 +353,7 @@ struct SmokeTests {
     ///
     /// The hand-rolled `makeEdgeIdentityTable`/`makeVertexIdentityTable` this used to cover are
     /// gone (OCCTSwiftInteraction#7); the multi-body edge and vertex path is still worth holding
-    /// down, since every other edge/vertex test drives the single-body `loadShape` path.
+    /// down, since every other edge/vertex test drives the single-body load path.
     @MainActor
     @Test("installIdentity resolves edge and vertex durable identity across multiple bodies")
     func installIdentityMultiBodyResolvesEdgeAndVertexIdentity() {
@@ -433,7 +433,7 @@ struct SmokeTests {
         }
         let service = CADViewportService()
         service.selectionModes = [.vertex]
-        service.loadShape(box, id: "box")
+        service.load(box, id: "box")
 
         guard let realBody = service.modelBodies.first(where: { $0.id == "box" }),
             !realBody.vertices.isEmpty
@@ -474,7 +474,7 @@ struct SmokeTests {
         }
         let service = CADViewportService()
         service.selectionModes = [.face, .edge, .vertex]
-        service.loadShape(box, id: "box")
+        service.load(box, id: "box")
 
         guard let body = service.modelBodies.first(where: { $0.id == "box" }) else {
             Issue.record("expected a model body for \"box\"")
@@ -489,7 +489,7 @@ struct SmokeTests {
         }
         #expect(edgePick.bodyID == "box")
         #expect(edgePick.length > 0)
-        #expect(edgePick.uid != nil, "loadShape always builds a graph for a valid box")
+        #expect(edgePick.uid != nil, "a load always builds a graph for a valid box")
 
         guard let vertexPick = service.resolveVertexPick(bodyID: "box", pointIndex: 0) else {
             Issue.record("resolveVertexPick returned nil for a valid point")
@@ -526,7 +526,7 @@ struct SmokeTests {
         }
         let service = CADViewportService()
         #expect(service.selectionModes == [.face])
-        service.loadShape(box, id: "box")
+        service.load(box, id: "box")
 
         #expect(service.resolveEdgePick(bodyID: "box", segmentIndex: 0) == nil)
         #expect(service.resolveVertexPick(bodyID: "box", pointIndex: 0) == nil)
@@ -552,12 +552,12 @@ struct SmokeTests {
         }
         let service = CADViewportService()
         service.selectionModes = [.face, .edge, .vertex]
-        service.loadShape(box, id: "meshOnly")
+        service.load(box, id: "meshOnly")
 
         // Simulate a body whose render data carries no edge/vertex info (e.g. a
         // loose-mesh STL body) by swapping in a synthetic body with empty edges/vertices.
         // metadata/bodyShapes/identity tables are unaffected by this and still reflect the
-        // real box loadShape just tessellated, so face picking should still work.
+        // real box the load just tessellated, so face picking should still work.
         let meshOnlyBody = _ViewportBody(
             id: "meshOnly",
             vertexData: [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1],
@@ -595,7 +595,7 @@ struct SmokeTests {
     }
 
     /// Regression for #28: several entities must display simultaneously, addressable and
-    /// independently removable, rather than the deprecated single-shape `loadShape`/
+    /// independently removable, rather than the single-shape convenience of `load(_:id:)`/
     /// `loadFile` "replace everything" behavior.
     @MainActor
     @Test("Multiple entities load, coexist, and remove independently")
@@ -750,25 +750,6 @@ struct SmokeTests {
         #expect(service.visibility["partA"] == false)
     }
 
-    /// Regression for #28: `loadedShape` (deprecated) still works for the single-shape
-    /// case, whichever API loaded it, but goes `nil` once more than one entity is loaded.
-    @MainActor
-    @Test("Deprecated loadedShape reflects the single-entity case only")
-    func deprecatedLoadedShapeReflectsSingleEntityCase() {
-        guard let box = Shape.box(width: 2, height: 2, depth: 2) else {
-            Issue.record("Shape.box returned nil")
-            return
-        }
-        let service = CADViewportService()
-        #expect(service.loadedShape == nil)
-
-        service.load(box, id: "onlyOne")
-        #expect(service.loadedShape != nil, "exactly one entity is loaded")
-
-        service.load(box, id: "second")
-        #expect(service.loadedShape == nil, "more than one entity is loaded")
-    }
-
     /// Regression for #28: a pick reports which entity was hit via `entityID(forBodyID:)`.
     @MainActor
     @Test("Picks report which entity was hit")
@@ -854,38 +835,6 @@ struct SmokeTests {
         #expect(service.selection == [entityA])
     }
 
-    /// Regression for #29: `selected` (deprecated) is a single-selection convenience:
-    /// non-nil only when the selection is exactly one entity.
-    @MainActor
-    @Test("Deprecated selected reflects the single-selection case only")
-    func deprecatedSelectedReflectsSingleSelectionCase() {
-        guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
-            Issue.record("Shape.box returned nil")
-            return
-        }
-        let service = CADViewportService()
-        service.load(box, id: "box")
-
-        #expect(service.selected == nil)
-
-        guard let pickA = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
-            Issue.record("resolveFacePick returned nil")
-            return
-        }
-        service.select(.face(pickA))
-        #expect(service.selected == .face(pickA))
-
-        guard let meta = service.metadata["box"],
-            let secondTri = meta.faceIndices.firstIndex(where: { $0 != meta.faceIndices[0] }),
-            let pickB = service.resolveFacePick(bodyID: "box", triangleIndex: secondTri)
-        else {
-            Issue.record("expected a second distinct face pick")
-            return
-        }
-        service.select(.face(pickB), scheme: .add)
-        #expect(service.selected == nil, "more than one entity is selected")
-    }
-
     /// Regression for #29: `selectionMeasurements` reports sensible aggregates: count by kind,
     /// total face area, total edge length, and combined bounds.
     @MainActor
@@ -968,38 +917,6 @@ struct SmokeTests {
         #expect(abs(bounds.minX - vertexPick.position.x) < 0.01)
     }
 
-    /// Regression for #29 review: the deprecated single-shape `loadShape`/
-    /// `loadFile(from:progress:)` call `resetAllModelState()` directly rather than going
-    /// through `remove(id:)`/`pruneSelection`.
-    ///
-    /// Confirm they still explicitly clear `selection` too, rather than leaving it dangling
-    /// on bodies `resetAllModelState()` just wiped. (This is exactly the class of bug #28's
-    /// review caught twice: state cleared on one code path but not a sibling one.)
-    @MainActor
-    @Test("The deprecated single-shape API clears the selection, not just the model bodies")
-    func deprecatedSingleShapeAPIClearsSelection() {
-        guard let box = Shape.box(width: 4, height: 4, depth: 4),
-            let otherBox = Shape.box(width: 6, height: 6, depth: 6)
-        else {
-            Issue.record("Shape.box returned nil")
-            return
-        }
-        let service = CADViewportService()
-        service.load(box, id: "box")
-        guard let pick = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
-            Issue.record("resolveFacePick returned nil")
-            return
-        }
-        service.select(.face(pick))
-        #expect(!service.selection.isEmpty)
-
-        service.loadShape(otherBox, id: "model")  // deprecated, different id than "box"
-
-        #expect(
-            service.selection.isEmpty,
-            "loadShape wipes every model body, including \"box\": selection must not dangle")
-    }
-
     /// Regression for the acceptance criterion of #29: the selection survives operations
     /// unrelated to it, and drops only the entries that reference a removed entity,
     /// "reporting deletions accurately" rather than silently keeping a dangling pick or
@@ -1067,18 +984,17 @@ struct SmokeTests {
         #expect(ids.contains("selection_highlight_vertex"))
     }
 
-    /// Regression for #28 review: the deprecated `loadShape`/`loadFile` and the new
-    /// `load`/`loadFile(from:id:)` share one `entities` registry precisely so this doesn't
-    /// happen: mixing the two APIs under the same id must replace, not duplicate.
+    /// Regression for #28 review: every loader shares one `entities` registry precisely so
+    /// this doesn't happen: loading the same id twice must replace, not duplicate.
     ///
-    /// Before the fix, the default id of `loadShape` ("model") never registered in
-    /// `entities`, so a later `load(_, id: "model")` had nothing to detect and remove,
+    /// Before the fix, the single-shape convenience's default id ("model") never registered
+    /// in `entities`, so a later `load(_, id: "model")` had nothing to detect and remove,
     /// leaving two "model" bodies rendered simultaneously.
     @MainActor
     @Test(
-        "Mixing the deprecated single-shape API and the multi-entity API under the same id replaces rather than duplicates"
+        "Loading the same id twice replaces rather than duplicates, and shapeBounds tracks it"
     )
-    func mixingDeprecatedAndMultiEntityAPIsUnderSameIDReplaces() {
+    func loadingSameIDTwiceReplacesRatherThanDuplicates() {
         guard let boxA = Shape.box(width: 4, height: 4, depth: 4),
             let boxB = Shape.box(width: 6, height: 6, depth: 6)
         else {
@@ -1087,17 +1003,17 @@ struct SmokeTests {
         }
         let service = CADViewportService()
 
-        service.loadShape(boxA)  // deprecated, default id "model"
+        service.load(boxA, id: "model")
         #expect(service.modelBodies.filter { $0.id == "model" }.count == 1)
 
-        _ = service.load(boxB, id: "model")  // new API, same id
+        _ = service.load(boxB, id: "model")  // same id again
         #expect(
             service.modelBodies.filter { $0.id == "model" }.count == 1,
             "must replace, not duplicate")
         #expect(service.entityID(forBodyID: "model") == "model")
 
-        // The deprecated loadedShape/shapeBounds convenience must track the replacement
-        // too, not keep reporting boxA (4mm) after boxB (6mm) has taken over "model".
+        // The `shapeBounds` convenience must track the replacement too, not keep reporting
+        // boxA (4mm) after boxB (6mm) has taken over "model".
         guard let bounds = service.shapeBounds else {
             Issue.record("expected shapeBounds to be non-nil with exactly one entity loaded")
             return
@@ -1107,18 +1023,20 @@ struct SmokeTests {
             "shapeBounds must reflect boxB (6mm), not the replaced boxA (4mm)")
     }
 
-    /// Regression for #28 review: the deprecated single-shape `loadShape`/`loadFile`
-    /// replace *everything*, including entities loaded via the new multi-entity API before
-    /// them.
+    /// Removing an entity must clear it from **every** collection a load populated, not only
+    /// from `modelBodies`.
     ///
-    /// Previously only `modelBodies` was fully replaced; `metadata`/`bodyShapes`/etc.
-    /// for an orphaned entity leaked, and `entities` still listed it (making `loadedShapes`/
-    /// `entityID(forBodyID:)` report a body that could no longer actually be picked).
+    /// Originally #28 review cover for the deprecated single-shape loaders, which replaced
+    /// everything. Those are gone as of 2.0.0, but `remove(id:)` carries exactly the same
+    /// hazard and nothing else asserts it: previously `metadata`/`bodyShapes` for an orphaned
+    /// entity leaked and `entities` still listed it, so `loadedShapes`/`entityID(forBodyID:)`
+    /// reported a body that could no longer actually be picked.
+    ///
+    /// Distinct from the selection-pruning cover below, which is about `selection` rather
+    /// than about the entity collections leaking.
     @MainActor
-    @Test(
-        "The deprecated single-shape API fully replaces prior multi-entity loads, not just modelBodies"
-    )
-    func deprecatedSingleShapeAPIFullyReplacesPriorMultiEntityLoads() {
+    @Test("remove(id:) clears the entity from every collection, not just modelBodies")
+    func removeClearsEveryCollectionNotJustModelBodies() {
         guard let boxA = Shape.box(width: 4, height: 4, depth: 4),
             let boxB = Shape.box(width: 6, height: 6, depth: 6)
         else {
@@ -1128,36 +1046,52 @@ struct SmokeTests {
         let service = CADViewportService()
 
         _ = service.load(boxA, id: "orphanEntity")
-        service.loadShape(boxB, id: "model")  // deprecated, different id
+        _ = service.load(boxB, id: "model")
+        #expect(
+            service.resolveFacePick(bodyID: "orphanEntity", triangleIndex: 0) != nil,
+            "the entity must be pickable first, or its removal proves nothing")
+
+        service.remove(id: "orphanEntity")
 
         #expect(
             Set(service.loadedShapes.keys) == ["model"],
             "orphanEntity must be fully gone, not just from modelBodies")
         #expect(service.entityID(forBodyID: "orphanEntity") == nil)
         #expect(service.resolveFacePick(bodyID: "orphanEntity", triangleIndex: 0) == nil)
+        #expect(service.shape(id: "model") != nil, "the unrelated entity must survive")
     }
 
-    /// Regression for #28 review: `removeAll()` must clear the backing for the deprecated
-    /// single-shape API too.
+    /// `removeAll()` must leave nothing behind in any of the collections a load populates,
+    /// not only in `modelBodies`.
     ///
-    /// Otherwise `loadedShape` (deprecated) can report a stale shape after "removing
-    /// everything".
+    /// Originally #28 review cover for the deprecated single-shape backing, which could
+    /// report a stale shape after "removing everything". That API is gone as of 2.0.0, but
+    /// the invariant it was protecting is not, and nothing else asserts it: an entity left in
+    /// `entities` after `removeAll()` still answers `shape(id:)` and still resolves picks.
     @MainActor
-    @Test("removeAll() clears the deprecated single-shape loadedShape too")
-    func removeAllClearsDeprecatedLoadedShape() {
+    @Test("removeAll() leaves no entity, body or selection behind")
+    func removeAllLeavesNothingBehind() {
         guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
             Issue.record("Shape.box returned nil")
             return
         }
         let service = CADViewportService()
-        service.loadShape(box)  // deprecated
+        service.load(box, id: "model")
+        if let pick = service.resolveFacePick(bodyID: "model", triangleIndex: 0) {
+            service.select(.face(pick))
+        }
 
-        #expect(service.loadedShape != nil)
+        #expect(service.shape(id: "model") != nil)
+        #expect(!service.modelBodies.isEmpty)
+        #expect(
+            !service.selection.isEmpty, "a selection must exist for its clearing to mean anything")
 
         service.removeAll()
 
-        #expect(service.loadedShape == nil)
+        #expect(service.loadedShapes.isEmpty)
         #expect(service.modelBodies.isEmpty)
+        #expect(service.selection.isEmpty)
+        #expect(service.shape(id: "model") == nil, "the entity must be gone, not just its body")
     }
 
     /// Regression for #30: a per-face scalar field must paint the correct triangles
@@ -2622,9 +2556,9 @@ struct SmokeTests {
 
     @MainActor
     @Test(
-        "The deprecated single-shape loadShape(_:id:) also picks up an already-active cap immediately"
+        "A load into an existing scene picks up an already-active cap immediately"
     )
-    func deprecatedLoadShapePicksUpActiveCapImmediately() {
+    func loadIntoExistingScenePicksUpActiveCapImmediately() {
         guard let box = Shape.box(width: 4, height: 4, depth: 4) else {
             Issue.record("Shape.box returned nil")
             return
@@ -2632,13 +2566,13 @@ struct SmokeTests {
         let service = CADViewportService()
         service.addClippingPlane(origin: .zero, normal: SIMD3(1, 0, 0), showCapSurface: true)
 
-        service.loadShape(box, id: "model")
+        service.load(box, id: "model")
 
         guard let capped = service.shape(id: "model")?.bounds else {
             Issue.record("expected capped bounds")
             return
         }
-        #expect(capped.min.x > -0.5, "loadShape should pick up the already-active cap immediately")
+        #expect(capped.min.x > -0.5, "a load should pick up the already-active cap immediately")
     }
 
     /// Regression for #45: `updateCapSurfaces()` unconditionally restored-then-recapped every

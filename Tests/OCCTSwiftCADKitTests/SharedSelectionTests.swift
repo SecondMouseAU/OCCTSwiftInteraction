@@ -222,7 +222,7 @@ struct SharedSelectionTests {
 
     /// `PickedFaceInfo` and its siblings survive as presentation types built from
     /// `SubShapeRef`, so `shape`/`uid`/`faceIndex` have to keep agreeing with the ref they now
-    /// forward to, and the deprecated memberwise initialiser has to keep building one.
+    /// forward to, and the memberwise initialiser has to keep building one.
     @MainActor
     @Test("The picked-info types forward identity to their SubShapeRef")
     func pickedInfoForwardsToItsRef() {
@@ -276,26 +276,4 @@ struct SharedSelectionTests {
         #expect(info("a") == info("a"))
     }
 
-    /// The deprecated `SelectionSummary` spelling still resolves, so a consumer is warned
-    /// rather than broken.
-    ///
-    /// Renamed because `OCCTSwiftUXKit` has an unrelated public type of the same name; see the
-    /// bakeoff on OCCTSwiftInteraction#3.
-    @MainActor
-    @Test("SelectionSummary still resolves as the old name for SelectionMeasurements")
-    func deprecatedSelectionSummaryAliasResolves() {
-        guard let (service, entity) = loadedService() else {
-            Issue.record("fixture setup failed")
-            return
-        }
-        service.select(entity)
-        // Deliberately spelled with the deprecated name: the point of the test is that it
-        // still names the same type, so the warning here is the expected outcome.
-        guard let measurements: SelectionSummary = service.selectionMeasurements else {
-            Issue.record("expected measurements for a one-face selection")
-            return
-        }
-        #expect(measurements.faceCount == 1)
-        #expect(measurements == service.selectionMeasurements)
-    }
 }
