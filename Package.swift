@@ -1,36 +1,33 @@
 // swift-tools-version: 6.1
 
 import PackageDescription
-import Foundation
-
-// Prefer a local sibling checkout (../<name>) when present, else the published URL, so the whole
-// OCCT ecosystem SHARES the single OCCTSwift/Libraries/OCCT.xcframework instead of each repo
-// extracting its own 1.3 GB copy. CI / fresh clones (no sibling) use the URL pin. `#filePath`-relative
-// so it's independent of build CWD.
+// Every dependency resolves from its published URL. NEVER from a `../<name>` sibling.
 //
-// Only trust a sibling checkout when THIS manifest is a real local dev clone, never when this
-// manifest is itself a transitively-resolved SwiftPM checkout under a consumer's `.build/`. SwiftPM
-// lays every dependency's checkout out flat under one shared `.build/checkouts/` directory, so once
-// e.g. `.build/checkouts/OCCTSwiftViewport` exists, `../OCCTSwiftViewport` relative to
-// `.build/checkouts/OCCTSwiftInteraction` spuriously "exists" too, flipping this manifest's own
-// declaration from url to path during the very resolution that created that checkout. SwiftPM then
-// sees a non-deterministic manifest and reports the whole graph unresolvable. See
-// SecondMouseAU/ecosystem#14 and OCCTSwiftScripts#69.
+// The old helper preferred a sibling checkout when one existed, so the fleet would share the
+// single OCCT.xcframework instead of each repo extracting its own (SecondMouseAU/ecosystem#8).
+// The saving is real but bought in the wrong currency: a path dependency carries no version
+// requirement, so SwiftPM compiles whatever happens to be checked out in that sibling and drops
+// the pin from Package.resolved entirely. Committing that lockfile makes the repo unresolvable
+// from any clean checkout, which is CI and every new clone.
 //
-// Worth recording: OCCTSwiftCADKit's own manifest still lacked this guard at merge time, while
-// OCCTSwiftTools and OCCTSwiftAIS carried it. That divergence is exactly the class of drift this
-// merge exists to stop.
-private func isRealLocalSibling(_ manifestDir: String, _ name: String) -> Bool {
-    guard !manifestDir.contains("/.build/") else { return false }
-    return FileManager.default.fileExists(atPath: manifestDir + "/../\(name)/Package.swift")
-}
-
+// Not hypothetical: PadCAM's `main` was unresolvable for exactly this reason and nobody noticed,
+// because everyone builds with siblings present. Four incidents in two days built stale sibling
+// source (ecosystem#48), and four OCCTParts branches shipped a Package.resolved with every
+// occtswift pin stripped, caught by a review bot reading the diff rather than by any check
+// (ecosystem#51).
+//
+// Measured, which is what settles it: the artifact DOWNLOAD is already shared, in
+// ~/Library/Caches/org.swift.swiftpm/artifacts, so a URL-resolved build reports
+// "Fetched ... from cache" and touches no network. Sibling resolution only ever saved the
+// per-project EXTRACTION, about 594 MB in .build/artifacts/. That is disk worth paying for a
+// lockfile that means what it says, and it is separately recoverable by sharing the extraction
+// (symlink or APFS clone) without substituting source at all.
+//
+// Ed's rule, 2026-08-20: nothing resolves locally except binaries, and the binary is already
+// shared by the artifact cache. The helper is kept rather than reverted to a bare
+// `.package(url:)` so the call sites stay identical across the fleet.
 func occtDep(_ name: String, from version: String) -> Package.Dependency {
-    let manifestDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-    if isRealLocalSibling(manifestDir, name) {
-        return .package(path: "../\(name)")
-    }
-    return .package(url: "https://github.com/SecondMouseAU/\(name).git", from: Version(version)!)
+    .package(url: "https://github.com/SecondMouseAU/\(name).git", from: Version(version)!)
 }
 
 // OCCTSwiftInteraction: identity, selection, and the assembled CAD viewport service.
