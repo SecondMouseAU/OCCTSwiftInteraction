@@ -62,27 +62,48 @@ See [`references/`](references/index.md).
   claim from the pre-merge Tools and AIS manifests, where it was never true either; dropped before
   1.0.0, root cause filed as
   [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
-- Version line starts at `0.x`, reaching `1.0.0` once the picking consolidation (ecosystem#43) has
-  landed. The three old version lines do not continue here.
+- Version line starts at `0.x`. The gate on `1.0.0` was the picking consolidation (ecosystem#43),
+  and **that gate is now met**: all six phases have landed and the duplication audit below found no
+  unresolved collision. The three old version lines do not continue here.
 - LGPL-2.1, matching OCCT.
+
+## Settled, so do not re-decide it
+
+The picking consolidation (ecosystem#43) is **complete across all six phases**, and every collision
+it enumerated has been resolved. Each of these is an answer someone worked for, not a default:
+
+- **Pick resolution has exactly one implementation**
+  ([#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2), phase 2).
+  `OCCTSwiftTools.SubShapePickResolver` is the only place a render-path ordinal becomes a
+  `SubShapeRef`. `OCCTSwiftAIS.InteractiveContext.resolve*SubShape` are thin wrappers over it that
+  add selection-mode gating and the whole-body fallback, and nothing else. That fallback stays in
+  AIS deliberately: "the pick names the object rather than one of its faces" is a selection
+  decision, not an identity one, and OCCT draws the same line at
+  `SelectMgr_EntityOwner::ComesFromDecomposition()`. Read ecosystem#43 before writing anything that
+  maps a `PickResult` to topology.
+- **Selection state lives in `OCCTSwiftAIS`, and `OCCTSwiftCADKit` is a façade over it**
+  ([#3](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/3), phase 3). CADKit's
+  `select`/`clearSelection` delegate to `interactiveContext` and add only viewport-side concerns:
+  the enrichment cache, highlight bodies and the rebuild. `remove`/`removeAll` share the verb but
+  act on CADKit's own entity and body model, which AIS has no equivalent of. There is no longer a
+  second selection system.
+- **Face identity is OCCT's `IsSame` semantics**, so `faces()` (deduplicated) is the enumeration
+  behind `FaceIdentityTable`, and a face shared between two shells is one identity
+  ([#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1), phase 0). Encode it.
+- **The rest of the fleet is consolidated too**: `OCCTSwiftUX.ShapeEnricher` is an adapter over the
+  Tools resolver (OCCTSwiftUX#29, phase 4), `OCCTMCP.SelectionRegistry` is re-keyed on `GraphUID`
+  (OCCTMCP#182, phase 5), and `OCCTSwiftViewport.PickResultFilter` is renamed away from the
+  `SelectionFilter` collision (OCCTSwiftViewport#111, phase 1). Four implementations became one.
 
 ## Known open work
 
-- **Pick resolution is consolidated inside this repo** as of
-  [#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2) (phase 2 of ecosystem#43):
-  `OCCTSwiftTools.SubShapePickResolver` is the only place a render-path ordinal becomes a
-  `SubShapeRef`, and both this repo's targets call it. Clip-plane awareness, geometry enrichment and
-  the whole-body fallback deliberately stayed in their own layers. The wider fleet still carries two
-  more implementations (OCCTSwiftUX#29, OCCTMCP#182); read ecosystem#43 before writing anything that
-  maps a `PickResult` to topology.
-- **The two parallel selection systems** (`select` / `clearSelection` / `remove` / `removeAll` in
-  both `OCCTSwiftAIS` and `OCCTSwiftCADKit`) are still separate, tracked as
-  [#3](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/3), and need their own behaviour
-  matrix before either copy goes.
-- **Face identity is decided and settled**: OCCT's `IsSame` semantics, so `faces()` (deduplicated)
-  is the enumeration behind `FaceIdentityTable` and a face shared between two shells is one identity
-  ([#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1), phase 0 of ecosystem#43).
-  Encode it rather than re-deciding it.
+- **`Axis` exists in both `OCCTSwiftAIS` and `OCCTSwiftCADKit`, on purpose.**
+  `ManipulatorWidget.Axis` is nested and carries widget `direction` and `color`;
+  `OCCTSwiftCADKit.Axis` is the axis a `.wipe` comparison splits along, and mirrors the concept
+  rather than re-exporting a widget type for an unrelated purpose. The shared part is three lines
+  of unit-vector arithmetic. What is worth a second look before 1.0 is not the duplication but the
+  name: `Axis` is a broad thing for this package to claim at the top level of its public surface,
+  and public names are much harder to change after 1.0 than before it.
 
 ## Policies
 
