@@ -68,7 +68,17 @@ error: multiple packages ('occtswiftais', 'occtswiftinteraction') declare target
 conflicting name: 'OCCTSwiftAIS'; target names need to be unique across the package graph
 ```
 
-That is a hard resolution error, not a version-range conflict, and it fires even when the consumer never reaches the offending target. **A repo can migrate only once every package in its transitive graph has.**
+**It is a build-graph error, not a resolution error**, which matters for how you check it. Measured on OCCTParts with Scripts pinned to 1.6.2:
+
+```
+swift package resolve  ->  SUCCEEDS, pulls OCCTSwiftTools 1.6.4 and OCCTSwiftAIS 1.3.2
+swift build            ->  error: multiple packages declare targets with a
+                           conflicting name: 'OCCTSwiftTools'
+```
+
+Version solving is perfectly happy; the uniqueness check runs when the build graph is assembled. So **a green `swift package resolve` proves nothing about this conflict**, and any verification that stops at resolve is a false pass. Build, and build the test targets too.
+
+It fires even when the consumer never reaches the offending target. **A repo can migrate only once every package in its transitive graph has.**
 
 | Wave | Repo | Uses | Behind |
 |---|---|---|---|
