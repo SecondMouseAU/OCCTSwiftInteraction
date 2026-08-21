@@ -79,6 +79,10 @@ The host's current live selection, one object per file:
 ```
 
 - **`selections`**: an array of `{bodyId: String, kind: "face"|"edge"|"vertex"|"body", index: Int,
+  uid: String?}` entries, one per currently-selected sub-shape (or body). The `"body"` kind
+  represents `SubShape.body` (whole-body selection) and has no corresponding `PickedEntity` case;
+  for `"body"`, `index` is ignored (writers emit `0`). Empty array, not a missing key, when
+  nothing is selected.
   uid: String?}` entries, one per currently-selected sub-shape (or body). Empty array, not a
   missing key, when nothing is selected.
 - **`revision`**: `Int`, monotonic, incremented by exactly 1 on every write of this file, whether or
