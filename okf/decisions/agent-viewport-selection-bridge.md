@@ -226,7 +226,12 @@ and treats `index` as a best-effort fallback scoped to whichever side minted it,
 safe to compare across the two processes directly.
 
 **`uid`, when present, is a `BRepGraph.GraphUID` and inherits its persistence caveat.**
+**`uid`, when present, is a `BRepGraph.GraphUID` (from OCCTSwift) and inherits its persistence caveat.
 `BRepGraph.GraphUID` is `Codable` but instance-scoped: it does not survive a graph rebuild or a
+process restart, so a `uid` written by one host process lifetime is not guaranteed to resolve
+against a graph rebuilt in a later one. A reader that gets a `uid` miss falls back to
+`bodyId`/`kind`/`index`, exactly the rung-2/rung-3 fallback `OCCTMCP`'s own `remap_selection`
+already uses for the equivalent problem one layer up.
 process restart, so a `uid` written by one host process lifetime is not guaranteed to resolve
 against a graph rebuilt in a later one. A reader that gets a `uid` miss falls back to
 `bodyId`/`kind`/`index`, exactly the rung-2/rung-3 fallback `OCCTMCP`'s own `remap_selection`
