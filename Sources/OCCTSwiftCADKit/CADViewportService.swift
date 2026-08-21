@@ -7,6 +7,10 @@ import OCCTSwiftViewport
 import SwiftUI
 import simd
 
+#if os(macOS)
+    import OCCTSwiftIO
+#endif
+
 /// Manages a loaded B-Rep `Shape`, drives the Metal viewport, and routes
 /// face-picking results back to the caller.
 ///
@@ -118,6 +122,45 @@ public final class CADViewportService {
     private var ownedBodyIDs: Set<String> = []
     private var bodiesSubscription: AnyCancellable?
     private var selectionSubscription: AnyCancellable?
+
+    /// Entries in `selection` most recently added via the agent-highlight-request path.
+    ///
+    /// Set by `startSelectionSidecar(directory:)`'s request handling
+    /// (`CADViewportService+AgentBridge.swift`, OCCTSwiftInteraction#16), rather than an
+    /// ordinary pick or a caller's own `select(_:scheme:)` call. A subset of `selection`,
+    /// pruned to intersect it on every `syncSelection` the same way `selectionInfo` is.
+    /// `rebuildSelectionHighlights` renders these with `PresentationStyle.agentHighlight`'s
+    /// distinct treatment instead of the ordinary selection color, so a viewer can tell "the
+    /// agent is pointing at this" from "I selected this" at a glance. Empty (and inert) unless
+    /// the agent-bridge sidecar is running.
+    var agentHighlightedEntities: [PickedEntity] = []
+
+    #if os(macOS)
+        // MARK: - Agent selection sidecar (OCCTSwiftInteraction#16)
+        //
+        // State for `startSelectionSidecar(directory:)`/`stopSelectionSidecar()`
+        // (`CADViewportService+AgentBridge.swift`). macOS-only, matching
+        // `OCCTSwiftIO.DirectoryWatcher`'s own platform gate (kqueue is a Darwin primitive).
+
+        /// The directory `startSelectionSidecar(directory:)` was last started against, or `nil`
+        /// if it has never been started (or has since been stopped).
+        var sidecarDirectory: URL?
+
+        /// Holds `host.lock` for as long as the sidecar is running.
+        var sidecarHostLock: HostLock?
+
+        /// Sink on `interactiveContext.$selection` that keeps `selection.json` current.
+        ///
+        /// Separate from `selectionSubscription` above (this service's own projection sink),
+        /// so starting or stopping the sidecar never disturbs that one.
+        var sidecarSelectionSubscription: AnyCancellable?
+
+        /// Watches `<directory>/highlight_requests/` for a new request file.
+        var sidecarWatcher: DirectoryWatcher?
+
+        /// Monotonic counter bumped by exactly 1 on every `selection.json` write, per the ADR.
+        var sidecarRevision = 0
+    #endif
 
     // MARK: - Bridge to the interactive context's selection state
 

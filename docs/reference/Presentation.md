@@ -54,10 +54,21 @@ public struct PresentationStyle: Sendable, Equatable {
     public static let ghosted: PresentationStyle        // grey, 0.7 transparency, shaded
     public static let highlighted: PresentationStyle    // orange, shaded with edges
     public static let hovered: PresentationStyle        // cyan, shaded with edges
+    public static let agentHighlight: PresentationStyle  // magenta, wireframe (hollow)
 }
 ```
 
-- **Parameters:** `color` — RGB; `transparency` — 0 (opaque) to 1; `displayMode`; `visible`.
+`agentHighlight` (OCCTSwiftInteraction#16) is an agent's highlight request, distinct from
+`.highlighted` (a human's ordinary selection): `.wireframe` reads as hollow, in contrast to
+`.highlighted`'s filled `.shadedWithEdges`, so a viewer can tell "the agent is pointing at
+this" from "I selected this" at a glance. Applied by
+`CADViewportService.startSelectionSidecar(directory:)` (see its own reference page) to a
+highlight request resolved with no `question`. A dashed stroke and a diamond-shaped point
+handle, the fuller visual vocabulary the agent-viewport selection bridge ADR describes, are
+`OCCTSwiftViewport` renderer capabilities that don't exist yet; color plus `.wireframe` is
+the identity signal available today.
+
+- **Parameters:** `color` (RGB); `transparency` (0, opaque, to 1); `displayMode`; `visible`.
 - **Example:**
 
 ```swift
@@ -86,8 +97,8 @@ public struct HighlightStyle: Sendable, Equatable {
 }
 ```
 
-- **Parameters:** `selectionColor` — tint for selected sub-shapes; `hoverColor` — hover tint
-  (body-level only today); `outlineWidth` — outline width.
+- **Parameters:** `selectionColor` (tint for selected sub-shapes); `hoverColor` (hover tint,
+  body-level only today); `outlineWidth`.
 - **Example:**
 
 ```swift

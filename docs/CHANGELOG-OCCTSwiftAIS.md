@@ -9,6 +9,16 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
+### New: `PresentationStyle.agentHighlight`
+
+Part of [OCCTSwiftInteraction#16](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/16),
+the agent-viewport selection bridge. A new preset distinct from `.highlighted` (a human's
+ordinary selection): `.wireframe` reads as hollow, in contrast to `.highlighted`'s filled
+`.shadedWithEdges`, so a viewer can tell "the agent is pointing at this" from "I selected
+this" at a glance. Applied by `OCCTSwiftCADKit.CADViewportService
+.startSelectionSidecar(directory:)` to a highlight request resolved with no `question`.
+Purely additive; every existing preset is unchanged.
+
 ### Platforms narrowed to iOS and macOS
 
 A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.

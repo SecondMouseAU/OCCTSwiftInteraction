@@ -32,3 +32,8 @@ Its API surface groups into:
 - **Standard scene objects**: `Trihedron`, `WorkPlane`, `Axis`, `PointCloudPresentation`.
 - **Selection survival**: `InteractiveContext.remap(_:using:rebindingTo:)` translates a
   pre-mutation `Selection` to post-mutation shape indices via OCCTSwift history records.
+- **Presentation styles**: `PresentationStyle` (`.default`/`.ghosted`/`.highlighted`/
+  `.hovered`/`.agentHighlight`), `DisplayMode`, `HighlightStyle`. `.agentHighlight`
+  (OCCTSwiftInteraction#16) is a distinct hollow (`.wireframe`) treatment for a highlight an
+  agent requested via `OCCTSwiftCADKit.CADViewportService.startSelectionSidecar(directory:)`,
+  so a viewer can tell it apart from a human's ordinary `.highlighted` selection.
