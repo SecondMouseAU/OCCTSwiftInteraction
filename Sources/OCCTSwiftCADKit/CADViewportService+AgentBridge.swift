@@ -96,7 +96,17 @@
                     MainActor.assumeIsolated {
                         guard let self else { return }
                         self.sidecarRevision += 1
-                        try? self.writeSelectionSidecarDocument(selection: newSelection)
+                        do {
+                            try self.writeSelectionSidecarDocument(selection: newSelection)
+                        } catch {
+                            // Roll the counter back rather than leave it ahead of what's
+                            // actually on disk: a write failure here (disk full, permissions)
+                            // must not let `sidecarRevision` diverge from `selection.json`'s
+                            // own `revision` field, which is the whole point of the field. The
+                            // next successful write picks up from the last one that actually
+                            // landed, rather than skipping ahead by however many failed.
+                            self.sidecarRevision -= 1
+                        }
                     }
                 }
 
@@ -188,13 +198,31 @@
 
             guard
                 let entries = try? FileManager.default.contentsOfDirectory(
-                    at: highlightRequestsDirectory, includingPropertiesForKeys: nil)
+                    at: highlightRequestsDirectory,
+                    includingPropertiesForKeys: [.creationDateKey])
             else { return }
 
+            // Arrival order, not filename order: the ADR's `id` is an opaque string with no
+            // ordering contract (OCCTMCP's own writer uses a UUID), so sorting by filename
+            // text is arbitrary and can visibly misorder a numeric-looking id scheme
+            // ("10.json" before "2.json"). Creation time survives the atomic
+            // temp-name-then-rename write (rename preserves the original creation date), so it
+            // reflects when each request actually landed, regardless of what its id looks
+            // like. Falls back to filename order only if a date genuinely can't be read (rare,
+            // and better than crashing the whole poll over one unreadable entry).
             let requestFiles =
                 entries
                 .filter { $0.pathExtension == "json" }
-                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                .sorted { lhs, rhs in
+                    let lhsDate = (try? lhs.resourceValues(forKeys: [.creationDateKey]))?
+                        .creationDate
+                    let rhsDate = (try? rhs.resourceValues(forKeys: [.creationDateKey]))?
+                        .creationDate
+                    if let lhsDate, let rhsDate, lhsDate != rhsDate {
+                        return lhsDate < rhsDate
+                    }
+                    return lhs.lastPathComponent < rhs.lastPathComponent
+                }
 
             for fileURL in requestFiles {
                 guard let data = try? Data(contentsOf: fileURL),
