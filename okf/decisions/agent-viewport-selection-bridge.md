@@ -87,7 +87,7 @@ The host's current live selection, one object per file:
 - **`updatedAt`**: `String`, ISO 8601 UTC (`2026-08-21T10:15:32Z`), the timestamp of the write that
   produced this `revision`.
 
-The host creates this file at startup (`revision: 0`, empty `selections`) as part of its own
+The host creates this file at startup (`revision: 0`, empty `selections`) alongside its `host.json` write, so a reader never has to treat "file absent" as "nothing selected":
 `host.json` write, so a reader never has to treat "file absent" as "nothing selected": file absent
 means the host has not started, or is stale (see `host.lock` below); file present with an empty
 array means the host is live and nothing is selected.
