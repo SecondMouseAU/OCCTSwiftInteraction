@@ -30,6 +30,15 @@ func occtDep(_ name: String, from version: String) -> Package.Dependency {
     .package(url: "https://github.com/SecondMouseAU/\(name).git", from: Version(version)!)
 }
 
+// TEMPORARY, per OCCTSwiftInteraction#16: pins OCCTSwiftIO to the unreleased
+// `issue-42-directory-watcher` branch (SecondMouseAU/OCCTSwiftIO#43) rather than a tagged
+// version, because `DirectoryWatcher` (the file watcher the agent-selection sidecar needs to
+// notice a new `highlight_requests/<id>.json` without polling) has not shipped in a release
+// yet. Move this back to `occtDep("OCCTSwiftIO", from:)` once OCCTSwiftIO#43 merges and ships.
+func occtDepBranch(_ name: String, branch: String) -> Package.Dependency {
+    .package(url: "https://github.com/SecondMouseAU/\(name).git", branch: branch)
+}
+
 // OCCTSwiftInteraction: identity, selection, and the assembled CAD viewport service.
 //
 // One package, three targets, strict upward dependency direction:
@@ -85,8 +94,10 @@ let package = Package(
         // targets during the v3.0.0 fanout (ecosystem#39): none needed a source change for it.
         occtDep("OCCTSwift", from: "3.0.0"),
         occtDep("OCCTSwiftViewport", from: "1.1.26"),
-        // >=1.7.8: the release carrying OCCTSwift 3.0.0.
-        occtDep("OCCTSwiftIO", from: "1.7.8"),
+        // TEMPORARY branch pin, see occtDepBranch's own comment above (OCCTSwiftInteraction#16):
+        // move back to occtDep("OCCTSwiftIO", from:) once OCCTSwiftIO#43 (DirectoryWatcher)
+        // merges and ships in a tagged release.
+        occtDepBranch("OCCTSwiftIO", branch: "issue-42-directory-watcher"),
     ],
     targets: [
         .target(
@@ -112,6 +123,10 @@ let package = Package(
                 "OCCTSwiftAIS",
                 .product(name: "OCCTSwift", package: "OCCTSwift"),
                 .product(name: "OCCTSwiftViewport", package: "OCCTSwiftViewport"),
+                // Direct dependency (rather than transitive through OCCTSwiftTools) for
+                // DirectoryWatcher, which CADViewportService+AgentBridge.swift imports
+                // directly (OCCTSwiftInteraction#16).
+                .product(name: "OCCTSwiftIO", package: "OCCTSwiftIO"),
             ],
             path: "Sources/OCCTSwiftCADKit",
             swiftSettings: [.swiftLanguageMode(.v6)]

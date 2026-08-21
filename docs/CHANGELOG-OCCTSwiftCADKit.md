@@ -12,6 +12,31 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### New: the agent-viewport selection sidecar
+
+Closes [OCCTSwiftInteraction#16](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/16).
+
+`CADViewportService` gains `startSelectionSidecar(directory:hostName:hostVersion:)` /
+`stopSelectionSidecar()`, the bridge described by the agent-viewport selection bridge ADR
+(`okf/decisions/agent-viewport-selection-bridge.md`, OCCTSwiftInteraction#17): writes this
+service's live selection out to `<directory>/selection.json` on every change, watches
+`<directory>/highlight_requests/` (via `OCCTSwiftIO.DirectoryWatcher`) for a request an
+MCP-side agent dropped, and applies each well-formed one via `select(_:scheme:)` or
+`present(_:)` (when it carries a `question`), moving it to
+`highlight_requests/handled/<id>.json` with an outcome. macOS-only: built on
+`DirectoryWatcher`, itself Darwin-only (kqueue), so this API is absent on iOS.
+
+An entity highlighted this way renders with the new `OCCTSwiftAIS.PresentationStyle
+.agentHighlight` instead of the ordinary selection color, so a viewer can tell "the agent is
+pointing at this" from "I selected this" at a glance.
+
+**Temporary dependency note**: this pulls in `OCCTSwiftIO`'s unreleased
+`issue-42-directory-watcher` branch (`DirectoryWatcher`, SecondMouseAU/OCCTSwiftIO#43) rather
+than a tagged version, since it hasn't shipped in a release yet. `Package.swift` will move
+back to a normal version pin once that PR merges and ships.
+
+New: `CADViewportError.sidecarHostAlreadyRunning`.
+
 ### Platforms narrowed to iOS and macOS
 
 A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.

@@ -42,6 +42,24 @@ public struct PresentationStyle: Sendable, Equatable {
         color: SIMD3<Float>(0.3, 0.8, 1.0),
         displayMode: .shadedWithEdges
     )
+
+    /// An agent's highlight request, distinct from `.highlighted` (a human's ordinary
+    /// selection) and `.hovered`, so a viewer can tell "the agent is pointing at this" from
+    /// "I selected this" at a glance (OCCTSwiftInteraction#16, the agent-viewport selection
+    /// bridge ADR at `okf/decisions/agent-viewport-selection-bridge.md` in
+    /// `OCCTSwiftInteraction`).
+    ///
+    /// `.wireframe` reads as hollow, in contrast to `.highlighted`'s filled
+    /// `.shadedWithEdges`. A dashed stroke and a diamond-shaped point handle, the fuller
+    /// visual vocabulary the ADR's consumers describe, are `OCCTSwiftViewport` renderer
+    /// capabilities (line style, point-sprite shape) that do not exist yet; this color plus
+    /// `.wireframe` is the identity signal available today, and the one
+    /// `CADViewportService.startSelectionSidecar(directory:)` applies to a highlight request
+    /// resolved with no `question` (`CADViewportService+AgentBridge.swift`).
+    public static let agentHighlight = PresentationStyle(
+        color: SIMD3<Float>(0.85, 0.2, 0.95),
+        displayMode: .wireframe
+    )
 }
 
 /// Colors used by the highlight overlay for selected and hovered sub-shapes.

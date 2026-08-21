@@ -91,4 +91,14 @@ timestamp: 2026-06-22
   `respondWithCurrentSelection()` resolve it. Removing (or reloading) referenced geometry, or a
   full `removeAll()`, auto-resolves a pending escalation `.rejected` rather than leaving it
   suspended forever.
-- **`CADViewportError`**: `unsupportedFormat`, `emptyFile`, `loadFailed`.
+- **`CADViewportError`**: `unsupportedFormat`, `emptyFile`, `loadFailed`, `sidecarHostAlreadyRunning`.
+- **`startSelectionSidecar(directory:hostName:hostVersion:)` / `stopSelectionSidecar()`**
+  (OCCTSwiftInteraction#16, `CADViewportService+AgentBridge.swift`): the agent-viewport
+  selection bridge. Writes `selection.json` on every `interactiveContext.$selection` change,
+  watches `<directory>/highlight_requests/` (`OCCTSwiftIO.DirectoryWatcher`, macOS-only) for
+  a request an MCP-side agent dropped, and applies each well-formed one via
+  `select(_:scheme:)` or `present(_:)` (when it carries a `question`), moving it to
+  `highlight_requests/handled/<id>.json` with an outcome. Full wire format:
+  `okf/decisions/agent-viewport-selection-bridge.md`. Highlights applied this way render
+  with `OCCTSwiftAIS.PresentationStyle.agentHighlight`'s distinct hollow treatment instead of
+  the ordinary selection color.

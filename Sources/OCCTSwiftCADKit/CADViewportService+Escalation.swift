@@ -53,6 +53,20 @@ extension CADViewportService {
     /// even though nothing about B was ever cancelled.
     @discardableResult
     public func present(_ request: EscalationRequest) async -> EscalationResponse {
+        beginPresenting(request)
+        return await awaitResponse(to: request)
+    }
+
+    /// The synchronous half of `present(_:)`: supersedes any previous pending escalation,
+    /// marks `request` pending, highlights its entities, and shows any candidate previews.
+    ///
+    /// Extracted so a caller that needs the escalation visibly active (`pendingEscalation`
+    /// set, entities selected) before it can safely hand back control doesn't have to await
+    /// the full `present(_:)` call, which only returns once a human (or another automated
+    /// responder) answers it. `CADViewportService+AgentBridge.swift`'s highlight-request path
+    /// (OCCTSwiftInteraction#16) is exactly this: it reports a request "applied" once this much
+    /// has happened, not once it's been answered.
+    func beginPresenting(_ request: EscalationRequest) {
         if pendingEscalation != nil {
             respond(.deferred)
         }
@@ -72,7 +86,12 @@ extension CADViewportService {
                 setBodyVisible(true, bodyID: bodyID)
             }
         }
+    }
 
+    /// The suspending half of `present(_:)`: awaits an answer to `request`, which must already
+    /// be the active `pendingEscalation` (set via `beginPresenting(_:)`, by this method's own
+    /// caller or `present(_:)` itself).
+    func awaitResponse(to request: EscalationRequest) async -> EscalationResponse {
         let requestID = request.id
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in

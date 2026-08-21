@@ -74,7 +74,11 @@ extension CADViewportService {
     /// `fallbackShape` is only used for a body id this service has never loaded, where there
     /// is no body shape to point at. It never affects identity: `InteractiveObject` compares
     /// and hashes by `id` alone.
-    private func object(forBody bodyID: String, fallbackShape: OCCTSwift.Shape)
+    ///
+    /// Internal rather than private so `CADViewportService+AgentBridge.swift` can resolve a
+    /// whole-body highlight request (`kind == "body"`) the same way this file names any other
+    /// body id, rather than a second copy of this mapping.
+    func object(forBody bodyID: String, fallbackShape: OCCTSwift.Shape)
         -> OCCTSwiftTools.InteractiveObject
     {
         let id: UUID
@@ -101,6 +105,11 @@ extension CADViewportService {
             .compactMap { pickedEntity(for: $0) }
             .sorted(by: Self.selectionOrder)
         selectionInfo = selectionInfo.filter { subShapes.contains($0.key) }
+        // Pruned the same way selectionInfo is, and for the same reason: an entity that has
+        // left the selection (deselected, replaced, removed) should stop being tagged
+        // agent-highlighted rather than linger as a stale tag on whatever unrelated entity a
+        // future selection happens to reuse the same slot for.
+        agentHighlightedEntities = agentHighlightedEntities.filter { projected.contains($0) }
         guard projected != selection else { return }
         selection = projected
         rebuildSelectionHighlights()  // also calls rebuildBodies()
@@ -304,7 +313,12 @@ extension CADViewportService {
     /// (through `interactiveContext` directly, or by area selection) is enriched by the same
     /// code rather than a second copy of it. `triangleIndex` is `nil` for those, which only
     /// affects a `.perTriangle` scalar field: there is no triangle to sample.
-    private func enrichFace(ref: OCCTSwiftTools.SubShapeRef, bodyID: String, triangleIndex: Int?)
+    ///
+    /// Internal rather than private so `CADViewportService+AgentBridge.swift` can build a
+    /// `PickedEntity` from a highlight request's already-resolved `SubShapeRef` (an ordinal
+    /// looked up directly against the identity table, not a render-path pick), through the
+    /// same enrichment a real pick gets, rather than a second copy of it.
+    func enrichFace(ref: OCCTSwiftTools.SubShapeRef, bodyID: String, triangleIndex: Int?)
         -> PickedFaceInfo?
     {
         guard let face = Face(ref.shape) else { return nil }
@@ -374,8 +388,9 @@ extension CADViewportService {
 
     /// The presentation half of an edge pick.
     ///
-    /// See `enrichFace(ref:bodyID:triangleIndex:)`.
-    private func enrichEdge(ref: OCCTSwiftTools.SubShapeRef, bodyID: String) -> PickedEdgeInfo? {
+    /// See `enrichFace(ref:bodyID:triangleIndex:)`, including why this is internal rather than
+    /// private.
+    func enrichEdge(ref: OCCTSwiftTools.SubShapeRef, bodyID: String) -> PickedEdgeInfo? {
         guard let edge = Edge(ref.shape) else { return nil }
 
         let endpoints = edge.endpoints
@@ -443,8 +458,9 @@ extension CADViewportService {
     ///
     /// `renderPosition` is the rendered point the pick landed on, used only when the resolved
     /// `Shape` yields no vertex of its own; `nil` for a vertex that did not come from a pick,
-    /// which then simply has no fallback.
-    private func enrichVertex(
+    /// which then simply has no fallback. Internal rather than private for the same reason as
+    /// `enrichFace(ref:bodyID:triangleIndex:)`.
+    func enrichVertex(
         ref: OCCTSwiftTools.SubShapeRef, bodyID: String, renderPosition: SIMD3<Float>?
     )
         -> PickedVertexInfo?
@@ -464,17 +480,67 @@ extension CADViewportService {
         )
     }
 
-    /// Rebuilds the highlight bodies from the whole `selection` (not just the latest
-    /// pick), grouped by kind: up to three bodies, a translucent yellow triangle patch
-    /// aggregating every selected face's own triangles, a bright cyan polyline aggregating
-    /// every selected edge's own segments, and a bright magenta point sprite body for every
-    /// selected vertex's own position.
+    /// Rebuilds the highlight bodies from the whole `selection` (not just the latest pick).
+    ///
+    /// Split into two groups so an agent's highlight reads distinctly from a human's ordinary
+    /// selection (OCCTSwiftInteraction#16): the ordinary group (everything in `selection` not
+    /// tagged in `agentHighlightedEntities`) renders with the long-standing yellow/cyan/magenta
+    /// treatment, via `highlightBodies(for:idPrefix:faceColor:edgeColor:vertexColor:
+    /// vertexPointRadius:)`; the agent group (the tagged subset) renders through the same
+    /// helper with `PresentationStyle.agentHighlight`'s color and a larger vertex point
+    /// radius. With no agent-highlighted entities (the sidecar not running, the common case)
+    /// the agent group is always empty, so this produces exactly the bodies it always has.
+    private func rebuildSelectionHighlights() {
+        // `selection` and `agentHighlightedEntities` are both small (a handful of picks at
+        // once, in practice), so an O(n) `contains` per entity via `PickedEntity`'s existing
+        // `Equatable` (which is `isSamePick`, the one identity rule this codebase already has
+        // for a picked entity) is preferable to introducing a second, Hashable-shaped copy of
+        // that same rule just to back a `Set`.
+        let ordinary = selection.filter { !agentHighlightedEntities.contains($0) }
+        let agent = selection.filter { agentHighlightedEntities.contains($0) }
+
+        var bodies = highlightBodies(
+            for: ordinary,
+            idPrefix: "selection_highlight",
+            faceColor: SIMD4<Float>(1.0, 0.9, 0.0, 0.5),
+            edgeColor: SIMD4<Float>(0.1, 0.9, 1.0, 1.0),
+            vertexColor: SIMD4<Float>(1.0, 0.15, 0.9, 1.0),
+            vertexPointRadius: 6
+        )
+        bodies.append(
+            contentsOf: highlightBodies(
+                for: agent,
+                idPrefix: "agent_highlight",
+                faceColor: SIMD4<Float>(
+                    PresentationStyle.agentHighlight.color, 0.35),
+                edgeColor: SIMD4<Float>(PresentationStyle.agentHighlight.color, 1.0),
+                vertexColor: SIMD4<Float>(PresentationStyle.agentHighlight.color, 1.0),
+                vertexPointRadius: 9
+            ))
+
+        selectionBodies = bodies
+        rebuildBodies()
+    }
+
+    /// The geometry-gathering half of `rebuildSelectionHighlights`, extracted so the ordinary
+    /// and agent-highlighted groups share one implementation instead of two near-identical
+    /// copies: up to three bodies (`<idPrefix>_face`/`_edge`/_vertex`), a translucent triangle
+    /// patch aggregating every selected face's own triangles, a polyline aggregating every
+    /// selected edge's own segments, and a point sprite body for every selected vertex's own
+    /// position, one omitted for a kind not present in `entities`.
     ///
     /// Bodies loaded via `load(_:id:transform:)` are always in world-space already (the
     /// transform is baked into the shape before tessellation, not applied as a separate
     /// `_ViewportBody.transform`), so combining geometry gathered from different source
     /// bodies into one aggregate highlight body is safe.
-    private func rebuildSelectionHighlights() {
+    private func highlightBodies(
+        for entities: [PickedEntity],
+        idPrefix: String,
+        faceColor: SIMD4<Float>,
+        edgeColor: SIMD4<Float>,
+        vertexColor: SIMD4<Float>,
+        vertexPointRadius: Float
+    ) -> [_ViewportBody] {
         let stride = 6  // interleaved [px,py,pz,nx,ny,nz]
         var faceVerts: [Float] = []
         var faceIndices: [UInt32] = []
@@ -482,7 +548,7 @@ extension CADViewportService {
         var edgeSegments: [[SIMD3<Float>]] = []
         var vertexPoints: [SIMD3<Float>] = []
 
-        for entity in selection {
+        for entity in entities {
             switch entity {
             case .face(let info):
                 guard let body = modelBodies.first(where: { $0.id == info.bodyID }),
@@ -536,39 +602,37 @@ extension CADViewportService {
         if !faceIndices.isEmpty {
             bodies.append(
                 _ViewportBody(
-                    id: "selection_highlight_face",
+                    id: "\(idPrefix)_face",
                     vertexData: faceVerts,
                     indices: faceIndices,
                     edges: [],
-                    color: SIMD4<Float>(1.0, 0.9, 0.0, 0.5)
+                    color: faceColor
                 ))
         }
         if !edgeSegments.isEmpty {
             bodies.append(
                 _ViewportBody(
-                    id: "selection_highlight_edge",
+                    id: "\(idPrefix)_edge",
                     vertexData: [],
                     indices: [],
                     edges: edgeSegments,
-                    color: SIMD4<Float>(0.1, 0.9, 1.0, 1.0)
+                    color: edgeColor
                 ))
         }
         if !vertexPoints.isEmpty {
             bodies.append(
                 _ViewportBody(
-                    id: "selection_highlight_vertex",
+                    id: "\(idPrefix)_vertex",
                     vertexData: [],
                     indices: [],
                     edges: [],
                     vertices: vertexPoints,
                     vertexIndices: (0..<vertexPoints.count).map(Int32.init),
-                    color: SIMD4<Float>(1.0, 0.15, 0.9, 1.0),
-                    pointRadius: 6,
+                    color: vertexColor,
+                    pointRadius: vertexPointRadius,
                     primitiveKind: .point
                 ))
         }
-
-        selectionBodies = bodies
-        rebuildBodies()
+        return bodies
     }
 }

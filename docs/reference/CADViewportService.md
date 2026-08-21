@@ -593,6 +593,51 @@ See [`EscalationRequest`](#escalationrequest) / [`EscalationCandidate`](#escalat
 [`EscalationResponse`](#escalationresponse) for the full type definitions, and
 [`EscalationCardView`](#escalationcardview) for the SwiftUI presentation.
 
+### Agent selection sidecar
+
+```swift
+public func startSelectionSidecar(
+    directory: URL,
+    hostName: String = "OCCTSwiftInteraction",
+    hostVersion: String = "0.0.0"
+) throws
+public func stopSelectionSidecar()
+```
+
+The agent-viewport selection bridge (OCCTSwiftInteraction#16): writes this service's live
+selection out to `<directory>/selection.json` on every change, watches
+`<directory>/highlight_requests/` (via `OCCTSwiftIO.DirectoryWatcher`) for a request an
+MCP-side agent dropped, and applies each well-formed one via `select(_:scheme:)` or
+`present(_:)`. macOS-only (`DirectoryWatcher` is Darwin-only; absent on iOS). Full wire
+format: `okf/decisions/agent-viewport-selection-bridge.md`.
+
+```swift
+try viewport.startSelectionSidecar(directory: sceneDirectory, hostName: "ACADStudio", hostVersion: "1.4.2")
+// ... an MCP-side agent drops highlight_requests/<id>.json, this service applies it,
+// and moves it to highlight_requests/handled/<id>.json with an outcome ...
+viewport.stopSelectionSidecar()
+```
+
+- **`directory`**: the shared scene directory (the same one `manifest.json` lives in).
+  Created if absent, along with `highlight_requests/` and `highlight_requests/handled/`.
+- **`hostName`/`hostVersion`**: written into `host.json`, identifying this host application
+  to a reader. This package has no name of its own to default to sensibly; a host embedding
+  `CADViewportService` should pass its own.
+- Idempotent against a previous call: `startSelectionSidecar` stops whatever the sidecar was
+  doing first, so calling it again (a new scene directory) never leaks the old watcher or
+  `host.lock`.
+- Takes an exclusive, advisory `host.lock` in `directory` for as long as the sidecar runs,
+  per the ADR's single-host-per-directory liveness contract. Throws
+  `CADViewportError.sidecarHostAlreadyRunning` if another process already holds it.
+- A highlight request naming a `bodyId` that isn't loaded, or a `kind`/`index` that doesn't
+  resolve, is moved to `handled/` with `outcome: "rejected"` and a reason, never silently
+  dropped. A request carrying a `question` is presented via `present(_:)` instead of a plain
+  `select(_:scheme:)`, mapping onto a single-entity `EscalationRequest`.
+- An entity highlighted this way (not via a real pick or a caller's own
+  `select(_:scheme:)`) renders with `PresentationStyle.agentHighlight`'s distinct hollow
+  treatment instead of the ordinary yellow/cyan/magenta selection color, so a viewer can
+  tell "the agent is pointing at this" from "I selected this" at a glance.
+
 ### `CADViewportService.ShapeBounds`
 
 ```swift
@@ -1099,9 +1144,10 @@ if case .face(let face)? = viewport.selection.first, viewport.selection.count ==
 
 ```swift
 public enum CADViewportError: Error, LocalizedError {
-    case unsupportedFormat(String)  // "Unsupported file format: .<ext>"
-    case emptyFile                  // "File contains no geometry"
-    case loadFailed(String)         // "Load failed: <msg>"
+    case unsupportedFormat(String)       // "Unsupported file format: .<ext>"
+    case emptyFile                       // "File contains no geometry"
+    case loadFailed(String)              // "Load failed: <msg>"
+    case sidecarHostAlreadyRunning       // startSelectionSidecar: another process holds host.lock
 }
 ```
 
