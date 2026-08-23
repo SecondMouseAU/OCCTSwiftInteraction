@@ -107,7 +107,8 @@ A pending highlight (or escalation) request, one file per request, named by its 
   "kind": "face",
   "index": 3,
   "scheme": "replace",
-  "question": null
+  "question": null,
+  "ifRevision": 7
 }
 ```
 
@@ -126,6 +127,25 @@ A pending highlight (or escalation) request, one file per request, named by its 
   maps onto a single-entity `EscalationRequest` (`entities: [the one targeted PickedEntity]`,
   `candidates: []`, `context: nil`) rather than this doc inventing a parallel escalation shape.
   `nil` (or the key omitted) for a plain "highlight this" request with no question attached.
+- **`ifRevision`**: `Int?`. The `selection.json` revision this request was composed against, when
+  the requester wants the apply to be conditional on it. Compare-and-swap.
+
+  The race it closes is one the rest of the protocol cannot see. An agent reads `selection.json`,
+  decides what to highlight from what it read, and by the time its request lands the human has
+  selected something else. The request still applies, against a premise that is no longer true,
+  and reports `applied`. Nothing anywhere records that the premise moved.
+
+  When present, the host writes `{"outcome": "superseded"}` with a reason naming both revisions,
+  and applies nothing, if its current revision is **strictly greater** than `ifRevision`. Strictly
+  greater rather than unequal, deliberately: a request naming the *current* revision is exactly the
+  one still valid, and a request naming a revision *ahead* of the host is not stale but impossible,
+  since the only way to author one is to have read a `selection.json` this host did not write. That
+  case falls through and applies rather than being reported as staleness it is not.
+
+  Absent (or the key omitted) means unconditional, which is the right default: a request that
+  genuinely does not care what the human did in the meantime, clearing a highlight say, should not
+  have to pretend it does. The check runs before the target is resolved, so a stale request never
+  reports a geometry rejection that would send the requester looking in the wrong place.
 
 For `kind == "body"`, `index` carries no meaning (this package's own `SubShape.body` carries no
 `SubShapeRef` at all, for the same reason): writers emit `0`, readers ignore it.

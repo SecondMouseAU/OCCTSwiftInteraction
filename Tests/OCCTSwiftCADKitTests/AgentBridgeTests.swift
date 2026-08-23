@@ -414,4 +414,156 @@ struct AgentBridgeTests {
         #expect(handled, "expected the real DirectoryWatcher to notice the dropped request")
         #expect(service.selection.contains(.face(pick)))
     }
+
+    // MARK: - ifRevision (compare-and-swap)
+
+    /// The race `ifRevision` exists for.
+    ///
+    /// An agent reads `selection.json`, decides what to highlight from what it read, and the
+    /// human selects something else before the request lands. Without the check the request
+    /// applies against a premise that is no longer true and reports "applied".
+    @MainActor
+    @Test("A request composed against a stale revision is superseded, not applied")
+    func staleIfRevisionIsSuperseded() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        // The human moves the selection on, which advances the revision past what an agent
+        // reading at startup would have seen.
+        service.select(.face(pick))
+        service.clearSelection()
+
+        let requestID = "req-stale"
+        try writeHighlightRequest(
+            HighlightRequestPayload(
+                id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
+                scheme: "replace", question: nil, ifRevision: 0),
+            id: requestID, in: dir)
+
+        service.processHighlightRequests()
+
+        #expect(
+            service.selection.isEmpty,
+            "a superseded request must not select anything: acting on it is the bug")
+
+        let handledURL = CADViewportService.handledDirectory(in: dir)
+            .appendingPathComponent("\(requestID).json")
+        let handledData = try #require(FileManager.default.contents(atPath: handledURL.path))
+        let outcome = try JSONDecoder().decode(HandledOutcome.self, from: handledData)
+        #expect(outcome.outcome == "superseded")
+        #expect(
+            outcome.reason?.contains("revision") == true,
+            "the reason must name the revision, else this is indistinguishable from a geometry rejection"
+        )
+    }
+
+    /// The current revision is exactly the one still valid, so the check is strictly-greater
+    /// rather than inequality.
+    @MainActor
+    @Test("A request naming the current revision still applies")
+    func currentIfRevisionApplies() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        let requestID = "req-current"
+        try writeHighlightRequest(
+            HighlightRequestPayload(
+                id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
+                scheme: "replace", question: nil, ifRevision: service.sidecarRevision),
+            id: requestID, in: dir)
+
+        service.processHighlightRequests()
+
+        #expect(service.selection.contains(.face(pick)))
+        let handledURL = CADViewportService.handledDirectory(in: dir)
+            .appendingPathComponent("\(requestID).json")
+        let handledData = try #require(FileManager.default.contents(atPath: handledURL.path))
+        #expect(
+            try JSONDecoder().decode(HandledOutcome.self, from: handledData).outcome == "applied")
+    }
+
+    /// A revision ahead of the host is not staleness, so it applies.
+    ///
+    /// The only way to produce one is to read a `selection.json` this host did not write. It falls
+    /// through rather than being reported as superseded, which is what makes the check
+    /// strictly-greater rather than an inequality, and this is the case that distinguishes the
+    /// two: every other test passes under `!=` as well.
+    @MainActor
+    @Test("A request naming a revision ahead of the host still applies")
+    func futureIfRevisionApplies() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        let requestID = "req-future"
+        try writeHighlightRequest(
+            HighlightRequestPayload(
+                id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
+                scheme: "replace", question: nil, ifRevision: service.sidecarRevision + 100),
+            id: requestID, in: dir)
+
+        service.processHighlightRequests()
+
+        #expect(service.selection.contains(.face(pick)))
+        let handledURL = CADViewportService.handledDirectory(in: dir)
+            .appendingPathComponent("\(requestID).json")
+        let handledData = try #require(FileManager.default.contents(atPath: handledURL.path))
+        #expect(
+            try JSONDecoder().decode(HandledOutcome.self, from: handledData).outcome == "applied",
+            "a future revision is not staleness, and must not be reported as superseded")
+    }
+
+    /// Absent means unconditional.
+    ///
+    /// A request that genuinely does not care what the human did in the meantime, clearing a
+    /// highlight say, should not have to pretend it does.
+    @MainActor
+    @Test("A request with no ifRevision applies regardless of how far the revision has moved")
+    func absentIfRevisionIsUnconditional() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        service.select(.face(pick))
+        service.clearSelection()
+        #expect(
+            service.sidecarRevision > 0, "the revision must have moved for this to prove anything")
+
+        let requestID = "req-uncond"
+        try writeHighlightRequest(
+            HighlightRequestPayload(
+                id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
+                scheme: "replace", question: nil),
+            id: requestID, in: dir)
+
+        service.processHighlightRequests()
+
+        #expect(service.selection.contains(.face(pick)))
+    }
 }

@@ -59,6 +59,22 @@
         /// vocabulary. A plain `String` for the same reason as `kind` above.
         var scheme: String
         var question: String?
+        /// The `selection.json` revision this request was composed against, if the requester
+        /// wants the apply to be conditional on it.
+        ///
+        /// Compare-and-swap, and the reason it exists is a race the rest of the protocol cannot
+        /// see: an agent reads `selection.json`, decides what to highlight from what it read, and
+        /// by the time its request lands the human has selected something else. The request still
+        /// applies, against a premise that is no longer true, and nothing anywhere reports that.
+        ///
+        /// When set, the applier rejects the request as `superseded` if the host's current
+        /// revision is higher, turning a silent lost update into an explicit outcome the
+        /// requester can read back from `handled/<id>.json` and retry.
+        ///
+        /// Optional, and absent means unconditional: a request that genuinely does not care what
+        /// the human did in the meantime (clearing a highlight, say) should not have to pretend
+        /// it does. Costs one integer comparison when present.
+        var ifRevision: Int?
     }
 
     /// `highlight_requests/handled/<id>.json`: the outcome of a processed request.

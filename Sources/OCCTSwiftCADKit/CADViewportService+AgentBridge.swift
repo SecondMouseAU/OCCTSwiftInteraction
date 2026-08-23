@@ -249,6 +249,27 @@
         /// Applies one well-formed `HighlightRequestPayload`, returning the outcome to record
         /// in `highlight_requests/handled/<id>.json`.
         private func applyHighlightRequest(_ request: HighlightRequestPayload) -> HandledOutcome {
+            // Compare-and-swap, before anything is resolved or selected: a request composed
+            // against a selection the human has since changed is stale by definition, and
+            // applying it would act on a premise that is no longer true while reporting success.
+            //
+            // Checked first because the alternative outcomes are worse than useless here. A stale
+            // request that happens to resolve reports "applied"; one that happens not to resolve
+            // reports "rejected" with a reason about geometry, which sends the requester looking
+            // in the wrong place entirely.
+            //
+            // Strictly greater, not inequality: a request naming the current revision is exactly
+            // the one that is still valid. A request naming a HIGHER revision than the host has
+            // is not stale but impossible, and is left to fall through and apply, because the
+            // only way to produce one is to read a selection.json this host did not write.
+            if let ifRevision = request.ifRevision, sidecarRevision > ifRevision {
+                return HandledOutcome(
+                    outcome: "superseded",
+                    reason:
+                        "composed against revision \(ifRevision), selection is now at revision "
+                        + "\(sidecarRevision)")
+            }
+
             guard let scheme = Self.selectionScheme(fromWireValue: request.scheme) else {
                 return HandledOutcome(
                     outcome: "rejected", reason: "unknown scheme '\(request.scheme)'")
