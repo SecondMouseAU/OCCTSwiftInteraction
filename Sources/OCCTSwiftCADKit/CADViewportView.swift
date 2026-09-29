@@ -51,7 +51,9 @@ public struct CADViewportView: View {
     ///
     /// The lock is belt and braces: `ViewportRenderer` is `@MainActor` and draws on the main
     /// actor, as does `body`, so today every access is already serialized. It keeps the
-    /// `Sendable` claim honest if that ever changes.
+    /// `Sendable` claim honest if that ever changes. `_ViewportBody` is itself `Sendable`
+    /// (`ViewportBody: Identifiable, Sendable` in OCCTSwiftViewport), so the array is safe
+    /// to hand across isolation domains; keep that in mind if the type ever changes.
     final class LiveBodies: @unchecked Sendable {
         private let lock = NSLock()
         private var stored: [_ViewportBody]
