@@ -984,6 +984,32 @@ struct SmokeTests {
         #expect(ids.contains("selection_highlight_vertex"))
     }
 
+    /// Regression for #22: the face highlight duplicates the model's own triangles, so on the
+    /// `.geometry` layer it lost the depth tie and never rendered.
+    @MainActor
+    @Test("The face selection highlight draws on the overlay layer and is not pickable")
+    func faceHighlightIsOverlayAndNotPickable() {
+        guard let box = Shape.box(width: 10, height: 8, depth: 6) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let service = CADViewportService()
+        service.selectionModes = [.face]
+        service.load(box, id: "box")
+
+        guard let facePick = service.resolveFacePick(bodyID: "box", triangleIndex: 0) else {
+            Issue.record("resolveFacePick returned nil for a valid index")
+            return
+        }
+        service.select(.face(facePick))
+
+        let highlight = service.interactiveContext.bodies.first {
+            $0.id == "selection_highlight_face"
+        }
+        #expect(highlight?.renderLayer == .overlay)
+        #expect(highlight?.isPickable == false)
+    }
+
     /// Regression for #28 review: every loader shares one `entities` registry precisely so
     /// this doesn't happen: loading the same id twice must replace, not duplicate.
     ///

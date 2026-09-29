@@ -361,6 +361,12 @@ struct AgentBridgeTests {
         #expect(ids.contains("agent_highlight_face"))
         #expect(!ids.contains("selection_highlight_face"))
 
+        // #22: the agent highlight duplicates the face's triangles too, so it needs the same
+        // overlay layer and must not win picks.
+        let agentFace = service.interactiveContext.bodies.first { $0.id == "agent_highlight_face" }
+        #expect(agentFace?.renderLayer == .overlay)
+        #expect(agentFace?.isPickable == false)
+
         // Control: an ordinary pick (.replace here drops the agent tag, since it isn't
         // re-tagged) renders the long-standing selection color instead.
         let meta = try #require(service.metadata["box"])
