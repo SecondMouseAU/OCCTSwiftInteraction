@@ -606,7 +606,14 @@ extension CADViewportService {
                     vertexData: faceVerts,
                     indices: faceIndices,
                     edges: [],
-                    color: faceColor
+                    color: faceColor,
+                    // The highlight duplicates the selected face's own triangles, so at the
+                    // default `.geometry` layer it ties the real surface's depth and loses the
+                    // strict `.less` test (#22). `.overlay` draws it after the geometry pass.
+                    // Not pickable: an overlay body would otherwise win every pick over the
+                    // model it sits on.
+                    isPickable: false,
+                    renderLayer: .overlay
                 ))
         }
         if !edgeSegments.isEmpty {
