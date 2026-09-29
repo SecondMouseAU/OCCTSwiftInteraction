@@ -29,9 +29,9 @@ public struct CADLoadResult: @unchecked Sendable {
     /// Use `identity` instead, which the loader keys by body id at the moment each body is
     /// created, so the pairing is never inferred from the outside. See OCCTSwiftInteraction#7.
     public var shapes: [Shape]
-    public var dimensions: [DimensionInfo]
-    public var geomTolerances: [GeomToleranceInfo]
-    public var datums: [DatumInfo]
+    public var dimensions: [Document.Dimension]
+    public var geomTolerances: [Document.GeomTolerance]
+    public var datums: [Document.Datum]
 
     /// The shape, `BRepGraph` and three ordinal-to-identity tables for each loaded body, keyed by
     /// `ViewportBody.id`.
@@ -48,8 +48,8 @@ public struct CADLoadResult: @unchecked Sendable {
 
     public init(
         bodies: [ViewportBody] = [], metadata: [String: CADBodyMetadata] = [:],
-        shapes: [Shape] = [], dimensions: [DimensionInfo] = [],
-        geomTolerances: [GeomToleranceInfo] = [], datums: [DatumInfo] = [],
+        shapes: [Shape] = [], dimensions: [Document.Dimension] = [],
+        geomTolerances: [Document.GeomTolerance] = [], datums: [Document.Datum] = [],
         identity: [String: ShapeIdentity] = [:]
     ) {
         self.bodies = bodies

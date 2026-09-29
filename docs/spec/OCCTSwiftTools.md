@@ -70,9 +70,9 @@ public struct CADLoadResult: @unchecked Sendable {                              
     public var bodies: [ViewportBody]
     public var metadata: [String: CADBodyMetadata]   // CADBodyMetadata is now an IO type
     public var shapes: [Shape]                       // do NOT pair positionally with bodies
-    public var dimensions: [DimensionInfo]
-    public var geomTolerances: [GeomToleranceInfo]
-    public var datums: [DatumInfo]
+    public var dimensions: [Document.Dimension]
+    public var geomTolerances: [Document.GeomTolerance]
+    public var datums: [Document.Datum]
     public var identity: [String: ShapeIdentity]     // keyed by body id, opt-in (#7)
 }
 

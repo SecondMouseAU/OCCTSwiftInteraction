@@ -24,7 +24,7 @@ for body in result.bodies {
     // hand each body to the viewport
 }
 let shapes = result.shapes          // raw OCCTSwift shapes
-let pmi    = result.dimensions      // [DimensionInfo], if the format carries PMI
+let pmi    = result.dimensions      // [Document.Dimension], if the format carries PMI
 ```
 
 `load` is `async throws` because STEP and IGES imports can be long-running.

@@ -254,18 +254,18 @@ public struct CADLoadResult: @unchecked Sendable {
     public var bodies: [ViewportBody]
     public var metadata: [String: CADBodyMetadata]
     public var shapes: [Shape]
-    public var dimensions: [DimensionInfo]
-    public var geomTolerances: [GeomToleranceInfo]
-    public var datums: [DatumInfo]
+    public var dimensions: [Document.Dimension]
+    public var geomTolerances: [Document.GeomTolerance]
+    public var datums: [Document.Datum]
     public var identity: [String: ShapeIdentity]
 
     public init(
         bodies: [ViewportBody] = [],
         metadata: [String: CADBodyMetadata] = [:],
         shapes: [Shape] = [],
-        dimensions: [DimensionInfo] = [],
-        geomTolerances: [GeomToleranceInfo] = [],
-        datums: [DatumInfo] = [],
+        dimensions: [Document.Dimension] = [],
+        geomTolerances: [Document.GeomTolerance] = [],
+        datums: [Document.Datum] = [],
         identity: [String: ShapeIdentity] = [:]
     )
 }
