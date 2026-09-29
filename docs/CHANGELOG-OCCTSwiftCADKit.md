@@ -10,7 +10,10 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
-## Unreleased
+## 2.0.0 (2026-09-29)
+
+Adds the two fixes that landed after 2.0.0-rc3 (`CADViewportView` frozen bodies, face highlight
+z-fighting). Everything else below was in the release candidates.
 
 ### Fixed: `CADViewportView` froze its bodies at first render
 
@@ -50,10 +53,7 @@ An entity highlighted this way renders with the new `OCCTSwiftAIS.PresentationSt
 .agentHighlight` instead of the ordinary selection color, so a viewer can tell "the agent is
 pointing at this" from "I selected this" at a glance.
 
-**Temporary dependency note**: this pulls in `OCCTSwiftIO`'s unreleased
-`issue-42-directory-watcher` branch (`DirectoryWatcher`, SecondMouseAU/OCCTSwiftIO#43) rather
-than a tagged version, since it hasn't shipped in a release yet. `Package.swift` will move
-back to a normal version pin once that PR merges and ships.
+The `DirectoryWatcher` dependency ships in `OCCTSwiftIO` 1.8.0 and is a normal version pin.
 
 New: `CADViewportError.sidecarHostAlreadyRunning`.
 
