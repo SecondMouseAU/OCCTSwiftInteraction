@@ -1,3 +1,4 @@
+import Foundation
 import OCCTSwift
 import OCCTSwiftTools
 import OCCTSwiftViewport
@@ -26,6 +27,55 @@ public struct CADViewportView: View {
     public var selection: [PickedEntity]
     public var onClearSelection: (() -> Void)?
 
+    /// Hands the renderer a live view of `bodies`.
+    ///
+    /// `_MetalViewportView`'s `ViewportRenderer` captures the `Binding` it is given
+    /// exactly once, at construction, and reads through that same reference on every
+    /// frame. `.constant(bodies)` (the previous implementation) therefore froze the
+    /// first render's bodies for good, so a selection highlight added later never
+    /// reached the renderer.
+    ///
+    /// The box is a reference type, refreshed on every `body` evaluation, so the
+    /// captured getter always returns the current array. Nothing is diffed: an
+    /// in-place edit to `isVisible`, `transform` or `triangleStyles` is seen as
+    /// readily as an added or removed body, and no `@State` write lands a frame late.
+    ///
+    /// `body` assigns `box.bodies` as a side effect, which SwiftUI discourages, and that is
+    /// deliberate: the box is not observed state, so the write cannot trigger another update
+    /// or loop, and it is the only way to refresh a reference the renderer captured once
+    /// without a `@State` write that lands after the frame has already drawn. It is
+    /// idempotent, so a re-evaluation is harmless.
+    @State private var box: LiveBodies
+
+    /// Reference-typed storage behind the binding handed to the renderer.
+    ///
+    /// The lock is belt and braces: `ViewportRenderer` is `@MainActor` and draws on the main
+    /// actor, as does `body`, so today every access is already serialized. It keeps the
+    /// `Sendable` claim honest if that ever changes. `_ViewportBody` is itself `Sendable`
+    /// (`ViewportBody: Identifiable, Sendable` in OCCTSwiftViewport), so the array is safe
+    /// to hand across isolation domains; keep that in mind if the type ever changes.
+    final class LiveBodies: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [_ViewportBody]
+
+        init(_ bodies: [_ViewportBody]) {
+            self.stored = bodies
+        }
+
+        var bodies: [_ViewportBody] {
+            get { lock.withLock { stored } }
+            set { lock.withLock { stored = newValue } }
+        }
+
+        /// A read-only binding onto the box.
+        ///
+        /// The getter reads the box at call time, not at creation time. The renderer only reads bodies; the setter is a no-op so nothing can bypass the
+        /// `body` update path.
+        var binding: Binding<[_ViewportBody]> {
+            Binding(get: { self.bodies }, set: { _ in })
+        }
+    }
+
     public init(
         bodies: [_ViewportBody],
         controller: _ViewportController,
@@ -36,11 +86,13 @@ public struct CADViewportView: View {
         self.controller = controller
         self.selection = selection
         self.onClearSelection = onClearSelection
+        self._box = State(initialValue: LiveBodies(bodies))
     }
 
     public var body: some View {
-        GeometryReader { proxy in
-            _MetalViewportView(controller: controller, bodies: .constant(bodies))
+        box.bodies = bodies
+        return GeometryReader { proxy in
+            _MetalViewportView(controller: controller, bodies: box.binding)
                 .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .clipped()
