@@ -21,6 +21,17 @@ hands the renderer a reference-typed box refreshed on every `body` evaluation, s
 removals and in-place edits (`isVisible`, `transform`, `triangleStyles`) all reach it. Nothing is
 diffed, and no per-evaluation key is built.
 
+### Fixed: the face selection highlight never rendered
+
+Closes [OCCTSwiftInteraction#22](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/22).
+
+The face highlight body duplicates the selected face's own triangles, so on the default
+`.geometry` layer it tied the real surface's depth and lost the renderer's strict `.less` test,
+whatever its color or alpha. It now uses `renderLayer: .overlay` and `isPickable: false` (an
+overlay body would otherwise win every pick over the model beneath it). Edge and vertex
+highlights are unchanged. Trade-off: an overlay draws through occluding geometry, so a highlighted
+face on the far side of a solid shows through it.
+
 ### New: the agent-viewport selection sidecar
 
 Closes [OCCTSwiftInteraction#16](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/16).
