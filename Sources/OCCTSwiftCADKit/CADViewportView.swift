@@ -1,3 +1,4 @@
+import Foundation
 import OCCTSwift
 import OCCTSwiftTools
 import OCCTSwiftViewport
@@ -38,19 +39,38 @@ public struct CADViewportView: View {
     /// captured getter always returns the current array. Nothing is diffed: an
     /// in-place edit to `isVisible`, `transform` or `triangleStyles` is seen as
     /// readily as an added or removed body, and no `@State` write lands a frame late.
+    ///
+    /// `body` assigns `box.bodies` as a side effect, which SwiftUI discourages, and that is
+    /// deliberate: the box is not observed state, so the write cannot trigger another update
+    /// or loop, and it is the only way to refresh a reference the renderer captured once
+    /// without a `@State` write that lands after the frame has already drawn. It is
+    /// idempotent, so a re-evaluation is harmless.
     @State private var box: LiveBodies
 
     /// Reference-typed storage behind the binding handed to the renderer.
-    final class LiveBodies {
-        var bodies: [_ViewportBody]
+    ///
+    /// The lock is belt and braces: `ViewportRenderer` is `@MainActor` and draws on the main
+    /// actor, as does `body`, so today every access is already serialized. It keeps the
+    /// `Sendable` claim honest if that ever changes.
+    final class LiveBodies: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [_ViewportBody]
 
         init(_ bodies: [_ViewportBody]) {
-            self.bodies = bodies
+            self.stored = bodies
         }
 
-        /// A binding whose getter reads the box at call time, not at creation time.
+        var bodies: [_ViewportBody] {
+            get { lock.withLock { stored } }
+            set { lock.withLock { stored = newValue } }
+        }
+
+        /// A read-only binding onto the box.
+        ///
+        /// The getter reads the box at call time, not at creation time. The renderer only reads bodies; the setter is a no-op so nothing can bypass the
+        /// `body` update path.
         var binding: Binding<[_ViewportBody]> {
-            Binding(get: { self.bodies }, set: { self.bodies = $0 })
+            Binding(get: { self.bodies }, set: { _ in })
         }
     }
 

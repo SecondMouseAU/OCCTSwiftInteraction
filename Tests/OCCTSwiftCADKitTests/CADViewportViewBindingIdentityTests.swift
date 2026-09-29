@@ -55,6 +55,28 @@ struct CADViewportViewBindingIdentityTests {
         #expect(captured.wrappedValue.first?.transform.columns.3.x == 5)
     }
 
+    @Test("a binding captured early reads an in-place triangleStyles edit")
+    func capturedBindingSeesTriangleStylesEdit() {
+        let box = CADViewportView.LiveBodies([makeBody(id: "model")])
+        let captured = box.binding
+        #expect(captured.wrappedValue.first?.triangleStyles.isEmpty == true)
+
+        var edited = box.bodies
+        edited[0].triangleStyles = [TriangleStyle(color: SIMD4<Float>(1, 1, 0, 1))]
+        box.bodies = edited
+
+        #expect(captured.wrappedValue.first?.triangleStyles.count == 1)
+    }
+
+    @Test("writing through the binding does not change the box")
+    func bindingIsReadOnly() {
+        let box = CADViewportView.LiveBodies([makeBody(id: "model")])
+
+        box.binding.wrappedValue = []
+
+        #expect(box.bodies.map(\.id) == ["model"])
+    }
+
     @Test("a binding captured early reads a removal")
     func capturedBindingSeesRemoval() {
         let box = CADViewportView.LiveBodies([makeBody(id: "a"), makeBody(id: "b")])
