@@ -616,6 +616,9 @@ extension CADViewportService {
                     renderLayer: .overlay
                 ))
         }
+        // Edge and vertex highlights stay on `.geometry` on purpose: they are lines and points,
+        // not coincident-depth copies of a surface, so they already win the depth test (#22).
+        // Moving them to `.overlay` would only make them show through occluding geometry.
         if !edgeSegments.isEmpty {
             bodies.append(
                 _ViewportBody(
