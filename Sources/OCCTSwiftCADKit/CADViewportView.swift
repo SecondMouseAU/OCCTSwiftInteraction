@@ -26,47 +26,32 @@ public struct CADViewportView: View {
     public var selection: [PickedEntity]
     public var onClearSelection: (() -> Void)?
 
-    /// A real, live-updating mirror of `bodies`.
+    /// Hands the renderer a live view of `bodies`.
     ///
-    /// `_MetalViewportView`'s `ViewportRenderer` captures the `Binding` it's
-    /// given exactly once, into a stored property, at construction (it's
-    /// only ever constructed once itself, guarded by `renderer == nil` in
-    /// `onAppear`) and reads through that same captured reference on every
-    /// frame after. Handing it `.constant(bodies)` (the previous
-    /// implementation) meant that captured reference's getter permanently
-    /// returned whatever `bodies` happened to be on the very first render:
-    /// structurally, no update after that (a selection highlight appearing,
-    /// any later body change) could ever reach the renderer, not just
-    /// "sometimes didn't." `$liveBodies` is a genuine `Binding` backed by
-    /// persistent `@State`, so the renderer's one-time-captured reference
-    /// keeps reading the current value correctly.
+    /// `_MetalViewportView`'s `ViewportRenderer` captures the `Binding` it is given
+    /// exactly once, at construction, and reads through that same reference on every
+    /// frame. `.constant(bodies)` (the previous implementation) therefore froze the
+    /// first render's bodies for good, so a selection highlight added later never
+    /// reached the renderer.
     ///
-    /// Seeded from `bodies` in `init`, not `onAppear`: `_MetalViewportView`'s
-    /// own `onAppear` (which constructs the renderer) can run before this
-    /// view's `onAppear` does, so seeding here instead of there means that
-    /// very first frame already sees the real content instead of an empty
-    /// array.
-    @State private var liveBodies: [_ViewportBody]
+    /// The box is a reference type, refreshed on every `body` evaluation, so the
+    /// captured getter always returns the current array. Nothing is diffed: an
+    /// in-place edit to `isVisible`, `transform` or `triangleStyles` is seen as
+    /// readily as an added or removed body, and no `@State` write lands a frame late.
+    @State private var box: LiveBodies
 
-    /// Changes whenever the body *set* changes: which bodies exist (`id`)
-    /// and whether any single one was rebuilt in place (`generation`, a
-    /// monotonic per-body counter). `_ViewportBody` doesn't conform to
-    /// `Equatable`, so `[_ViewportBody]` can't be either, and this is what
-    /// `.onChange` keys off instead of the array directly.
-    private var bodiesIdentity: String {
-        Self.bodiesIdentity(for: bodies)
-    }
+    /// Reference-typed storage behind the binding handed to the renderer.
+    final class LiveBodies {
+        var bodies: [_ViewportBody]
 
-    /// The pure key-derivation behind `bodiesIdentity`, pulled out as a
-    /// static function so it's testable without constructing a live view
-    /// (which needs a real `_ViewportController`). This is the contract
-    /// `.onChange(of:)` in `body` relies on to know when `liveBodies` needs
-    /// to be refreshed: if two body sets are meaningfully different (a body
-    /// added, removed, or rebuilt in place) but happen to produce the same
-    /// key here, `liveBodies` silently goes stale again, the same failure
-    /// mode `.constant(bodies)` had.
-    static func bodiesIdentity(for bodies: [_ViewportBody]) -> String {
-        bodies.map { "\($0.id):\($0.generation)" }.joined(separator: ",")
+        init(_ bodies: [_ViewportBody]) {
+            self.bodies = bodies
+        }
+
+        /// A binding whose getter reads the box at call time, not at creation time.
+        var binding: Binding<[_ViewportBody]> {
+            Binding(get: { self.bodies }, set: { self.bodies = $0 })
+        }
     }
 
     public init(
@@ -79,16 +64,16 @@ public struct CADViewportView: View {
         self.controller = controller
         self.selection = selection
         self.onClearSelection = onClearSelection
-        self._liveBodies = State(initialValue: bodies)
+        self._box = State(initialValue: LiveBodies(bodies))
     }
 
     public var body: some View {
-        GeometryReader { proxy in
-            _MetalViewportView(controller: controller, bodies: $liveBodies)
+        box.bodies = bodies
+        return GeometryReader { proxy in
+            _MetalViewportView(controller: controller, bodies: box.binding)
                 .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .clipped()
-        .onChange(of: bodiesIdentity, initial: false) { _, _ in liveBodies = bodies }
         .overlay(alignment: .top) {
             if selection.count == 1, let entity = selection.first {
                 selectionLabel(entity)

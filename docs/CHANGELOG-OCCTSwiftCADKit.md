@@ -12,6 +12,15 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: `CADViewportView` froze its bodies at first render
+
+`CADViewportView` passed `.constant(bodies)` to the Metal viewport, whose renderer captures its
+binding once, so bodies added or edited after the first render never reached the screen. Face,
+edge and vertex selection highlights built after that point were the visible symptom. The view now
+hands the renderer a reference-typed box refreshed on every `body` evaluation, so additions,
+removals and in-place edits (`isVisible`, `transform`, `triangleStyles`) all reach it. Nothing is
+diffed, and no per-evaluation key is built.
+
 ### New: the agent-viewport selection sidecar
 
 Closes [OCCTSwiftInteraction#16](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/16).
