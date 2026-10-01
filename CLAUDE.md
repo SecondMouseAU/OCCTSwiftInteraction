@@ -70,7 +70,7 @@ OCCTSwiftIO built clean with zero errors while carrying three real breaks in its
 Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
 published URLs. No binary lives in this repo.
 
-**Expected baseline: 360 tests across 32 suites, all passing.**
+Expected test counts: [okf/references/test-baseline.md](okf/references/test-baseline.md).
 
 ## Face identity is `IsSame`, and that decision is settled
 

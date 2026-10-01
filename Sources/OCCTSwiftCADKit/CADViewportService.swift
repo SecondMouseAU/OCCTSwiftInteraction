@@ -135,6 +135,23 @@ public final class CADViewportService {
     /// the agent-bridge sidecar is running.
     var agentHighlightedEntities: [PickedEntity] = []
 
+    /// The agent's attention marker: the one entity an agent is currently pointing at, held
+    /// apart from `selection` (OCCTSwiftInteraction#29).
+    ///
+    /// Written by an agent highlight request (`target` absent or `"attention"`) and never by a
+    /// human pick, so an agent pointing at face 3 leaves the human's face 7 selected. One at a
+    /// time: a new request replaces it. Hosts render it as their own marker (ACADStudio draws a
+    /// hollow, dashed one); this service only holds the state. Cleared when its body is removed.
+    public internal(set) var agentAttention: PickedEntity?
+
+    /// Sets or clears the agent's attention marker.
+    ///
+    /// Public so a host can dismiss the marker
+    /// from its own UI, and so a non-bridge integration can drive it.
+    public func setAgentAttention(_ entity: PickedEntity?) {
+        agentAttention = entity
+    }
+
     #if os(macOS)
         // MARK: - Agent selection sidecar (OCCTSwiftInteraction#16)
         //
@@ -352,6 +369,21 @@ public final class CADViewportService {
                 }
             }
     }
+
+    // MARK: - Window-activation guard (OCCTSwiftInteraction#28)
+    //
+    // Stored, so it stays in the core file. See `noteMouseDown(windowWasActive:)`.
+
+    /// How long an activating click's empty pick stays suppressible.
+    ///
+    /// The GPU pick readback
+    /// lands within a frame or two of the mouse-down; this only bounds how long a stale
+    /// flag can survive if no pick ever arrives.
+    static let activatingClickWindow: TimeInterval = 0.5
+
+    /// When set, an empty pick delivered before this time is the click that merely activated
+    /// the window, and must not deselect.
+    var activatingClickDeadline: Date?
 
     // MARK: - Escalation state
     //

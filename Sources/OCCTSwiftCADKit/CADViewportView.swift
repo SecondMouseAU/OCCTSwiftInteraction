@@ -4,6 +4,10 @@ import OCCTSwiftTools
 import OCCTSwiftViewport
 import SwiftUI
 
+#if canImport(AppKit)
+    import AppKit
+#endif
+
 /// SwiftUI wrapper around the Metal viewport, with a selection-info banner
 /// and display-mode controls.
 ///
@@ -26,6 +30,10 @@ public struct CADViewportView: View {
     @ObservedObject public var controller: _ViewportController
     public var selection: [PickedEntity]
     public var onClearSelection: (() -> Void)?
+    /// Receives each primary mouse-down with whether its window was key.
+    ///
+    /// Wired by `init(service:)` to `CADViewportService.noteMouseDown(windowWasActive:)`.
+    public var onMouseDown: ((_ windowWasActive: Bool) -> Void)?
 
     /// Hands the renderer a live view of `bodies`.
     ///
@@ -80,13 +88,30 @@ public struct CADViewportView: View {
         bodies: [_ViewportBody],
         controller: _ViewportController,
         selection: [PickedEntity] = [],
-        onClearSelection: (() -> Void)? = nil
+        onClearSelection: (() -> Void)? = nil,
+        onMouseDown: ((_ windowWasActive: Bool) -> Void)? = nil
     ) {
         self.bodies = bodies
         self.controller = controller
         self.selection = selection
         self.onClearSelection = onClearSelection
+        self.onMouseDown = onMouseDown
         self._box = State(initialValue: LiveBodies(bodies))
+    }
+
+    /// The whole standard wiring in one place: bodies, controller, selection, clear, and the
+    /// mouse-down report that stops the window-activating click deselecting.
+    @MainActor
+    public init(service: CADViewportService) {
+        self.init(
+            bodies: service.bodies,
+            controller: service.controller,
+            selection: service.selection,
+            onClearSelection: { [weak service] in service?.clearSelection() },
+            onMouseDown: { [weak service] active in
+                service?.noteMouseDown(windowWasActive: active)
+            }
+        )
     }
 
     public var body: some View {
@@ -96,6 +121,9 @@ public struct CADViewportView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .clipped()
+        #if canImport(AppKit)
+            .background(MouseDownProbe(onMouseDown: onMouseDown))
+        #endif
         .overlay(alignment: .top) {
             if selection.count == 1, let entity = selection.first {
                 selectionLabel(entity)
@@ -213,3 +241,53 @@ public struct CADViewportView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }
+
+#if canImport(AppKit)
+    /// Reports whether the window was key at each primary mouse-down inside this view.
+    ///
+    /// A local event monitor sees the event in `NSApplication.sendEvent`, before the window has
+    /// processed the activation, so `isKeyWindow` is still the pre-click answer. That is the
+    /// information the viewport's own pick callback has lost by the time it fires
+    /// (OCCTSwiftInteraction#28). The event is passed through untouched, so the click still
+    /// activates the window and still picks.
+    private struct MouseDownProbe: NSViewRepresentable {
+        let onMouseDown: ((Bool) -> Void)?
+
+        func makeNSView(context: Context) -> ProbeView { ProbeView() }
+
+        func updateNSView(_ view: ProbeView, context: Context) {
+            view.onMouseDown = onMouseDown
+        }
+
+        static func dismantleNSView(_ view: ProbeView, coordinator: ()) {
+            view.removeMonitor()
+        }
+
+        final class ProbeView: NSView {
+            var onMouseDown: ((Bool) -> Void)?
+            private var monitor: Any?
+
+            override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                removeMonitor()
+                guard window != nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) {
+                    [weak self] event in
+                    if let self, let window = self.window, event.window === window,
+                        self.bounds.contains(self.convert(event.locationInWindow, from: nil))
+                    {
+                        self.onMouseDown?(window.isKeyWindow)
+                    }
+                    return event
+                }
+            }
+
+            func removeMonitor() {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
+        }
+    }
+#endif
