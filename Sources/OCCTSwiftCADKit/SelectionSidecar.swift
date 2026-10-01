@@ -59,6 +59,13 @@
         /// vocabulary. A plain `String` for the same reason as `kind` above.
         var scheme: String
         var question: String?
+        /// Where the request lands: `"attention"` or `"selection"`.
+        ///
+        /// Absent means `"attention"`: the agent's own marker, leaving the human's selection
+        /// untouched (OCCTSwiftInteraction#29). `"selection"` is the explicit ask to change the
+        /// human's selection, and is the only case `scheme` combines with it. A plain `String`
+        /// for the same reason as `kind`; an unknown value is rejected with a reason.
+        var target: String?
         /// The `selection.json` revision this request was composed against, if the requester
         /// wants the apply to be conditional on it.
         ///
@@ -82,6 +89,15 @@
         /// `"applied" | "rejected" | "superseded"`.
         var outcome: String
         var reason: String?
+        /// Where an `applied` request landed: `"attention"` or `"selection"`. Absent on
+        /// `rejected` and `superseded`, which applied nowhere.
+        var target: String?
+
+        init(outcome: String, reason: String?, target: String? = nil) {
+            self.outcome = outcome
+            self.reason = reason
+            self.target = target
+        }
     }
 
     /// `host.json`: liveness descriptor, written once at sidecar startup.

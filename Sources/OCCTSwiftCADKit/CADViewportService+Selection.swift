@@ -229,12 +229,32 @@ extension CADViewportService {
         )
     }
 
+    /// Reports a primary mouse-down on the viewport, and whether its window was key when it
+    /// landed. `CADViewportView` calls this; a host embedding the Metal view by hand should too.
+    ///
+    /// A click on a window that was not key is the click that activates it, and the viewport
+    /// delivers it as an ordinary pick. When it hits nothing, `handlePick` would read that as
+    /// "empty space deselects". Recording the inactive window here lets that one empty pick be
+    /// ignored. A click on an already-active window changes nothing.
+    public func noteMouseDown(windowWasActive: Bool) {
+        activatingClickDeadline =
+            windowWasActive ? nil : Date().addingTimeInterval(Self.activatingClickWindow)
+    }
+
     /// `internal` rather than `private`, for the same reason as `resolveFacePick` and its
     /// siblings: so a test can drive the whole pick path (mode gate, ownership check,
     /// resolution, selection) with a synthesised `PickResult` instead of only its middle.
     /// `controller.onPick` is the only production caller.
     func handlePick(_ result: _PickResult?) {
+        // Whatever this pick is, it answers the pending mouse-down, so the flag is spent.
+        let activating = activatingClickDeadline.map { Date() < $0 } ?? false
+        activatingClickDeadline = nil
+
         guard let result else {
+            // The click that merely re-activated an unfocused window is delivered as an empty
+            // pick; losing the selection to it is not what the user asked for.
+            // OCCTSwiftInteraction#28.
+            if activating { return }
             // Empty space deselects, which is this service's contract and now applies to the
             // whole shared selection, including anything held for an object displayed
             // directly into the interactive context.

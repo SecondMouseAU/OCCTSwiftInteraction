@@ -108,6 +108,7 @@ A pending highlight (or escalation) request, one file per request, named by its 
   "index": 3,
   "scheme": "replace",
   "question": null,
+  "target": "attention",
   "ifRevision": 7
 }
 ```
@@ -122,6 +123,18 @@ A pending highlight (or escalation) request, one file per request, named by its 
 - **`scheme`**: `"replace" | "add" | "remove" | "xor"`, the same four-scheme vocabulary this
   package's own `InteractiveContext.select(_:scheme:)` already uses. How the requested entity
   combines with whatever the host currently has highlighted.
+- **`target`**: `"attention" | "selection"`, optional, default `"attention"`
+  ([OCCTSwiftInteraction#29](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/29)).
+  Where the request lands. `"attention"` is the host's agent-owned marker, one entity at a time,
+  and leaves the human's selection and `selection.json` untouched: an agent pointing at face 3
+  must not unselect the human's face 7. `scheme` then applies to the attention slot only
+  (`replace`/`add` set it, `remove` clears it if it matches, `xor` toggles it). `"selection"` is the
+  explicit ask to change the human's selection, and the only case where `scheme` combines with it.
+  Absent means `"attention"`, a deliberate change of default: the old behaviour silently destroyed
+  the human's pick and nothing recorded or restored it. Attention marks a face, edge or vertex; a
+  `kind` of `"body"` with attention is `rejected`, since there is no whole-body marker. A request
+  carrying a `question` is the "show me the one I mean and let me confirm" flow and always lands in
+  the selection, whatever `target` says. An unknown `target` is `rejected`.
 - **`question`**: `String?`. Present only when this request is escalation-shaped: the host renders
   it exactly as it would render one of its own `EscalationRequest.question` values, and the request
   maps onto a single-entity `EscalationRequest` (`entities: [the one targeted PickedEntity]`,
@@ -166,6 +179,10 @@ Written once the host has processed a request, same `<id>` as the request it ans
     newer one instead and never actually processed this request's own content.
 - **`reason`**: `String?`. Free text, present when it adds something `outcome` alone doesn't
   already say; `nil` for the ordinary `applied` case.
+
+- **`target`**: `String?`. On `applied`, where the request landed (`"attention"` or
+  `"selection"`), so a client that omitted `target` can tell which default it got. Absent on
+  `rejected` and `superseded`.
 
 The handled file does not repeat `id`, `bodyId`, `kind`, or `index`: the filename is the join key
 back to the request it answers, and the original request file stays in `highlight_requests/` (it

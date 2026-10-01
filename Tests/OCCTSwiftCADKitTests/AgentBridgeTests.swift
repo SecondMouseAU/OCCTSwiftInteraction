@@ -96,7 +96,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil),
+                scheme: "replace", question: nil, target: "selection"),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -134,7 +134,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: "req-edge", bodyId: "box", kind: "edge", index: edgePick.edgeIndex,
-                scheme: "replace", question: nil),
+                scheme: "replace", question: nil, target: "selection"),
             id: "req-edge", in: dir)
         service.processHighlightRequests()
         #expect(service.selection.contains(.edge(edgePick)))
@@ -142,7 +142,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: "req-vertex", bodyId: "box", kind: "vertex", index: vertexPick.vertexIndex,
-                scheme: "add", question: nil),
+                scheme: "add", question: nil, target: "selection"),
             id: "req-vertex", in: dir)
         service.processHighlightRequests()
         #expect(service.selection.contains(.vertex(vertexPick)))
@@ -169,7 +169,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: "Through-hole or blind pocket?"),
+                scheme: "replace", question: "Through-hole or blind pocket?", target: "selection"),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -201,7 +201,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "no-such-body", kind: "face", index: 0,
-                scheme: "replace", question: nil),
+                scheme: "replace", question: nil, target: "selection"),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -234,7 +234,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: 999_999,
-                scheme: "replace", question: nil),
+                scheme: "replace", question: nil, target: "selection"),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -264,7 +264,7 @@ struct AgentBridgeTests {
             .appendingPathComponent("mismatched.json")
         let payload = HighlightRequestPayload(
             id: "other-id", bodyId: "box", kind: "face", index: 0, scheme: "replace",
-            question: nil)
+            question: nil, target: "selection")
         try JSONEncoder().encode(payload).write(to: requestURL, options: .atomic)
 
         service.processHighlightRequests()
@@ -353,7 +353,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: "req-render", bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil),
+                scheme: "replace", question: nil, target: "selection"),
             id: "req-render", in: dir)
         service.processHighlightRequests()
 
@@ -402,7 +402,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil),
+                scheme: "replace", question: nil, target: "selection"),
             id: requestID, in: dir)
 
         let handledURL = CADViewportService.handledDirectory(in: dir)
@@ -450,7 +450,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil, ifRevision: 0),
+                scheme: "replace", question: nil, target: "selection", ifRevision: 0),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -489,7 +489,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil, ifRevision: service.sidecarRevision),
+                scheme: "replace", question: nil, target: "selection", ifRevision: service.sidecarRevision),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -525,7 +525,7 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil, ifRevision: service.sidecarRevision + 100),
+                scheme: "replace", question: nil, target: "selection", ifRevision: service.sidecarRevision + 100),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -565,11 +565,135 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil),
+                scheme: "replace", question: nil, target: "selection"),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
 
         #expect(service.selection.contains(.face(pick)))
+    }
+
+    // MARK: - Attention slot (OCCTSwiftInteraction#29)
+
+    /// Drives one request through the real apply path and returns its recorded outcome.
+    @MainActor
+    private func run(
+        _ request: HighlightRequestPayload, service: CADViewportService, in dir: URL
+    ) throws -> HandledOutcome {
+        try writeHighlightRequest(request, id: request.id, in: dir)
+        service.processHighlightRequests()
+        let url = CADViewportService.handledDirectory(in: dir)
+            .appendingPathComponent("\(request.id).json")
+        let data = try #require(FileManager.default.contents(atPath: url.path))
+        return try JSONDecoder().decode(HandledOutcome.self, from: data)
+    }
+
+    @MainActor
+    @Test("A request with no target marks attention and leaves the human selection alone")
+    func defaultTargetIsAttentionNotSelection() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let human = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+        let other = try #require(
+            (1..<12).lazy.compactMap { service.resolveFacePick(bodyID: "box", triangleIndex: $0) }
+                .first { $0.faceIndex != human.faceIndex })
+        service.select(.face(human), scheme: .replace)
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+        let revisionBefore = service.sidecarRevision
+
+        let outcome = try run(
+            HighlightRequestPayload(
+                id: "att", bodyId: "box", kind: "face", index: other.faceIndex,
+                scheme: "replace", question: nil),
+            service: service, in: dir)
+
+        #expect(outcome.outcome == "applied")
+        #expect(outcome.target == "attention")
+        #expect(service.agentAttention == .face(other))
+        #expect(service.selection == [.face(human)], "the human's pick must survive")
+        #expect(service.sidecarRevision == revisionBefore, "selection.json did not change")
+    }
+
+    @MainActor
+    @Test("Attention holds one entity: a new request replaces it, remove clears it")
+    func attentionIsOneAtATime() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let a = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+        let b = try #require(
+            (1..<12).lazy.compactMap { service.resolveFacePick(bodyID: "box", triangleIndex: $0) }
+                .first { $0.faceIndex != a.faceIndex })
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        _ = try run(
+            HighlightRequestPayload(
+                id: "a", bodyId: "box", kind: "face", index: a.faceIndex,
+                scheme: "add", question: nil),
+            service: service, in: dir)
+        _ = try run(
+            HighlightRequestPayload(
+                id: "b", bodyId: "box", kind: "face", index: b.faceIndex,
+                scheme: "add", question: nil),
+            service: service, in: dir)
+        #expect(service.agentAttention == .face(b))
+
+        _ = try run(
+            HighlightRequestPayload(
+                id: "c", bodyId: "box", kind: "face", index: b.faceIndex,
+                scheme: "remove", question: nil),
+            service: service, in: dir)
+        #expect(service.agentAttention == nil)
+    }
+
+    @MainActor
+    @Test("An unknown target is rejected, and attention rejects a whole body")
+    func attentionRejections() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        let unknown = try run(
+            HighlightRequestPayload(
+                id: "u", bodyId: "box", kind: "face", index: 0, scheme: "replace",
+                question: nil, target: "sideways"),
+            service: service, in: dir)
+        #expect(unknown.outcome == "rejected")
+
+        let whole = try run(
+            HighlightRequestPayload(
+                id: "w", bodyId: "box", kind: "body", index: 0, scheme: "replace",
+                question: nil),
+            service: service, in: dir)
+        #expect(whole.outcome == "rejected")
+        #expect(service.selection.isEmpty)
+        #expect(service.agentAttention == nil)
+    }
+
+    @MainActor
+    @Test("Removing the attended body clears attention")
+    func removingBodyClearsAttention() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+        service.setAgentAttention(.face(pick))
+
+        service.remove(id: "box")
+        #expect(service.agentAttention == nil)
     }
 }

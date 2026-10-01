@@ -41,15 +41,14 @@ struct CADScreen: View {
     @State private var viewport = CADViewportService()
 
     var body: some View {
-        CADViewportView(
-            bodies: viewport.bodies,
-            controller: viewport.controller,
-            selection: viewport.selection,
-            onClearSelection: { viewport.clearSelection() }
-        )
+        CADViewportView(service: viewport)
     }
 }
 ```
+
+`CADViewportView(service:)` wires everything below, including the mouse-down report that keeps the
+click activating an unfocused window from clearing the selection. The long initializer takes the
+same pieces separately; pass `onMouseDown: { viewport.noteMouseDown(windowWasActive: $0) }` to it.
 
 `CADViewportView` renders the Metal viewport with a selection-info banner (top) and
 display-mode / standard-view controls (bottom-trailing) built in.

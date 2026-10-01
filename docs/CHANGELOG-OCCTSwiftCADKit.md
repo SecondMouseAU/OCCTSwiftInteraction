@@ -12,6 +12,32 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Changed: an agent highlight no longer replaces the human's selection
+
+Closes [OCCTSwiftInteraction#29](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/29).
+
+A `highlight_requests/<id>.json` now carries an optional `target`, `"attention"` (the default) or
+`"selection"`. Attention writes the new `CADViewportService.agentAttention`, one entity at a time,
+and leaves `selection` and `selection.json` alone; the host renders the marker. `scheme` applies to
+the attention slot (`remove` clears it, `xor` toggles it) unless the caller explicitly passes
+`"selection"`, which keeps the old behaviour. Requests with a `question` still land in the
+selection, since the escalation card reads it. `handled/<id>.json` gains `target` on `applied`.
+`CADViewportService.setAgentAttention(_:)` lets a host dismiss the marker.
+
+**Behaviour change for existing clients:** a request with no `target` used to select. Clients that
+relied on that (OCCTMCP's `highlight_selection`) must send `"target": "selection"` until they move
+to attention; the matching OCCTMCP change is still to do. See the ADR.
+### Fixed: the click that activates the window no longer clears the selection
+
+Closes [OCCTSwiftInteraction#28](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/28).
+
+Clicking an unfocused window to re-focus it reached `handlePick(nil)` as an empty pick, which
+deselects. `CADViewportView` now reports each mouse-down with whether its window was key
+(`CADViewportService.noteMouseDown(windowWasActive:)`), and `handlePick` ignores the one empty
+pick that answers an inactive-window click. The click still activates the window and still picks a
+body if it hits one. Hosts using `CADViewportView(service:)` get this automatically; hosts using
+the long initializer pass `onMouseDown: { viewport.noteMouseDown(windowWasActive: $0) }`.
+
 ### Fixed: `CADViewportView` froze its bodies at first render
 
 `CADViewportView` passed `.constant(bodies)` to the Metal viewport, whose renderer captures its

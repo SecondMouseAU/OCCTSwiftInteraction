@@ -270,6 +270,18 @@
                         + "\(sidecarRevision)")
             }
 
+            // Absent target is the agent's own marker, not the human's selection. A request that
+            // carries a question is the "show me the one I mean and let me confirm" flow, which
+            // is about the human's selection by construction (the escalation card reads it), so
+            // it keeps landing there whatever `target` says.
+            let isEscalation = !(request.question ?? "").isEmpty
+            let target = request.target ?? "attention"
+            guard target == "attention" || target == "selection" else {
+                return HandledOutcome(
+                    outcome: "rejected", reason: "unknown target '\(target)'")
+            }
+            let landsInAttention = target == "attention" && !isEscalation
+
             guard let scheme = Self.selectionScheme(fromWireValue: request.scheme) else {
                 return HandledOutcome(
                     outcome: "rejected", reason: "unknown scheme '\(request.scheme)'")
@@ -280,6 +292,26 @@
             {
             case .rejected(let reason):
                 return HandledOutcome(outcome: "rejected", reason: reason)
+
+            case .wholeBody where landsInAttention:
+                // `PickedEntity` has no `.body` case, so a whole body cannot be an attention
+                // marker. Say so rather than silently select it, which is the bug.
+                return HandledOutcome(
+                    outcome: "rejected",
+                    reason:
+                        "attention marks a face, edge or vertex, not kind \"body\"; "
+                        + "pass target \"selection\" to select a whole body")
+
+            case .entity(let entity) where landsInAttention:
+                switch scheme {
+                case .replace, .add:
+                    agentAttention = entity
+                case .remove:
+                    if agentAttention == entity { agentAttention = nil }
+                case .xor:
+                    agentAttention = agentAttention == entity ? nil : entity
+                }
+                return HandledOutcome(outcome: "applied", reason: nil, target: "attention")
 
             case .wholeBody(let subShape):
                 // `PickedEntity` has no `.body` case (OCCTSwiftInteraction#3's settled design,
@@ -293,7 +325,7 @@
                     )
                 }
                 interactiveContext.select(subShape, scheme: scheme)
-                return HandledOutcome(outcome: "applied", reason: nil)
+                return HandledOutcome(outcome: "applied", reason: nil, target: "selection")
 
             case .entity(let entity):
                 // Tagged before selecting/presenting, not after: both `select(_:scheme:)` and
@@ -318,7 +350,7 @@
                 } else {
                     select(entity, scheme: scheme)
                 }
-                return HandledOutcome(outcome: "applied", reason: nil)
+                return HandledOutcome(outcome: "applied", reason: nil, target: "selection")
             }
         }
 

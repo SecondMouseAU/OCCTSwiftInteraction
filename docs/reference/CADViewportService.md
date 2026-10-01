@@ -637,6 +637,11 @@ viewport.stopSelectionSidecar()
   `select(_:scheme:)`) renders with `PresentationStyle.agentHighlight`'s distinct hollow
   treatment instead of the ordinary yellow/cyan/magenta selection color, so a viewer can
   tell "the agent is pointing at this" from "I selected this" at a glance.
+- A request lands in `agentAttention` by default (`target` absent or `"attention"`), not in
+  `selection`: one entity at a time, human selection untouched, rendering left to the host.
+  `target: "selection"` is the explicit opt-in to the behaviour described above, and a request with
+  a `question` always selects. `setAgentAttention(_:)` sets or clears the marker directly.
+  See the ADR and OCCTSwiftInteraction#29.
 
 ### `CADViewportService.ShapeBounds`
 

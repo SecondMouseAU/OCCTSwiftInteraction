@@ -1,3 +1,4 @@
+import Foundation
 import OCCTSwift
 import OCCTSwiftAIS
 import OCCTSwiftTools
@@ -276,4 +277,52 @@ struct SharedSelectionTests {
         #expect(info("a") == info("a"))
     }
 
+
+    // MARK: - OCCTSwiftInteraction#28
+
+    @MainActor
+    @Test("An empty pick delivered as the window-activating click leaves the selection alone")
+    func activatingClickDoesNotDeselect() {
+        guard let (service, entity) = loadedService() else {
+            Issue.record("fixture setup failed")
+            return
+        }
+        service.select(entity)
+
+        service.noteMouseDown(windowWasActive: false)
+        service.handlePick(nil)
+        #expect(service.selection.count == 1)
+
+        // The flag is spent by that pick: the next empty click is an ordinary one.
+        service.handlePick(nil)
+        #expect(service.selection.isEmpty)
+    }
+
+    @MainActor
+    @Test("An empty pick on an already-active window still deselects")
+    func ordinaryEmptyPickStillDeselects() {
+        guard let (service, entity) = loadedService() else {
+            Issue.record("fixture setup failed")
+            return
+        }
+        service.select(entity)
+
+        service.noteMouseDown(windowWasActive: true)
+        service.handlePick(nil)
+        #expect(service.selection.isEmpty)
+    }
+
+    @MainActor
+    @Test("A stale activation flag does not swallow a later empty pick")
+    func staleActivationFlagExpires() {
+        guard let (service, entity) = loadedService() else {
+            Issue.record("fixture setup failed")
+            return
+        }
+        service.select(entity)
+
+        service.activatingClickDeadline = Date().addingTimeInterval(-1)
+        service.handlePick(nil)
+        #expect(service.selection.isEmpty)
+    }
 }
