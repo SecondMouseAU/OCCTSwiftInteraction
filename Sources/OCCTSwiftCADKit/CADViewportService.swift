@@ -144,7 +144,9 @@ public final class CADViewportService {
     /// hollow, dashed one); this service only holds the state. Cleared when its body is removed.
     public internal(set) var agentAttention: PickedEntity?
 
-    /// Sets or clears the agent's attention marker. Public so a host can dismiss the marker
+    /// Sets or clears the agent's attention marker.
+    ///
+    /// Public so a host can dismiss the marker
     /// from its own UI, and so a non-bridge integration can drive it.
     public func setAgentAttention(_ entity: PickedEntity?) {
         agentAttention = entity
@@ -372,7 +374,9 @@ public final class CADViewportService {
     //
     // Stored, so it stays in the core file. See `noteMouseDown(windowWasActive:)`.
 
-    /// How long an activating click's empty pick stays suppressible. The GPU pick readback
+    /// How long an activating click's empty pick stays suppressible.
+    ///
+    /// The GPU pick readback
     /// lands within a frame or two of the mouse-down; this only bounds how long a stale
     /// flag can survive if no pick ever arrives.
     static let activatingClickWindow: TimeInterval = 0.5

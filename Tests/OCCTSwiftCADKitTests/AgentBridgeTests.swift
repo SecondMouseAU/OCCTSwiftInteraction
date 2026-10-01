@@ -8,11 +8,10 @@
 import Foundation
 import OCCTSwift
 import OCCTSwiftAIS
+@testable import OCCTSwiftCADKit
 import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
-
-@testable import OCCTSwiftCADKit
 
 /// A fresh, empty directory under the system temp dir, removed by the caller's own `defer`.
 private func makeTempDirectory() -> URL {
@@ -489,7 +488,8 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil, target: "selection", ifRevision: service.sidecarRevision),
+                scheme: "replace", question: nil, target: "selection",
+                ifRevision: service.sidecarRevision),
             id: requestID, in: dir)
 
         service.processHighlightRequests()
@@ -525,7 +525,8 @@ struct AgentBridgeTests {
         try writeHighlightRequest(
             HighlightRequestPayload(
                 id: requestID, bodyId: "box", kind: "face", index: pick.faceIndex,
-                scheme: "replace", question: nil, target: "selection", ifRevision: service.sidecarRevision + 100),
+                scheme: "replace", question: nil, target: "selection",
+                ifRevision: service.sidecarRevision + 100),
             id: requestID, in: dir)
 
         service.processHighlightRequests()

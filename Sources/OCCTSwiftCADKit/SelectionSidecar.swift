@@ -89,8 +89,9 @@
         /// `"applied" | "rejected" | "superseded"`.
         var outcome: String
         var reason: String?
-        /// Where an `applied` request landed: `"attention"` or `"selection"`. Absent on
-        /// `rejected` and `superseded`, which applied nowhere.
+        /// Where an `applied` request landed: `"attention"` or `"selection"`.
+        ///
+        /// Absent on `rejected` and `superseded`, which applied nowhere.
         var target: String?
 
         init(outcome: String, reason: String?, target: String? = nil) {
