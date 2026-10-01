@@ -1,11 +1,12 @@
 import Foundation
 import OCCTSwift
 import OCCTSwiftAIS
-@testable import OCCTSwiftCADKit
 import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
 import simd
+
+@testable import OCCTSwiftCADKit
 
 /// One selection store, not two synchronised ones.
 ///

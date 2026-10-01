@@ -8,10 +8,11 @@
 import Foundation
 import OCCTSwift
 import OCCTSwiftAIS
-@testable import OCCTSwiftCADKit
 import OCCTSwiftTools
 import OCCTSwiftViewport
 import Testing
+
+@testable import OCCTSwiftCADKit
 
 /// A fresh, empty directory under the system temp dir, removed by the caller's own `defer`.
 private func makeTempDirectory() -> URL {
