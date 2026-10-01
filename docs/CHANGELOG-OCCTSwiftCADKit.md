@@ -10,32 +10,9 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
-## 3.0.0-beta.1 (2026-09-29)
+## 3.0.0-beta.2 (2026-10-01)
 
-**Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.4.** A consumer only gets this by naming it; the stable line stays at 2.0.0.
-
-### Breaking: `CADFileLoader`'s GD&T element types (OCCTSwiftTools target)
-
-OCCTSwift 4.0.0 replaces the untyped `DimensionInfo`, `GeomToleranceInfo` and `DatumInfo` with the typed
-`Document.Dimension`, `Document.GeomTolerance` and `Document.Datum`
-([OCCTSwift#996](https://github.com/SecondMouseAU/OCCTSwift/issues/996)). `CADLoadResult.dimensions`,
-`.geomTolerances` and `.datums`, and their initializer parameters, use the new types, so the major version
-moves. `Document.Dimension.value` is `Double?` and a range dimension reports its bounds through `.bounds`.
-The reference pages and the cookbook example are updated.
-
-### Dependencies
-
-- `OCCTSwift exact: "4.0.0-beta.4"`. Exact, not `from:`, because `v4.0.0-kernel.N` tags are pre-releases of
-  the same package that sort above every beta, so `from: "4.0.0-beta.4"` would resolve to one of them
-  (main's source) rather than the beta.
-- `OCCTSwiftIO from: "2.0.0-beta.1"`, the release that carries the same GD&T type change.
-
-Verified: `swift build --build-tests` is clean and all three test targets pass against the real beta.4 and IO 2.0.0-beta.1 checkouts.
-
-## 2.0.0 (2026-09-29)
-
-Adds the two fixes that landed after 2.0.0-rc3 (`CADViewportView` frozen bodies, face highlight
-z-fighting). Everything else below was in the release candidates.
+**Pre-release, same pins as 3.0.0-beta.1** (OCCTSwift 4.0.0-beta.4 exactly, OCCTSwiftIO 2.0.0-beta.1). A consumer only gets this by naming it; the stable line stays at 2.0.0.
 
 ### Changed: an agent highlight no longer replaces the human's selection
 
@@ -62,6 +39,33 @@ deselects. `CADViewportView` now reports each mouse-down with whether its window
 pick that answers an inactive-window click. The click still activates the window and still picks a
 body if it hits one. Hosts using `CADViewportView(service:)` get this automatically; hosts using
 the long initializer pass `onMouseDown: { viewport.noteMouseDown(windowWasActive: $0) }`.
+
+## 3.0.0-beta.1 (2026-09-29)
+
+**Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.4.** A consumer only gets this by naming it; the stable line stays at 2.0.0.
+
+### Breaking: `CADFileLoader`'s GD&T element types (OCCTSwiftTools target)
+
+OCCTSwift 4.0.0 replaces the untyped `DimensionInfo`, `GeomToleranceInfo` and `DatumInfo` with the typed
+`Document.Dimension`, `Document.GeomTolerance` and `Document.Datum`
+([OCCTSwift#996](https://github.com/SecondMouseAU/OCCTSwift/issues/996)). `CADLoadResult.dimensions`,
+`.geomTolerances` and `.datums`, and their initializer parameters, use the new types, so the major version
+moves. `Document.Dimension.value` is `Double?` and a range dimension reports its bounds through `.bounds`.
+The reference pages and the cookbook example are updated.
+
+### Dependencies
+
+- `OCCTSwift exact: "4.0.0-beta.4"`. Exact, not `from:`, because `v4.0.0-kernel.N` tags are pre-releases of
+  the same package that sort above every beta, so `from: "4.0.0-beta.4"` would resolve to one of them
+  (main's source) rather than the beta.
+- `OCCTSwiftIO from: "2.0.0-beta.1"`, the release that carries the same GD&T type change.
+
+Verified: `swift build --build-tests` is clean and all three test targets pass against the real beta.4 and IO 2.0.0-beta.1 checkouts.
+
+## 2.0.0 (2026-09-29)
+
+Adds the two fixes that landed after 2.0.0-rc3 (`CADViewportView` frozen bodies, face highlight
+z-fighting). Everything else below was in the release candidates.
 
 ### Fixed: `CADViewportView` froze its bodies at first render
 
