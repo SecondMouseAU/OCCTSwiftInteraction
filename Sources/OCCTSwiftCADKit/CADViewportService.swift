@@ -135,6 +135,20 @@ public final class CADViewportService {
     /// the agent-bridge sidecar is running.
     var agentHighlightedEntities: [PickedEntity] = []
 
+    /// Publishes every change to `selection` with its source (OCCTSwiftInteraction#31).
+    ///
+    /// Emits synchronously from `syncSelection(with:)`, after `selection` has been updated, and
+    /// only when the projected `selection` actually changed. A whole-body change moves
+    /// `interactiveContext.selection` but not `selection`, so it does not emit.
+    public var selectionChanges: AnyPublisher<SelectionChange, Never> {
+        selectionChangeSubject.eraseToAnyPublisher()
+    }
+
+    @ObservationIgnored let selectionChangeSubject = PassthroughSubject<SelectionChange, Never>()
+
+    /// The source the entry point in progress declared, read by `syncSelection(with:)`.
+    @ObservationIgnored var pendingSelectionSource: SelectionChangeSource?
+
     /// The agent's attention marker: the one entity an agent is currently pointing at, held
     /// apart from `selection` (OCCTSwiftInteraction#29).
     ///

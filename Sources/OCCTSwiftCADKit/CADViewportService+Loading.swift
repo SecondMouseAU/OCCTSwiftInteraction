@@ -189,6 +189,25 @@ extension CADViewportService {
     /// - Returns: `id`, echoed back.
     @discardableResult
     public func load(_ shape: OCCTSwift.Shape, id: String, transform: [Double]? = nil) -> String {
+        load(shape, id: id, graph: nil, transform: transform)
+    }
+
+    /// Display an in-memory shape, minting pick uids from a graph the caller already holds.
+    ///
+    /// Otherwise identical to `load(_:id:transform:)`. A host that keeps a `BRepGraph` for
+    /// `shape` passes it here, so a pick's `GraphUID` resolves in the host's graph and the shape is
+    /// not serialised and graphed a second time.
+    ///
+    /// `graph` must have been built from `shape` as given. When `transform` is non-nil the shape is
+    /// placed first and a graph of the unplaced shape would name the wrong sub-shapes, so `graph` is
+    /// ignored and a fresh one is minted from the placed shape. `nil` mints one, as
+    /// `load(_:id:transform:)` always did.
+    ///
+    /// - Returns: `id`, echoed back.
+    @discardableResult
+    public func load(
+        _ shape: OCCTSwift.Shape, id: String, graph: BRepGraph?, transform: [Double]? = nil
+    ) -> String {
         let placedShape = transform.flatMap { shape.transformed(matrix: $0) } ?? shape
 
         remove(id: id)
@@ -212,7 +231,10 @@ extension CADViewportService {
         }
         // Built after the body, so a shape that produced nothing renderable does not pay for a
         // BRepGraph it can never be picked through.
-        installIdentity([id: ShapeIdentity(shape: placedShape)])
+        let identity =
+            graph.flatMap { transform == nil ? ShapeIdentity(shape: placedShape, graph: $0) : nil }
+            ?? ShapeIdentity(shape: placedShape)
+        installIdentity([id: identity])
 
         entities[id] = Entity(bodyIDs: [id])
         updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
@@ -275,11 +297,15 @@ extension CADViewportService {
     /// the same question asked in the vocabulary that now holds the answer, and it reaches
     /// whole-body selections on the removed body too (a `PickedEntity` scan never could).
     private func pruneSelection(removingBodyIDs bodyIDs: [String]) {
-        let removedObjectIDs = Set(bodyIDs.compactMap { bodyObjectIDs[$0] })
-        for subShape in interactiveContext.selection.subshapes
-        where removedObjectIDs.contains(subShape.object.id) {
-            // Each of these fires the `$selection` sink, which re-projects and rebuilds.
-            interactiveContext.deselect(subShape)
+        for bodyID in bodyIDs {
+            guard let objectID = bodyObjectIDs[bodyID] else { continue }
+            for subShape in interactiveContext.selection.subshapes
+            where subShape.object.id == objectID {
+                // Each of these fires the `$selection` sink, which re-projects and rebuilds.
+                withSelectionSource(.bodyRemoved(bodyID: bodyID)) {
+                    interactiveContext.deselect(subShape)
+                }
+            }
         }
         for bodyID in bodyIDs {
             if let objectID = bodyObjectIDs.removeValue(forKey: bodyID) {

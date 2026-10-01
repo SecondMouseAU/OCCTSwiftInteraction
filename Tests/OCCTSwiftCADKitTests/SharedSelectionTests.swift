@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import OCCTSwift
 import OCCTSwiftAIS
@@ -323,5 +324,89 @@ struct SharedSelectionTests {
         service.activatingClickDeadline = Date().addingTimeInterval(-1)
         service.handlePick(nil)
         #expect(service.selection.isEmpty)
+    }
+
+    // MARK: - OCCTSwiftInteraction#27
+
+    @MainActor
+    @Test("load(graph:) mints pick uids from the caller's graph")
+    func loadWithGraphSharesTheHostsUIDs() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let graph = try #require(BRepGraph(shape: box))
+        let service = CADViewportService()
+        service.load(box, id: "box", graph: graph)
+
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+        let uid = try #require(pick.uid)
+        #expect(uid.graphID == graph.instanceID)
+        #expect(graph.contains(uid: uid))
+    }
+
+    @MainActor
+    @Test("load(graph:) with a transform ignores the graph and mints a fresh one")
+    func loadWithGraphAndTransformMintsItsOwn() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let graph = try #require(BRepGraph(shape: box))
+        let service = CADViewportService()
+        service.load(
+            box, id: "box", graph: graph,
+            transform: [1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0, 0])
+
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+        let uid = try #require(pick.uid)
+        #expect(uid.graphID != graph.instanceID)
+    }
+
+    // MARK: - OCCTSwiftInteraction#31
+
+    @MainActor
+    private func record(_ service: CADViewportService) -> Recorder {
+        let recorder = Recorder()
+        recorder.token = service.selectionChanges.sink { recorder.changes.append($0) }
+        return recorder
+    }
+
+    @MainActor
+    final class Recorder {
+        var changes: [SelectionChange] = []
+        var token: AnyCancellable?
+    }
+
+    @MainActor
+    @Test("Each way of changing the selection reports its source, with the previous state")
+    func selectionChangesCarrySources() throws {
+        guard let (service, entity) = loadedService() else {
+            Issue.record("fixture setup failed")
+            return
+        }
+        let recorder = record(service)
+
+        service.select(entity)
+        #expect(recorder.changes.last?.source == .programmatic)
+        #expect(recorder.changes.last?.previous.isEmpty == true)
+        #expect(recorder.changes.last?.current == [entity])
+
+        service.handlePick(nil)
+        #expect(recorder.changes.last?.source == .emptySpaceClick)
+        #expect(recorder.changes.last?.previous == [entity])
+        #expect(recorder.changes.last?.current.isEmpty == true)
+
+        service.select(entity)
+        service.remove(id: "box")
+        #expect(recorder.changes.last?.source == .bodyRemoved(bodyID: "box"))
+        #expect(recorder.changes.count == 4)
+    }
+
+    @MainActor
+    @Test("A viewport pick reports viewportPick")
+    func viewportPickSource() throws {
+        guard let (service, _) = loadedService() else {
+            Issue.record("fixture setup failed")
+            return
+        }
+        let recorder = record(service)
+        let pick = try #require(_PickResult(rawValue: 0, indexMap: [0: "box"]))
+        service.handlePick(pick)
+        #expect(recorder.changes.last?.source == .viewportPick)
     }
 }
