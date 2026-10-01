@@ -18,3 +18,4 @@ timestamp: 2026-06-22
 - [OpenCASCADE Technology (OCCT)](https://dev.opencascade.org/): upstream B-Rep kernel wrapped by
   OCCTSwift, the geometry source this bridge converts.
 - [Test baseline](test-baseline.md): expected passing test and suite counts per target.
+- [swift-format before push](swift-format-before-push.md): everything must pass `swift-format lint --strict`; local traps.
