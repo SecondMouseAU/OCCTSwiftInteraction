@@ -10,6 +10,31 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
+## Unreleased
+
+### New: `load(_:id:graph:transform:)` takes the caller's `BRepGraph`
+
+Closes [OCCTSwiftInteraction#27](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/27).
+
+A host that already holds a graph for a shape passes it in, so a pick's `GraphUID` resolves in the
+host's graph and the shape is not serialised and graphed a second time. `graph` must have been built
+from `shape` as given; with a non-nil `transform` it is ignored and a fresh graph is minted from the
+placed shape, since a graph of the unplaced shape would name the wrong sub-shapes. `load(_:id:
+transform:)` is unchanged.
+
+### New: `selectionChanges` publishes each selection change with its source
+
+Closes [OCCTSwiftInteraction#31](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/31).
+
+`CADViewportService.selectionChanges` emits a `SelectionChange` (`previous`, `current`, `source`)
+from `syncSelection(with:)`, the one place every path ends. `source` is `.viewportPick`,
+`.emptySpaceClick`, `.programmatic`, `.agentHighlight(requestID:)` or `.bodyRemoved(bodyID:)`. It
+emits synchronously, only when the projected `selection` changed, so a whole-body change (which
+moves `interactiveContext.selection` but not `selection`) does not emit. A change this service
+cannot attribute, such as area selection or a pick on a body the context displays itself, reports
+`.programmatic`. Removing a body with several selected sub-shapes publishes one `.bodyRemoved` change, not one per sub-shape. A pick that resolved to nothing (a mode or clip-plane rejection) reports
+`.emptySpaceClick`.
+
 ## 3.0.0-beta.2 (2026-10-01)
 
 **Pre-release, same pins as 3.0.0-beta.1** (OCCTSwift 4.0.0-beta.4 exactly, OCCTSwiftIO 2.0.0-beta.1). A consumer only gets this by naming it; the stable line stays at 2.0.0.

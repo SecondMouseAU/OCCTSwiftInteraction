@@ -698,4 +698,30 @@ struct AgentBridgeTests {
         service.remove(id: "box")
         #expect(service.agentAttention == nil)
     }
+
+    @MainActor
+    @Test("An agent request that targets the selection publishes agentHighlight with its id")
+    func agentSelectionChangeNamesTheRequest() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let pick = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        var changes: [SelectionChange] = []
+        let token = service.selectionChanges.sink { changes.append($0) }
+        defer { token.cancel() }
+
+        _ = try run(
+            HighlightRequestPayload(
+                id: "req-7", bodyId: "box", kind: "face", index: pick.faceIndex,
+                scheme: "replace", question: nil, target: "selection"),
+            service: service, in: dir)
+
+        #expect(changes.last?.source == .agentHighlight(requestID: "req-7"))
+    }
 }

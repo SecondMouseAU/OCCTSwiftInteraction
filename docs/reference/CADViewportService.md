@@ -643,6 +643,24 @@ viewport.stopSelectionSidecar()
   a `question` always selects. `setAgentAttention(_:)` sets or clears the marker directly.
   See the ADR and OCCTSwiftInteraction#29.
 
+### Loading with a host graph, and selection change sources
+
+```swift
+@discardableResult
+public func load(_ shape: Shape, id: String, graph: BRepGraph?, transform: [Double]? = nil) -> String
+
+public var selectionChanges: AnyPublisher<SelectionChange, Never> { get }
+```
+
+`load(_:id:graph:transform:)` mints pick uids from `graph`, so they resolve in a host's own graph
+(OCCTSwiftInteraction#27). `graph` is ignored when `transform` is non-nil, and `nil` mints one.
+
+`selectionChanges` emits a `SelectionChange` (`previous`, `current`, `source`) on every change to
+`selection`: `source` is `.viewportPick`, `.emptySpaceClick`, `.programmatic`,
+`.agentHighlight(requestID:)` or `.bodyRemoved(bodyID:)`. Unattributable changes (area selection, a
+pick on an AIS-displayed body) report `.programmatic`; a whole-body change does not emit
+(OCCTSwiftInteraction#31).
+
 ### `CADViewportService.ShapeBounds`
 
 ```swift

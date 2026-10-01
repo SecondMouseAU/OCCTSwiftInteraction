@@ -324,7 +324,9 @@
                             "escalation requests need a face, edge, or vertex, not kind \"body\""
                     )
                 }
-                interactiveContext.select(subShape, scheme: scheme)
+                withSelectionSource(.agentHighlight(requestID: request.id)) {
+                    interactiveContext.select(subShape, scheme: scheme)
+                }
                 return HandledOutcome(outcome: "applied", reason: nil, target: "selection")
 
             case .entity(let entity):
@@ -342,13 +344,17 @@
                     // "applied" below reports. The continuation half (awaiting an actual
                     // answer) is spun off separately: this sidecar doesn't block request
                     // processing on a human answering.
-                    beginPresenting(escalation)
+                    withSelectionSource(.agentHighlight(requestID: request.id)) {
+                        beginPresenting(escalation)
+                    }
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         _ = await self.awaitResponse(to: escalation)
                     }
                 } else {
-                    select(entity, scheme: scheme)
+                    withSelectionSource(.agentHighlight(requestID: request.id)) {
+                        select(entity, scheme: scheme)
+                    }
                 }
                 return HandledOutcome(outcome: "applied", reason: nil, target: "selection")
             }

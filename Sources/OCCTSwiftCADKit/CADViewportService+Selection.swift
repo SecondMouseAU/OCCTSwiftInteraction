@@ -19,6 +19,31 @@ extension CADViewportService {
 
     // MARK: - Selection
 
+    /// Runs `body` with `source` declared as the cause of any selection change it makes.
+    ///
+    /// The change is published synchronously inside the call, so a plain save/restore is enough.
+    func withSelectionSource<T>(_ source: SelectionChangeSource, _ body: () -> T) -> T {
+        let outer = pendingSelectionSource
+        pendingSelectionSource = source
+        defer { pendingSelectionSource = outer }
+        return body()
+    }
+
+    /// Runs `body`, then publishes the net selection change as one `SelectionChange`.
+    ///
+    /// For an operation that moves the selection in several steps but is one event to a consumer
+    /// (removing a body with N selected sub-shapes). Emits nothing if the selection ended where it
+    /// started.
+    func batchingSelectionChange(source: SelectionChangeSource, _ body: () -> Void) {
+        let previous = selection
+        isBatchingSelectionChange = true
+        withSelectionSource(source, body)
+        isBatchingSelectionChange = false
+        guard selection != previous else { return }
+        selectionChangeSubject.send(
+            SelectionChange(previous: previous, current: selection, source: source))
+    }
+
     /// Clear the current selection (and any highlight bodies).
     ///
     /// Clears the interactive context's selection, which is the one selection there is, so
@@ -111,7 +136,14 @@ extension CADViewportService {
         // future selection happens to reuse the same slot for.
         agentHighlightedEntities = agentHighlightedEntities.filter { projected.contains($0) }
         guard projected != selection else { return }
+        let previous = selection
         selection = projected
+        if !isBatchingSelectionChange {
+            selectionChangeSubject.send(
+                SelectionChange(
+                    previous: previous, current: projected,
+                    source: pendingSelectionSource ?? .programmatic))
+        }
         rebuildSelectionHighlights()  // also calls rebuildBodies()
     }
 
@@ -258,7 +290,7 @@ extension CADViewportService {
             // Empty space deselects, which is this service's contract and now applies to the
             // whole shared selection, including anything held for an object displayed
             // directly into the interactive context.
-            clearSelection()
+            withSelectionSource(.emptySpaceClick) { clearSelection() }
             return
         }
 
@@ -271,7 +303,7 @@ extension CADViewportService {
         guard !interactiveContext.displaysBody(withID: result.bodyID) else { return }
 
         guard let entity = resolveEntityPick(result) else {
-            clearSelection()
+            withSelectionSource(.emptySpaceClick) { clearSelection() }
             return
         }
 
@@ -279,7 +311,7 @@ extension CADViewportService {
         // behavior. `select(_:scheme:)` is how a caller builds a multi-selection
         // programmatically (there's no modifier-key state in a GPU pick result to infer a
         // scheme from).
-        select(entity, scheme: .replace)
+        withSelectionSource(.viewportPick) { select(entity, scheme: .replace) }
     }
 
     /// Dispatches a GPU pick to the resolver for its kind, gated by `selectionModes`.
