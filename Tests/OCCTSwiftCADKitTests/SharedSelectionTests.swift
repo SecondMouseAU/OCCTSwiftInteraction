@@ -409,4 +409,29 @@ struct SharedSelectionTests {
         service.handlePick(pick)
         #expect(recorder.changes.last?.source == .viewportPick)
     }
+
+    @MainActor
+    @Test("Removing a body with several selected sub-shapes publishes one bodyRemoved change")
+    func removingABodyPublishesOneChange() throws {
+        guard let (service, firstEntity) = loadedService(),
+            case .face(let first) = firstEntity
+        else {
+            Issue.record("fixture setup failed")
+            return
+        }
+        let second = try #require(
+            (1..<12).lazy.compactMap { service.resolveFacePick(bodyID: "box", triangleIndex: $0) }
+                .first { $0.faceIndex != first.faceIndex })
+        service.select(firstEntity)
+        service.select(.face(second), scheme: .add)
+        #expect(service.selection.count == 2)
+
+        let recorder = record(service)
+        service.remove(id: "box")
+
+        #expect(recorder.changes.count == 1)
+        #expect(recorder.changes.first?.source == .bodyRemoved(bodyID: "box"))
+        #expect(recorder.changes.first?.previous.count == 2)
+        #expect(recorder.changes.first?.current.isEmpty == true)
+    }
 }

@@ -203,6 +203,9 @@ extension CADViewportService {
     /// ignored and a fresh one is minted from the placed shape. `nil` mints one, as
     /// `load(_:id:transform:)` always did.
     ///
+    /// If `id` is already loaded, that entity is removed first, which publishes a `bodyRemoved`
+    /// selection change for anything selected on it.
+    ///
     /// - Returns: `id`, echoed back.
     @discardableResult
     public func load(
@@ -299,10 +302,11 @@ extension CADViewportService {
     private func pruneSelection(removingBodyIDs bodyIDs: [String]) {
         for bodyID in bodyIDs {
             guard let objectID = bodyObjectIDs[bodyID] else { continue }
-            for subShape in interactiveContext.selection.subshapes
-            where subShape.object.id == objectID {
-                // Each of these fires the `$selection` sink, which re-projects and rebuilds.
-                withSelectionSource(.bodyRemoved(bodyID: bodyID)) {
+            // Each deselect fires the `$selection` sink, which re-projects and rebuilds; the
+            // batch publishes them as the one `bodyRemoved` change they are.
+            batchingSelectionChange(source: .bodyRemoved(bodyID: bodyID)) {
+                for subShape in interactiveContext.selection.subshapes
+                where subShape.object.id == objectID {
                     interactiveContext.deselect(subShape)
                 }
             }

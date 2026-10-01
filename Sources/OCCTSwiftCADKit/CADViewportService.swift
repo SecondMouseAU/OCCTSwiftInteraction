@@ -146,6 +146,9 @@ public final class CADViewportService {
 
     @ObservationIgnored let selectionChangeSubject = PassthroughSubject<SelectionChange, Never>()
 
+    /// True while `batchingSelectionChange` is collecting several steps into one emission.
+    @ObservationIgnored var isBatchingSelectionChange = false
+
     /// The source the entry point in progress declared, read by `syncSelection(with:)`.
     @ObservationIgnored var pendingSelectionSource: SelectionChangeSource?
 

@@ -32,7 +32,7 @@ from `syncSelection(with:)`, the one place every path ends. `source` is `.viewpo
 emits synchronously, only when the projected `selection` changed, so a whole-body change (which
 moves `interactiveContext.selection` but not `selection`) does not emit. A change this service
 cannot attribute, such as area selection or a pick on a body the context displays itself, reports
-`.programmatic`. A pick that resolved to nothing (a mode or clip-plane rejection) reports
+`.programmatic`. Removing a body with several selected sub-shapes publishes one `.bodyRemoved` change, not one per sub-shape. A pick that resolved to nothing (a mode or clip-plane rejection) reports
 `.emptySpaceClick`.
 
 ## 3.0.0-beta.2 (2026-10-01)

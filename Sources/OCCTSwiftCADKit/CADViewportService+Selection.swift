@@ -29,6 +29,21 @@ extension CADViewportService {
         return body()
     }
 
+    /// Runs `body`, then publishes the net selection change as one `SelectionChange`.
+    ///
+    /// For an operation that moves the selection in several steps but is one event to a consumer
+    /// (removing a body with N selected sub-shapes). Emits nothing if the selection ended where it
+    /// started.
+    func batchingSelectionChange(source: SelectionChangeSource, _ body: () -> Void) {
+        let previous = selection
+        isBatchingSelectionChange = true
+        withSelectionSource(source, body)
+        isBatchingSelectionChange = false
+        guard selection != previous else { return }
+        selectionChangeSubject.send(
+            SelectionChange(previous: previous, current: selection, source: source))
+    }
+
     /// Clear the current selection (and any highlight bodies).
     ///
     /// Clears the interactive context's selection, which is the one selection there is, so
@@ -123,10 +138,12 @@ extension CADViewportService {
         guard projected != selection else { return }
         let previous = selection
         selection = projected
-        selectionChangeSubject.send(
-            SelectionChange(
-                previous: previous, current: projected,
-                source: pendingSelectionSource ?? .programmatic))
+        if !isBatchingSelectionChange {
+            selectionChangeSubject.send(
+                SelectionChange(
+                    previous: previous, current: projected,
+                    source: pendingSelectionSource ?? .programmatic))
+        }
         rebuildSelectionHighlights()  // also calls rebuildBodies()
     }
 

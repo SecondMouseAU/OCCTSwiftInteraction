@@ -26,7 +26,7 @@ public enum SelectionChangeSource: Sendable, Equatable {
 }
 
 /// One change to `CADViewportService.selection`, with the state on either side of it.
-public struct SelectionChange: Sendable {
+public struct SelectionChange: Sendable, Equatable {
     /// `selection` before the change, which a `$selection` sink cannot read back.
     public let previous: [PickedEntity]
     public let current: [PickedEntity]
