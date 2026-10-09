@@ -66,6 +66,12 @@
         /// human's selection, and is the only case `scheme` combines with it. A plain `String`
         /// for the same reason as `kind`; an unknown value is rejected with a reason.
         var target: String?
+        /// Optional free-text label the agent attaches to its attention marker ("this fillet").
+        ///
+        /// Advised at most 80 characters, not enforced here. Ignored when empty, and when the
+        /// request does not land in attention (`target: "selection"`, or a `question`), since
+        /// there is no marker to attach it to (OCCTSwiftInteraction#35).
+        var label: String?
         /// The `selection.json` revision this request was composed against, if the requester
         /// wants the apply to be conditional on it.
         ///

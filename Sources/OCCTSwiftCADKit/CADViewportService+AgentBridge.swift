@@ -303,13 +303,18 @@
                         + "pass target \"selection\" to select a whole body")
 
             case .entity(let entity) where landsInAttention:
+                let label = (request.label ?? "").isEmpty ? nil : request.label
                 switch scheme {
                 case .replace, .add:
-                    agentAttention = entity
+                    setAgentAttention(entity, label: label)
                 case .remove:
-                    if agentAttention == entity { agentAttention = nil }
+                    if agentAttention == entity { setAgentAttention(nil) }
                 case .xor:
-                    agentAttention = agentAttention == entity ? nil : entity
+                    if agentAttention == entity {
+                        setAgentAttention(nil)
+                    } else {
+                        setAgentAttention(entity, label: label)
+                    }
                 }
                 return HandledOutcome(outcome: "applied", reason: nil, target: "attention")
 

@@ -135,6 +135,12 @@ A pending highlight (or escalation) request, one file per request, named by its 
   `kind` of `"body"` with attention is `rejected`, since there is no whole-body marker. A request
   carrying a `question` is the "show me the one I mean and let me confirm" flow and always lands in
   the selection, whatever `target` says. An unknown `target` is `rejected`.
+- **`label`**: `String?`, optional
+  ([OCCTSwiftInteraction#35](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/35)).
+  Free-text caption for the attention marker ("this fillet"), advised at most 80 characters and
+  not enforced by the host. Ignored when empty. Lands in `agentAttentionLabel` together with
+  `agentAttention`, and is cleared whenever the marker is cleared or replaced. Ignored on a request
+  that does not land in attention (`target: "selection"`, or one carrying a `question`).
 - **`question`**: `String?`. Present only when this request is escalation-shaped: the host renders
   it exactly as it would render one of its own `EscalationRequest.question` values, and the request
   maps onto a single-entity `EscalationRequest` (`entities: [the one targeted PickedEntity]`,

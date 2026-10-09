@@ -10,6 +10,16 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
+## Unreleased
+
+### New: optional label on an agent attention marker
+
+Closes [OCCTSwiftInteraction#35](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/35).
+Additive. A `highlight_requests` payload may carry `label`; `CADViewportService.agentAttentionLabel`
+holds it beside `agentAttention` and `setAgentAttention(_:label:)` takes it (default nil). Empty
+labels are ignored, and a label on a `target: "selection"` or `question` request is ignored.
+OCCTMCP's `highlight_selection` needs a matching `label` input.
+
 ## 3.0.0-beta.3 (2026-10-02)
 
 **Pre-release, same pins as 3.0.0-beta.2** (OCCTSwift 4.0.0-beta.4 exactly, OCCTSwiftIO 2.0.0-beta.1). A consumer only gets this by naming it; the stable line stays at 2.0.0.
