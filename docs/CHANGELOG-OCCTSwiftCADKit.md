@@ -10,7 +10,9 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
-## Unreleased
+## 3.0.0-beta.4 (2026-10-09)
+
+**Pre-release, same pins as 3.0.0-beta.3.** A consumer only gets this by naming it; the stable line stays at 2.0.0.
 
 ### New: optional label on an agent attention marker
 
