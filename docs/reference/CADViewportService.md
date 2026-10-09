@@ -640,7 +640,9 @@ viewport.stopSelectionSidecar()
 - A request lands in `agentAttention` by default (`target` absent or `"attention"`), not in
   `selection`: one entity at a time, human selection untouched, rendering left to the host.
   `target: "selection"` is the explicit opt-in to the behaviour described above, and a request with
-  a `question` always selects. `setAgentAttention(_:)` sets or clears the marker directly.
+  a `question` always selects. `setAgentAttention(_:label:)` sets or clears the marker directly.
+  An optional `label` on the request lands in `agentAttentionLabel`, which is nil whenever
+  `agentAttention` is nil and is replaced or cleared with it (#35).
   See the ADR and OCCTSwiftInteraction#29.
 
 ### Loading with a host graph, and selection change sources

@@ -622,6 +622,44 @@ struct AgentBridgeTests {
     }
 
     @MainActor
+    @Test("A label rides with the attention marker and is replaced or cleared with it")
+    func attentionLabelFollowsMarker() throws {
+        let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
+        let service = CADViewportService()
+        service.load(box, id: "box")
+        let a = try #require(service.resolveFacePick(bodyID: "box", triangleIndex: 0))
+
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try service.startSelectionSidecar(directory: dir)
+        defer { service.stopSelectionSidecar() }
+
+        func send(_ id: String, scheme: String, label: String?, target: String? = nil) throws {
+            var p = HighlightRequestPayload(
+                id: id, bodyId: "box", kind: "face", index: a.faceIndex,
+                scheme: scheme, question: nil)
+            p.label = label
+            p.target = target
+            _ = try run(p, service: service, in: dir)
+        }
+
+        try send("l1", scheme: "replace", label: "the datum face")
+        #expect(service.agentAttentionLabel == "the datum face")
+
+        try send("l2", scheme: "replace", label: "")
+        #expect(service.agentAttention == .face(a))
+        #expect(service.agentAttentionLabel == nil, "an empty label is no label")
+
+        try send("l3", scheme: "replace", label: "this fillet")
+        try send("l4", scheme: "remove", label: nil)
+        #expect(service.agentAttention == nil)
+        #expect(service.agentAttentionLabel == nil)
+
+        try send("l5", scheme: "replace", label: "ignored", target: "selection")
+        #expect(service.agentAttentionLabel == nil)
+    }
+
+    @MainActor
     @Test("Attention holds one entity: a new request replaces it, remove clears it")
     func attentionIsOneAtATime() throws {
         let box = try #require(Shape.box(width: 10, height: 8, depth: 6))
