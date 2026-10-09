@@ -258,8 +258,7 @@ extension CADViewportService {
         removeBodies(entity.bodyIDs)
         pruneSelection(removingBodyIDs: entity.bodyIDs)
         if let attended = agentAttention, entity.bodyIDs.contains(attended.bodyID) {
-            agentAttention = nil
-            agentAttentionLabel = nil
+            setAgentAttention(nil)
         }
         pruneComparison(removingEntityIDs: [id])
         pruneEscalation(removingBodyIDs: entity.bodyIDs)
@@ -272,8 +271,7 @@ extension CADViewportService {
     /// A full clean slate, equivalent to a fresh `CADViewportService`.
     public func removeAll() {
         resetAllModelState()
-        agentAttention = nil
-        agentAttentionLabel = nil
+        setAgentAttention(nil)
         clearSelection()  // also calls rebuildBodies()
     }
 
