@@ -10,6 +10,12 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
+## 3.0.0-beta.5 (2026-10-10)
+
+**Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.5**, with OCCTSwiftIO 2.0.0-beta.3 (itself pinned to beta.5; beta.2 and earlier pin beta.4 and no longer resolve alongside this). A consumer only gets this by naming it; the stable line stays at 2.0.0.
+
+No source change: `swift build --build-tests` is clean and the full serial suite passes (405 tests) unmodified. Nothing in OCCTSwift beta.5's three breaks reaches this package. Carries the `agentAttentionLabel` feature from beta.4.
+
 ## 3.0.0-beta.4 (2026-10-09)
 
 **Pre-release, same pins as 3.0.0-beta.3.** A consumer only gets this by naming it; the stable line stays at 2.0.0.
