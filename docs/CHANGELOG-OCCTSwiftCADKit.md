@@ -10,6 +10,12 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
+## 3.0.0-beta.6 (2026-10-17)
+
+**Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.6**, with OCCTSwiftIO 2.0.0-beta.4 (itself pinned to beta.6; beta.3 and earlier pin beta.5 and no longer resolve alongside this). A consumer only gets this by naming it; the stable line stays at 2.0.0.
+
+No source change: `swift build --build-tests` is clean and the full serial suite passes (405 tests) unmodified. A grep of `Sources/` and `Tests/` finds no use of the OCCTSwift types beta.6 changed (`AssemblyNode.transform`, `GProps.matrixOfInertia`, `ShapeProperties.momentOfInertia`, `DrawingAnnotation.CuttingPlaneLine`) or of `offsetWire`, `OffsetAncestors` and `circularPattern`, so neither the `simd` removal nor the two silent value changes reach this package. The `camera.projectionMatrix` and `viewMatrix` calls are OCCTSwiftViewport's camera, not OCCTSwift's.
+
 ## 3.0.0-beta.5 (2026-10-10)
 
 **Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.5**, with OCCTSwiftIO 2.0.0-beta.3 (itself pinned to beta.5; beta.2 and earlier pin beta.4 and no longer resolve alongside this). A consumer only gets this by naming it; the stable line stays at 2.0.0.
