@@ -83,7 +83,7 @@ let package = Package(
         // >=3.0.0: `Selector.SubShapeType.compsolid` renamed `.compSolid`, and six bounding-box
         // accessors became Optional (OCCTSwift docs/SEMVER.md#v300). Audited across all three
         // targets during the v3.0.0 fanout (ecosystem#39): none needed a source change for it.
-        .package(url: "https://github.com/SecondMouseAU/OCCTSwift.git", exact: "4.0.0-beta.6"),  // EXACT, not `from:`: v4.0.0-kernel.N tags are pre-releases of the same package that sort ABOVE every beta, so `from: "4.0.0-beta.5"` silently resolves to the newest kernel tag (main's source). OCCTSwift 4.0.0 folds DimensionInfo/GeomToleranceInfo/DatumInfo into Document.Dimension/GeomTolerance/Datum (OCCTSwift#996), which CADFileLoader's public fields expose.
+        .package(url: "https://github.com/SecondMouseAU/OCCTSwift.git", exact: "4.0.0-beta.6"),  // EXACT, not `from:`: v4.0.0-kernel.N tags are pre-releases of the same package that sort ABOVE every beta, so `from: "4.0.0-beta.6"` silently resolves to the newest kernel tag (main's source). OCCTSwift 4.0.0 folds DimensionInfo/GeomToleranceInfo/DatumInfo into Document.Dimension/GeomTolerance/Datum (OCCTSwift#996), which CADFileLoader's public fields expose.
         // >=1.2.0: fixes a Swift 6 concurrency crash where unannotated MTLCommandBufferHandler
         // closures inherited @MainActor on Xcode 16.4, giving a SIGTRAP after every test reported
         // green. Real-GPU/Xcode-16.4 only, and masked locally by Xcode 26.x's NS_SWIFT_SENDABLE.
