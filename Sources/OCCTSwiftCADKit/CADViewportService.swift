@@ -14,7 +14,7 @@ import simd
 /// Manages a loaded B-Rep `Shape`, drives the Metal viewport, and routes
 /// face-picking results back to the caller.
 ///
-/// Use `loadFile(from:)`/`loadShape(_:id:)`/`loadFromData(_:filename:)` to
+/// Use `loadFile(from:id:)`/`load(_:id:transform:)`/`loadFromData(_:filename:id:)` to
 /// import geometry. Caller-supplied geometry like stock boxes, toolpaths, or
 /// flat-pattern outlines is staged via the `setOverlay(id:bodies:)` API; the
 /// service composites them with the model bodies and any selection highlight
@@ -333,6 +333,11 @@ public final class CADViewportService {
     /// Internal rather than private, like `modelBodies`/`metadata`, so tests can seed a
     /// synthetic multi-body entity directly: this package's tests don't ship a multi-body
     /// file on disk, and `load(_:id:transform:)` only ever produces a single-body entity.
+    /// Linear deflection `load(_:id:graph:transform:)` meshes with. `nil` (default) keeps
+    /// `CADFileLoader`'s own default. Larger is coarser and much faster to mesh, which suits tests
+    /// and previews of heavy assemblies. Applies to shapes loaded after it is set.
+    public var meshDeflection: Double?
+
     struct Entity {
         var bodyIDs: [String]
         var isVisible: Bool = true

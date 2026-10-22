@@ -57,12 +57,9 @@ display-mode / standard-view controls (bottom-trailing) built in.
 
 ## 3. Import a STEP / STL / BREP file
 
-`loadFile(from:)`/`loadShape(_:id:)`/`loadFromData(_:filename:)` are the deprecated,
-single-shape convenience: each **replaces** every other model body. For loading several
-parts or an assembly side by side, see [§4](#4-multi-body-and-assembly-loading-optional).
-
-Call `loadFile(from:)` with a file URL, the extension picks the format
-(`.step`/`.stp`, `.stl`, `.brep`). The camera auto-focuses on the loaded shape. Run it
+Call `loadFile(from:id:)` with a file URL, the extension picks the format
+(`.step`/`.stp`, `.stl`, `.brep`). Loading does not move the camera; call `focus(on:)` once what should be visible is loaded.
+Run it
 from `.task` or a button action.
 
 ```swift
@@ -79,8 +76,8 @@ struct CADScreen: View {
         .task {
             do {
                 let url = URL(fileURLWithPath: "/path/to/part.step")
-                let shape = try await viewport.loadFile(from: url)
-                print("Loaded \(shape.faces().count) faces")
+                try await viewport.loadFile(from: url, id: "model")
+                viewport.focus(on: ["model"])
             } catch let error as CADViewportError {
                 print(error.errorDescription ?? "load failed")
             } catch {
@@ -96,14 +93,14 @@ struct CADScreen: View {
 ### Importing from a file picker (iOS)
 
 When you only have `Data` (from `.fileImporter` or drag-and-drop), use
-`loadFromData(_:filename:)`: the filename's extension drives format detection.
+`loadFromData(_:filename:id:)`: the filename's extension drives format detection.
 
 ```swift
 .fileImporter(isPresented: $showImporter, allowedContentTypes: [.data]) { result in
     guard case .success(let url) = result else { return }
     Task {
         let data = try Data(contentsOf: url)
-        try await viewport.loadFromData(data, filename: url.lastPathComponent)
+        try await viewport.loadFromData(data, filename: url.lastPathComponent, id: "model")
     }
 }
 ```
@@ -111,18 +108,19 @@ When you only have `Data` (from `.fileImporter` or drag-and-drop), use
 ### Displaying an in-memory shape
 
 If you already have an `OCCTSwift.Shape` (built programmatically), skip the file loader
-with `loadShape(_:id:)`.
+with `load(_:id:transform:)`.
 
 ```swift
 let box = Shape.box(width: 50, height: 30, depth: 20)
-viewport.loadShape(box, id: "model")
+viewport.load(box, id: "model")
+viewport.focus(on: ["model"])
 ```
 
 ## 4. Multi-body and assembly loading (optional)
 
 `load(_:id:transform:)` and `loadFile(from:id:progress:)` display several parts, or
 several of an assembly's occurrences, as distinct, addressable **entities**, coexisting
-rather than replacing one another. Unlike the deprecated single-shape overloads, camera
+rather than replacing one another. Camera
 focus is *not* automatic; call `focus(on:)` once you've loaded what should be visible.
 
 ```swift
@@ -163,13 +161,6 @@ for hit in viewport.selection {
     }
 }
 ```
-
-The multi-entity API and the deprecated single-shape overloads are safe to mix, they
-share one internal entity registry, so `loadShape(_:id:)`/`loadFile(from:progress:)`
-(which still replace every model body) register what they load there too, and
-`loadedShapes`/`visibility`/`removeAll()`/`entityID(forBodyID:)` all see it. `loadedShape`
-(deprecated) still returns the single shape when exactly one entity is loaded, however it
-was loaded.
 
 ### Memory behavior
 
@@ -219,7 +210,7 @@ struct CADScreen: View {
             )
         }
         .task {
-            try? await viewport.loadFile(from: URL(fileURLWithPath: "/path/to/part.step"))
+            try? await viewport.loadFile(from: URL(fileURLWithPath: "/path/to/part.step"), id: "model")
         }
     }
 }
@@ -237,18 +228,13 @@ if case .face(let face)? = viewport.selection.first, let occtFace = Face(face.sh
 
 `face.faceIndex` is the ephemeral render-path ordinal the pick came from, valid only
 against that body's own tessellation. Don't use it to subscript
-`loadedShape.faces()[face.faceIndex]`: once a face is shared between two shells, that
+`viewport.shape(id:)?.faces()[face.faceIndex]`: once a face is shared between two shells, that
 enumeration counts the shared face once per shell, so the same ordinal can name a
 different face than the one actually picked. `face.uid` additionally carries a durable
 `BRepGraph.GraphUID` when a graph was available at pick time, the handle that survives
 a later mutation an ordinal alone does not.
 
 <!-- 3D render TODO: viewport with a picked face highlighted and the selection banner -->
-
-`selectedFace: PickedFaceInfo?` and `selected: PickedEntity?` still work as deprecated
-conveniences, each non-nil only when the selection is exactly one entity (and, for
-`selectedFace`, only when that entity is a face), for callers not yet migrated to
-`selection`.
 
 ## 6. Edge and vertex picking (optional)
 
@@ -332,9 +318,6 @@ if let summary = viewport.selectionMeasurements {
 The selection survives operations unrelated to it: removing an entity
 (`remove(id:)`/`removeAll()`) drops only the selection entries that referenced *that*
 entity's bodies, leaving everything else selected.
-
-`selectedFace`/`selected` (both deprecated, see [§5](#5-handle-a-pick)) still work as
-single-selection conveniences.
 
 ## 8. Overlays (optional)
 

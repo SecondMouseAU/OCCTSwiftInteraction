@@ -71,101 +71,20 @@ let custom = CADViewportService(configuration: .init(
 | `controller` | `_ViewportController` | Viewport controller, camera, display mode, picking config. Bind into `CADViewportView`. |
 | `interactiveContext` | `InteractiveContext` | AIS interactive context backed by this viewport. Install `ManipulatorWidget`, dimensions, or extra `InteractiveObject`s here; appended bodies are composited with the CADKit-owned bodies. |
 | `bodies` | `[_ViewportBody]` | All bodies currently displayed: model bodies + overlay layers + selection highlight + AIS-owned bodies. Read-only; mirrors `interactiveContext.bodies`. |
-| `loadedShape` | `OCCTSwift.Shape?` | **Deprecated**, use `loadedShapes`/`shape(id:)`. Non-nil only when exactly one entity is loaded, however it was loaded. |
 | `loadedShapes` | `[String: OCCTSwift.Shape]` | Multi-entity loads, keyed by entity id (see [Multi-body / assembly](#multi-body--assembly)). |
 | `selection` | `[PickedEntity]` | Every currently selected face/edge/vertex, projected from `interactiveContext.selection`. Read-only; a real pick replaces it wholesale, and a multi-selection is built with `select(_:scheme:)`. Ordered by (body id, kind, ordinal). |
 | `selectionMeasurements` | `SelectionMeasurements?` | Aggregate measures over `selection`: count by kind, total area/length, combined bounds. `nil` when empty. |
-| `selectionSummary` | `SelectionMeasurements?` | **Deprecated**, renamed to `selectionMeasurements`. |
-| `selected` | `PickedEntity?` | **Deprecated**, use `selection`. Non-nil only when the selection is exactly one entity. |
 | `selectionModes` | `Set<SelectionMode>` | Which sub-shape kinds picking resolves. The same state as `interactiveContext.selectionMode`, initialised to `[.face]`. |
-| `selectedFace` | `PickedFaceInfo?` | **Deprecated**, use `selection`. Non-nil only when the selection is exactly one face. |
-| `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of the single loaded shape, or `nil` (see `loadedShape`'s single-entity caveat, and the [void-bounds note](#void-bounding-boxes)). |
+| `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of the loaded entities, or `nil` (see the [void-bounds note](#void-bounding-boxes)). |
 | `overlayIDs` | `[String]` | Sorted ids of overlay layers currently staged. |
 | `visibility` | `[String: Bool]` | Per-entity visibility, keyed by entity id. |
 | `scalarFieldLegend` | `ScalarFieldLegend?` | Legend for the most recently set scalar field (see [Scalar fields](#scalar-fields)). `nil` if none is set. |
 
-### File import (single-shape, deprecated)
-
-`loadFile(from:progress:)`, `loadShape(_:id:)`, and `loadFromData(_:filename:progress:)`
-each **replace every model body**, including any loaded via the multi-entity API below,
-safe to mix with it, since both register in the same internal entity registry. See
-[Multi-body / assembly](#multi-body--assembly) for loading several parts or an assembly.
-
-```swift
-@available(*, deprecated)
-@discardableResult
-public func loadFile(from url: URL, progress: ImportProgress? = nil) async throws -> OCCTSwift.Shape
-```
-
-Loads a CAD file from disk into the viewport and returns the loaded `Shape`. The
-extension selects the format: `.step`/`.stp` → STEP, `.stl` → STL, `.brep` → BREP.
-The camera is automatically focused on the shape's bounding box.
-
-- **Parameters:**
-  - `url`: file URL on disk.
-  - `progress`: optional `ImportProgress` (e.g. `ImportProgressClosure`) to observe
-    STEP/IGES import progress and request cooperative cancellation.
-- **Returns:** the first loaded `OCCTSwift.Shape`.
-- **Throws:** `CADViewportError.unsupportedFormat(ext)` for any other extension;
-  `CADViewportError.emptyFile` if the file contains no geometry; `ImportError.cancelled`
-  if cancelled via `progress`.
-
-```swift
-let url = URL(fileURLWithPath: "/path/to/part.step")
-let shape = try await viewport.loadFile(from: url)
-print("Loaded shape with \(shape.faces().count) faces")
-```
-
-```swift
-// Observe progress and allow cancellation.
-let progress = ImportProgressClosure { fraction in
-    print("import \(Int(fraction * 100))%")
-}
-try await viewport.loadFile(from: url, progress: progress)
-```
-
----
-
-```swift
-@available(*, deprecated)
-public func loadShape(_ shape: OCCTSwift.Shape, id: String = "model")
-```
-
-Displays an in-memory `OCCTSwift.Shape` (e.g. one built programmatically) without going
-through the file loader. Tessellates the shape, replaces the model bodies, clears any
-selection, and re-focuses the camera.
-
-```swift
-let box = Shape.box(width: 50, height: 30, depth: 20)
-viewport.loadShape(box, id: "stockModel")
-```
-
----
-
-```swift
-@available(*, deprecated)
-@discardableResult
-public func loadFromData(_ data: Data, filename: String, progress: ImportProgress? = nil) async throws -> OCCTSwift.Shape
-```
-
-Convenience for callers that have file `Data` rather than a URL (e.g. `.fileImporter`
-results or drag-and-drop on iOS). Writes the data to a temporary file named `filename`
-(the extension drives format detection), loads it, and removes the temp file. Same
-return value and errors as `loadFile(from:progress:)`.
-
-```swift
-// From a SwiftUI .fileImporter result:
-let data = try Data(contentsOf: pickedURL)
-try await viewport.loadFromData(data, filename: pickedURL.lastPathComponent)
-```
-
 ### Multi-body / assembly
 
 Several parts, or several of an assembly's occurrences, can display simultaneously as
-distinct, addressable **entities**, rather than one replacing another. Shares one entity
-registry with the deprecated single-shape overloads above (see their note), so
-`loadedShapes`/`visibility`/`removeAll()`/`entityID(forBodyID:)` see everything currently
-loaded regardless of which API loaded it.
+distinct, addressable **entities**, rather than one replacing another. `loadedShapes`/`shape(id:)`/`visibility`/`removeAll()`/`entityID(forBodyID:)` all read
+the one entity registry these calls write.
 
 ```swift
 @discardableResult
@@ -179,9 +98,7 @@ public func loadFromData(_ data: Data, filename: String, id: String, progress: I
 ```
 
 - **`id`**, the entity id. Loading again under an id already in use replaces that
-  entity. Required on every overload (unlike the deprecated `loadFile(from:progress:)`
-  family's implicit single entity), a defaulted `id` would make e.g.
-  `loadFile(from: url)` ambiguous against the deprecated 2-argument overload.
+  entity. Required on every overload, so that several loads cannot silently share one id.
 - **`transform`** (`load` only), places the shape before tessellating it. A rigid
   12-element affine matrix matching `OCCTSwift.Shape.transformed(matrix:)`'s layout:
   `[r00,r01,r02, r10,r11,r12, r20,r21,r22, tx,ty,tz]` (row-major 3x3 rotation, then
@@ -189,7 +106,7 @@ public func loadFromData(_ data: Data, filename: String, id: String, progress: I
 - **Returns:** `id`, echoed back.
 - A file with several bodies (e.g. a multibody STEP/STL) registers as **one** entity
   whose underlying body ids are `"<id>-0"`, `"<id>-1"`, etc.
-- Camera is **not** auto-focused (unlike the deprecated single-shape overloads), call
+- Camera is **not** auto-focused call
   `focus(on:)` explicitly.
 
 ```swift
@@ -354,7 +271,7 @@ public var selectionMeasurements: SelectionMeasurements? { get }
 Aggregate measures over the current selection, see
 [`SelectionMeasurements`](#selectionmeasurements). `nil` when `selection` is empty. Named
 `selectionSummary` (returning a `SelectionSummary`) until OCCTSwiftInteraction#3; both old
-spellings still resolve, deprecated, because `OCCTSwiftUXKit` has an unrelated public
+spellings were removed in 2.0.0. It was renamed because `OCCTSwiftUXKit` has an unrelated public
 `SelectionSummary` of its own.
 
 ```swift
@@ -516,7 +433,7 @@ viewport.removeClippingPlane(id: planeID)
   (up to the first 4, matching the renderer's own limit) before it resolves, so clipped-away
   geometry can't be picked and the surfaces a clip reveals pick normally.
 - **Reloading picks up an already-active cap immediately**, every loader (`load`/
-  `loadFile`/`loadShape`/`loadFromData`, including reloading under an id already in use)
+  `load`/`loadFile`/`loadFromData`, including reloading under an id already in use)
   ends by syncing clipping state, so newly-loaded (or freshly-reloaded) geometry never
   displays uncut or hollow-without-a-cap until some unrelated later clipping-plane call
   happens to trigger the sync.
@@ -657,6 +574,9 @@ public var selectionChanges: AnyPublisher<SelectionChange, Never> { get }
 `load(_:id:graph:transform:)` mints pick uids from `graph`, so they resolve in a host's own graph
 (OCCTSwiftInteraction#27). `graph` is ignored when `transform` is non-nil, and `nil` mints one.
 
+`meshDeflection: Double?` (default `nil`) sets the linear deflection `load(_:id:...)` meshes with (file loads are unaffected); larger is
+coarser and faster, and it applies to shapes loaded after it is set (OCCTSwiftInteraction#42).
+
 `selectionChanges` emits a `SelectionChange` (`previous`, `current`, `source`) on every change to
 `selection`: `source` is `.viewportPick`, `.emptySpaceClick`, `.programmatic`,
 `.agentHighlight(requestID:)` or `.bodyRemoved(bodyID:)`. Unattributable changes (area selection, a
@@ -694,7 +614,6 @@ rather than substituting a default:
 | Reader | Behaviour when a shape has no bounding box |
 |---|---|
 | `focus(on:)` | Skips that entity. No-ops entirely if no listed entity has bounds, leaving the camera where it is. |
-| Auto-focus after a deprecated single-shape load | No-op, same reasoning. |
 | `shapeBounds` | `nil`. |
 | `selectionMeasurements` | That face contributes no bounds (it still counts toward `faceCount`/`totalArea`); `bounds` is `nil` if nothing contributed any. |
 | Face picking | Resolves to `nil`: a face with no bounding box cannot have produced the rendered triangle that was picked. |
@@ -746,11 +665,6 @@ CADViewportView(
 The banner shows the single entity's description when `selection.count == 1`, or "N
 selected" for a larger selection, for a richer multi-selection summary, build your own
 UI from `service.selectionMeasurements` alongside `CADViewportView`.
-
-Two deprecated overloads still work for callers not yet migrated: `init(bodies:controller:
-selected:onClearSelection:)` (wraps a single `PickedEntity?` into `selection`) and
-`init(bodies:controller:selectedFace:onClearSelection:)` (wraps a single `PickedFaceInfo?`
-into `.face(_:)`).
 
 <!-- 3D render TODO: CADViewportView with selection banner and display-mode controls -->
 
@@ -843,7 +757,7 @@ public struct PickedFaceInfo: Sendable, Equatable {
 Metadata about a face picked in the viewport. `shape` and `uid` are the durable identity
 of the pick, captured once at pick time from the picked body's `FaceIdentityTable`.
 `faceIndex` is the ephemeral render-path ordinal the pick came from, valid only against
-that body's own tessellation. Don't subscript `loadedShape.faces()[faceIndex]` to
+that body's own tessellation. Don't subscript `shape(id:)?.faces()[faceIndex]` to
 re-derive the face: once a face is shared between two shells, that non-deduplicating
 traversal counts the shared face once per shell, so the same ordinal can silently name a
 different face than the one actually picked. Construct a `Face` from `shape` instead.
@@ -1181,7 +1095,7 @@ yields a user-facing message.
 
 ```swift
 do {
-    try await viewport.loadFile(from: url)
+    try await viewport.loadFile(from: url, id: "model")
 } catch let error as CADViewportError {
     print(error.errorDescription ?? "load failed")
 }
