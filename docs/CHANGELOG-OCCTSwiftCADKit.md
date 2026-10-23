@@ -10,6 +10,28 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
+## 3.0.0-beta.7 (2026-10-24)
+
+**Pre-release, same pins as 3.0.0-beta.6** (OCCTSwift 4.0.0-beta.6 exactly, OCCTSwiftIO 2.0.0-beta.4). A consumer only gets this by naming it; the stable line stays at 2.0.0.
+
+### New: `CADViewportService.meshDeflection`
+
+Closes [OCCTSwiftInteraction#42](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/42).
+Additive. `meshDeflection: Double?` (default `nil`, which keeps `CADFileLoader`'s own default) sets
+the linear deflection `load(_:id:graph:transform:)` meshes with, so a test or preview of a heavy
+assembly can mesh coarsely. It applies to shapes loaded after it is set. File loads
+(`loadFile`, `loadFromData`) go through `CADFileLoader.load`, which takes no deflection, so they
+and capping's rebuild path are unchanged.
+
+### Docs: removed API no longer described as present
+
+Closes [OCCTSwiftInteraction#40](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/40).
+The reference page and getting-started guide documented `loadedShape`, `selected`, `selectedFace`,
+`selectionSummary`, the single-shape `loadShape(_:id:)` / `loadFile(from:progress:)` /
+`loadFromData(_:filename:progress:)` and the deprecated `CADViewportView.init(...selected:...)` /
+`init(...selectedFace:...)` overloads as deprecated but working. 2.0.0 removed all of them. See the
+correction under 2.0.0 below.
+
 ## 3.0.0-beta.6 (2026-10-17)
 
 **Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.6**, with OCCTSwiftIO 2.0.0-beta.4 (itself pinned to beta.6; beta.3 pins beta.5, beta.2 and earlier pin beta.4, and none resolve alongside this). A consumer only gets this by naming it; the stable line stays at 2.0.0.
@@ -114,6 +136,21 @@ The reference pages and the cookbook example are updated.
 Verified: `swift build --build-tests` is clean and all three test targets pass against the real beta.4 and IO 2.0.0-beta.1 checkouts.
 
 ## 2.0.0 (2026-09-29)
+
+### Removed (migration for #40)
+
+Commit e00f7ba removed the deprecated surface. Migrate as follows; the `id`-taking loaders do not
+auto-focus, so call `focus(on:)`.
+
+| Removed | Use |
+|---|---|
+| `loadedShape` | `shape(id:)` / `loadedShapes` |
+| `selected`, `selectedFace` | `selection` (`[PickedEntity]`) |
+| `selectionSummary` | `selectionMeasurements` |
+| `loadShape(_:id:)` | `load(_:id:transform:)` |
+| `loadFile(from:progress:)` | `loadFile(from:id:progress:)` |
+| `loadFromData(_:filename:progress:)` | `loadFromData(_:filename:id:progress:)` |
+| `CADViewportView.init(bodies:controller:selected:...)`, `init(...selectedFace:...)` | `init(...selection:...)` |
 
 Adds the two fixes that landed after 2.0.0-rc3 (`CADViewportView` frozen bodies, face highlight
 z-fighting). Everything else below was in the release candidates.
@@ -258,7 +295,10 @@ is unaffected, and a real pick is unaffected.
 
 #### What does not break
 
-`selection`, `select(_:scheme:)`, `clearSelection()`, `selected`, `selectedFace`, `PickedEntity`
+*Correction (#40): `selected`, `selectedFace` and the single-shape loaders were removed in 2.0.0
+(see "Removed" under 2.0.0), and this section originally said they were unchanged.*
+
+`selection`, `select(_:scheme:)`, `clearSelection()`, `PickedEntity`
 and the whole loading, overlay, clipping, comparison, scalar-field and escalation surface are
 unchanged. `PickedEntity` gains no case: whole-body selection is a `SubShape.body` in the
 interactive context, not a fourth `PickedEntity`.
@@ -266,8 +306,8 @@ interactive context, not a fourth `PickedEntity`.
 #### For the two known consumers
 
 - **PadCAM** reads `viewportService.selectedFace` (three sites) and calls `clearSelection()` (one
-  site), and reads only `bounds`, `zLevel` and `description` off it. All four keep working
-  unchanged. Its one exposure is item 4: it displays a stock box via
+  site), and reads only `bounds`, `zLevel` and `description` off it. *Correction (#40): the
+  `selectedFace` sites do not keep working, because 2.0.0 removed it; migrate to `selection`.* Its one exposure is item 4: it displays a stock box via
   `interactiveContext.display(_:style:)` and installs a `ManipulatorWidget` on it, so picks
   against that stock body now resolve under `[.face]` rather than `[.body]`.
 - **OCCTSwiftUX** does not depend on this target at all, in either direction. Its own

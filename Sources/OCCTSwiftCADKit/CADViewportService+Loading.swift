@@ -203,6 +203,8 @@ extension CADViewportService {
     /// ignored and a fresh one is minted from the placed shape. `nil` mints one, as
     /// `load(_:id:transform:)` always did.
     ///
+    /// Meshes with `meshDeflection` when set.
+    ///
     /// If `id` is already loaded, that entity is removed first, which publishes a `bodyRemoved`
     /// selection change for anything selected on it.
     ///
@@ -218,7 +220,8 @@ extension CADViewportService {
         let (body, meta) = CADFileLoader.shapeToBodyAndMetadata(
             placedShape,
             id: id,
-            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0)
+            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
+            deflection: meshDeflection
         )
 
         guard let body else {
