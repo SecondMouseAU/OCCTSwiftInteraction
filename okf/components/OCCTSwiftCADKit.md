@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftCADKit
 tags: [index, api]
 description: OCCTSwiftCADKit public API: one library target wrapping the CAD viewport service and view.
-timestamp: 2026-06-22
+timestamp: 2026-11-17
 ---
 
 # Components
@@ -82,7 +82,8 @@ timestamp: 2026-06-22
   shows the cut as solid material via a genuine B-Rep split and retessellation per affected body.
   Real geometry work, not a shader trick, since `OCCTSwiftViewport` has no shader-level capping.
   Multiple planes compose. Picking respects active planes even though the GPU pick pass itself
-  doesn't.
+  doesn't. A visibility set on a capped entity survives every cap recompute and is what removing
+  the plane restores (#46).
 - **`EscalationRequest`, `EscalationCandidate`, `EscalationResponse`**: human-in-the-loop
   escalation: `pendingEscalation` / `present(_:) async -> EscalationResponse` asks a bounded
   question grounded in specific geometry (`EscalationRequest.entities`, highlighted automatically

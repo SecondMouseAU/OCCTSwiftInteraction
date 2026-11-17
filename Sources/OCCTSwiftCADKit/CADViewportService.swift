@@ -321,7 +321,8 @@ public final class CADViewportService {
     /// capped (or hidden) version, keyed by body id.
     ///
     /// Restored at the START of every `updateCapSurfaces()` call before recomputing, mirroring
-    /// `comparisonBackup`'s pattern.
+    /// `comparisonBackup`'s pattern. Its `isVisible` is the caller's last visibility write, kept
+    /// current by `recordCallerVisibility(_:forBody:)`.
     var clippingCapBackup: [String: _ViewportBody] = [:]
 
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)

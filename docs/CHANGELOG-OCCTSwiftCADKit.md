@@ -10,6 +10,21 @@ Most recent first. Breaking changes and deprecations documented here.
 Started at OCCTSwiftInteraction#3, the first change to this target that a consumer has to read
 before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` repository.
 
+## Unreleased
+
+### Fixed: hiding a capped entity was silently undone by the next cap recompute
+
+Closes [OCCTSwiftInteraction#46](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/46).
+`visibility[id] = false` on an entity a cap plane had cut was reverted by the next
+`updateCapSurfaces()` (a plane moved or added, `clippingPlanes = clippingPlanes`, an unrelated
+entity loaded), because that pass restored `isVisible` from a snapshot taken when the body was first
+capped. The converse failed too: showing an entity that was hidden when it was first capped was
+undone when the plane was removed. `setVisible` (the `visibility` setter) and the escalation
+preview show now write the caller's value into that snapshot as well, so a later restore returns the
+body to the visibility the caller last set. No API change. A body hidden only because a plane clipped
+it away entirely is unaffected: the snapshot keeps its visible state and it comes back when the
+plane stops clipping it.
+
 ## 3.0.0-beta.7 (2026-10-24)
 
 **Pre-release, same pins as 3.0.0-beta.6** (OCCTSwift 4.0.0-beta.6 exactly, OCCTSwiftIO 2.0.0-beta.4). A consumer only gets this by naming it; the stable line stays at 2.0.0.
