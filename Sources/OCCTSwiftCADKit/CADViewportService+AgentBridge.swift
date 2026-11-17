@@ -100,7 +100,8 @@
                 .dropFirst()
                 .sink { [weak self] newSelection in
                     MainActor.assumeIsolated {
-                        self?.republishSelectionSidecar(selection: newSelection)
+                        guard let self else { return }
+                        self.republishSelectionSidecar(selection: newSelection)
                     }
                 }
 
