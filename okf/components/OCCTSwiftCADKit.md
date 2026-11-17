@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftCADKit
 tags: [index, api]
 description: OCCTSwiftCADKit public API: one library target wrapping the CAD viewport service and view.
-timestamp: 2026-11-17
+timestamp: 2026-11-18
 ---
 
 # Components
@@ -103,3 +103,10 @@ timestamp: 2026-11-17
   `okf/decisions/agent-viewport-selection-bridge.md`. Highlights applied this way render
   with `OCCTSwiftAIS.PresentationStyle.agentHighlight`'s distinct hollow treatment instead of
   the ordinary selection color.
+- **`setDrawingSelection(_:)` / `drawingSelection` / `DrawingEntityPick`**
+  (OCCTSwiftInteraction#45, `CADViewportService+DrawingSelection.swift`): how a host publishes a
+  pick on a 2D drawing entity through the same `selection.json`, as a `drawing-entity` entry
+  (`bodyId` names the drawing case, `entity` is SwiftDXF's `Identity.id`, `entityType` is advisory)
+  under the same revision as the model picks. The drawing and model sets are independent and each
+  write carries both. `schemaVersion` is not bumped: a new kind is additive, a reader skips a kind
+  it does not know. An agent cannot highlight a drawing entity; such a request is rejected.

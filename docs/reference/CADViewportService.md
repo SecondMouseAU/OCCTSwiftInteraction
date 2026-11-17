@@ -551,7 +551,8 @@ viewport.stopSelectionSidecar()
   `host.lock`.
 - Takes an exclusive, advisory `host.lock` in `directory` for as long as the sidecar runs,
   per the ADR's single-host-per-directory liveness contract. Throws
-  `CADViewportError.sidecarHostAlreadyRunning` if another process already holds it.
+  `CADViewportError.sidecarHostAlreadyRunning` if another process already holds it. A start that
+  throws partway stops the sidecar again, so nothing is left held.
 - A highlight request naming a `bodyId` that isn't loaded, or a `kind`/`index` that doesn't
   resolve, is moved to `handled/` with `outcome: "rejected"` and a reason, never silently
   dropped. A request carrying a `question` is presented via `present(_:)` instead of a plain
@@ -567,6 +568,60 @@ viewport.stopSelectionSidecar()
   An optional `label` on the request lands in `agentAttentionLabel`, which is nil whenever
   `agentAttention` is nil and is replaced or cleared with it (#35).
   See the ADR and OCCTSwiftInteraction#29.
+
+#### Drawing-entity picks
+
+```swift
+public struct DrawingEntityPick: Sendable, Hashable {
+    public var drawing: String
+    public var entity: String
+    public var entityType: String?
+    public init(drawing: String, entity: String, entityType: String? = nil)
+}
+
+public internal(set) var drawingSelection: [DrawingEntityPick]
+public func setDrawingSelection(_ picks: [DrawingEntityPick])
+```
+
+How a host publishes a pick on a 2D drawing entity through the same `selection.json`
+(OCCTSwiftInteraction#45). macOS-only, like the sidecar. The entry is
+`{ "bodyId": <drawing>, "kind": "drawing-entity", "index": 0, "entity": <entity>, "entityType": <entityType> }`
+with no `uid`; see the ADR's "The `drawing-entity` kind".
+
+```swift
+viewport.setDrawingSelection([
+    DrawingEntityPick(drawing: "6575N383", entity: "2C1", entityType: "DIMENSION")
+])
+viewport.setDrawingSelection([])  // clear it
+```
+
+- **`drawing`** names the drawing case (the folder the host holds the drawing in), not a scene body.
+  **`entity`** is SwiftDXF's `Identity.id` as one string (the handle, else section and position, as
+  OCCTSwiftIO#57 ships it) and is treated as opaque. **`entityType`** is the DXF record type, advisory.
+- `setDrawingSelection` takes the whole current drawing set and replaces the held one (an empty
+  array clears it, and adding a pick means passing the current picks too), unlike the model
+  selection's `select(_:scheme:)`, which combines. The drawing set and the model set are
+  independent: a change to either rewrites
+  `selection.json` with both, so a model pick does not drop a drawing pick and a drawing pick does
+  not drop a model pick. Clearing one kind is the host's decision: clear it from
+  `selectionChanges`, where a write already carries the new model selection, not from a raw
+  `interactiveContext.$selection` subscriber, whose write can carry the previous model selection
+  for one revision before the change's own write corrects it. `selectionChanges` does not emit for
+  a whole-body change, so a host that selects whole bodies clears the drawing pick from its own
+  action there.
+- Each write bumps `revision` by exactly 1, so an `ifRevision` composed before a drawing pick is
+  `superseded` after it. A set equal to the one held (every field equal, in any order) is not
+  written at all, so a pane that re-asserts its picks does not churn the revision. A change to
+  `entityType` alone is a change: the file carries it.
+- A pick with an empty `drawing` or `entity` is dropped, and a repeated (`drawing`, `entity`) pair is
+  kept once, the first. The set is held and observable (`drawingSelection`) whether or not the
+  sidecar is running, and a held set is included in the startup write of `startSelectionSidecar`.
+  If the write fails (an unwritable directory) the held set stays as it was, so `drawingSelection`
+  still matches the file and the same call can be retried.
+- A drawing pick is a host-side fact: an agent cannot highlight one. A `highlight_requests` payload
+  with `kind: "drawing-entity"` is answered in `handled/<id>.json` as `rejected`, with a reason.
+- `schemaVersion` stays `1`. A reader that does not know the kind skips the entry and keeps the
+  rest (the ADR's additive-change rule).
 
 ### Loading with a host graph, and selection change sources
 

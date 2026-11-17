@@ -25,6 +25,52 @@ body to the visibility the caller last set. No API change. A body hidden only be
 it away entirely is unaffected: the snapshot keeps its visible state and it comes back when the
 plane stops clipping it.
 
+### Fixed: a `startSelectionSidecar` that throws no longer leaves a half-started sidecar
+
+A start that failed partway (for example when `host.json` cannot be written) left `sidecarDirectory`
+set and `host.lock` held, with nothing watching or writing, until the next `stopSelectionSidecar()`.
+It now stops itself before throwing, so the lock is released and a later start in the same directory
+is not refused.
+
+### New: a pick on a drawing entity travels the selection bridge
+
+Closes [OCCTSwiftInteraction#45](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/45).
+Additive, and macOS-only like the rest of the sidecar. `selection.json` gains a `drawing-entity`
+kind in the same `selections` array: `bodyId` names the drawing case (not a scene body), `index` is
+`0` and ignored, `uid` is absent, and two new optional fields carry the pick, `entity` (SwiftDXF's
+`Identity.id`: the handle, or section and position) and `entityType` (the DXF record type,
+advisory). It sits under the same `revision` and `updatedAt` as the model picks, so one read tells an
+agent "this dimension" and "this face" together.
+
+A host publishes a drawing pick with the new `CADViewportService.setDrawingSelection(_:)`, which
+takes the whole current set of `DrawingEntityPick` values (`drawing`, `entity`, `entityType`) and
+replaces the previous one (an empty array clears it, and adding a pick means passing the current
+ones too), just as every write of `selection.json` replaces the whole document. `drawingSelection`
+reads it back. The model and drawing sets are independent: a change to either rewrites
+`selection.json` carrying both, one revision bump per write, so a model pick does not drop a drawing
+pick. Setting a set equal to the one held writes nothing, so an idle pane does not churn the
+revision. A pick with an empty drawing or entity is dropped, and a repeated (drawing, entity) pair
+is kept once. A held set is included in the startup write. A write that fails leaves the held set as
+it was, so the call can be retried.
+
+To clear a drawing pick when the model selection changes, do it from `selectionChanges`, where a
+write already carries the new model selection, not from a raw `interactiveContext.$selection`
+subscriber. `selectionChanges` does not emit for a whole-body change, so a host that selects whole
+bodies clears the drawing pick from its own action there.
+
+**No `schemaVersion` bump, and that is now the rule for any new kind.** The `host.json` rule has a
+client refuse the whole directory on a version it does not know, which would cut an older reader off
+from the model picks it can still read. A new kind or a new optional field is additive; a reader
+skips an entry whose kind it does not know and keeps the rest. The ADR states it once.
+
+A `highlight_requests` payload with `kind: "drawing-entity"` is rejected with a reason: agents
+highlight a face, edge, vertex or body, not a drawing entity (that is for cross-highlighting to
+decide). `selection.json` stays the host's alone, so the single-writer table gains no row.
+
+**Order of rollout:** readers first (OCCTMCP#277: its `get_selection` looks an entry's body up
+before its kind, so until then a drawing pick comes back as "body not found"), then this writer,
+then the host's drawing pane.
+
 ## 3.0.0-beta.7 (2026-10-24)
 
 **Pre-release, same pins as 3.0.0-beta.6** (OCCTSwift 4.0.0-beta.6 exactly, OCCTSwiftIO 2.0.0-beta.4). A consumer only gets this by naming it; the stable line stays at 2.0.0.
