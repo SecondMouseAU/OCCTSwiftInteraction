@@ -496,6 +496,10 @@ pick pass doesn't do this itself, so clipped-away geometry never steals a pick.
 viewport.removeClippingPlane(id: planeID)   // clears just that one; clippingPlanes = [] clears all
 ```
 
+**Visibility:** `viewport.visibility["part"] = false` on a capped entity stays hidden through
+later clipping changes, and removing the plane returns the entity to whatever visibility you
+last set.
+
 **Reload behavior:** capping DOES automatically re-apply when you reload an entity (even
 under an id already in use), every loader ends by syncing clipping state, so the new
 geometry is clipped/capped immediately, with no further clipping-plane call needed. A

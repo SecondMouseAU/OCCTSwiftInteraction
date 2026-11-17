@@ -437,6 +437,12 @@ viewport.removeClippingPlane(id: planeID)
   ends by syncing clipping state, so newly-loaded (or freshly-reloaded) geometry never
   displays uncut or hollow-without-a-cap until some unrelated later clipping-plane call
   happens to trigger the sync.
+- **A visibility you set on a capped entity sticks.** `visibility[id] = false` (and `= true`) on
+  an entity a cap plane has cut survives every later cap recompute (a plane moved, added or
+  removed, an unrelated entity loaded), and removing the plane returns the entity to the
+  visibility you last set, not the one it had when it was first capped. The same holds for an
+  escalation preview body that is a model body. A body hidden only because a plane clipped it
+  away entirely is still shown again when the plane stops doing that.
 - An independently active `setComparison(_:)` comparison on the same entity survives a
   clipping-plane change (and vice versa) for `.overlay`/`.sideBySide`/`.wipe`: each properly
   undoes and reapplies around the other's recompute, rather than one silently discarding the

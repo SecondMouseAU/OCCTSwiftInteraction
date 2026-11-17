@@ -391,6 +391,7 @@ extension CADViewportService {
         entities[id] = entity
         for i in modelBodies.indices where entity.bodyIDs.contains(modelBodies[i].id) {
             modelBodies[i].isVisible = isVisible
+            recordCallerVisibility(isVisible, forBody: modelBodies[i].id)
         }
         rebuildBodies()
     }
