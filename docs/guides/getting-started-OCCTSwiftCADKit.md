@@ -51,7 +51,10 @@ click activating an unfocused window from clearing the selection. The long initi
 same pieces separately; pass `onMouseDown: { viewport.noteMouseDown(windowWasActive: $0) }` to it.
 
 `CADViewportView` renders the Metal viewport with a selection-info banner (top) and
-display-mode / standard-view controls (bottom-trailing) built in.
+display-mode / standard-view controls (bottom-trailing) built in. The viewport's view cube also
+defaults to the bottom-trailing corner, so the controls rest on its top edge there; put the cube in
+another corner with `ViewportConfiguration.viewCubePosition` and they drop back to the corner's
+edge. They stay clear of the cube in every corner, in any viewport big enough to hold both.
 
 <!-- 3D render TODO: empty CADViewportView with the built-in controls -->
 

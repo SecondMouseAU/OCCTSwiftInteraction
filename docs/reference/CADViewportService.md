@@ -637,8 +637,8 @@ public struct CADViewportView: View
 ```
 
 SwiftUI wrapper around the Metal viewport, with a selection-info banner (top) and
-display-mode + standard-view controls (bottom-trailing). Bind it to a
-`CADViewportService`.
+display-mode + standard-view controls (bottom-trailing, above the view cube when the cube shares
+that corner). Bind it to a `CADViewportService`.
 
 ### Initializer
 
@@ -658,6 +658,15 @@ public init(
 
 The built-in controls set `controller.displayMode` (`.shaded`, `.shadedWithEdges`,
 `.wireframe`) and call `controller.goToStandardView(.isometricFrontRight)`.
+
+The controls sit in the bottom-trailing corner, 8 pt from the edges. The viewport's view cube
+defaults to that corner as well (`controller.configuration.viewCubePosition == .bottomTrailing`),
+so while the cube is shown there the controls are lifted 108 pt, onto its top edge, rather than
+drawn over it. With the cube in any other corner, or hidden through
+`controller.showViewCube = false`, they stay at the 8 pt position, as they do in a viewport under
+about 150 pt tall, which has no room to lift them. The rule reads
+`controller.configuration.viewCubePosition` and `controller.showViewCube`, so a host that moves
+the cube needs no other change.
 
 ```swift
 CADViewportView(

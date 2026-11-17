@@ -8,6 +8,9 @@ import SwiftUI
     import AppKit
 #endif
 
+/// The space `CADViewportView.controlsFrameObserver` frames are reported in.
+private let viewportSpace = "CADViewportView"
+
 /// SwiftUI wrapper around the Metal viewport, with a selection-info banner
 /// and display-mode controls.
 ///
@@ -34,6 +37,8 @@ public struct CADViewportView: View {
     ///
     /// Wired by `init(service:)` to `CADViewportService.noteMouseDown(windowWasActive:)`.
     public var onMouseDown: ((_ windowWasActive: Bool) -> Void)?
+    /// Test seam: receives the controls' frame in the viewport's own space.
+    var controlsFrameObserver: (@MainActor (CGRect) -> Void)?
 
     /// Hands the renderer a live view of `bodies`.
     ///
@@ -116,27 +121,59 @@ public struct CADViewportView: View {
 
     public var body: some View {
         box.bodies = bodies
-        return GeometryReader { proxy in
-            _MetalViewportView(controller: controller, bodies: box.binding)
-                .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-        .clipped()
-        #if canImport(AppKit)
-            .background(MouseDownProbe(onMouseDown: onMouseDown))
-        #endif
-        .overlay(alignment: .top) {
-            if selection.count == 1, let entity = selection.first {
-                selectionLabel(entity)
-                    .padding(8)
-            } else if selection.count > 1 {
-                selectionSummaryLabel(count: selection.count)
-                    .padding(8)
+        return overlays(
+            on: GeometryReader { proxy in
+                _MetalViewportView(controller: controller, bodies: box.binding)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            viewportControls
-                .padding(8)
-        }
+            .clipped()
+            #if canImport(AppKit)
+                .background(MouseDownProbe(onMouseDown: onMouseDown))
+            #endif
+        )
+    }
+
+    /// The selection banner and the controls, laid over `content`.
+    ///
+    /// Internal so a test can lay them over a placeholder instead of the Metal view.
+    func overlays<Content: View>(on content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if selection.count == 1, let entity = selection.first {
+                    selectionLabel(entity)
+                        .padding(8)
+                } else if selection.count > 1 {
+                    selectionSummaryLabel(count: selection.count)
+                        .padding(8)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                // A viewport too short to lift the controls keeps them on its bottom edge
+                // rather than pushing them out of view.
+                ViewThatFits(in: .vertical) {
+                    placedControls(bottomClearance: controlsBottomClearance)
+                    placedControls(bottomClearance: 0)
+                }
+            }
+            .coordinateSpace(name: viewportSpace)
+    }
+
+    private func placedControls(bottomClearance: CGFloat) -> some View {
+        viewportControls
+            .onGeometryChange(for: CGRect.self) {
+                $0.frame(in: .named(viewportSpace))
+            } action: {
+                controlsFrameObserver?($0)
+            }
+            .padding(ViewportControlsLayout.margin)
+            .padding(.bottom, bottomClearance)
+    }
+
+    /// Space under the controls that keeps them off the viewport's own view cube.
+    var controlsBottomClearance: CGFloat {
+        ViewportControlsLayout.bottomClearance(
+            viewCubeVisible: controller.showViewCube,
+            viewCubePosition: controller.configuration.viewCubePosition)
     }
 
     private func selectionSummaryLabel(count: Int) -> some View {

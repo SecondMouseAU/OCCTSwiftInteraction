@@ -12,6 +12,25 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: the display-mode controls covered the view cube in the default corner
+
+Closes [OCCTSwiftInteraction#44](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/44).
+`CADViewportView` drew its display-mode and standard-view controls in the bottom-trailing corner,
+which is also where OCCTSwiftViewport draws the view cube by default
+(`ViewportConfiguration.viewCubePosition` is `.bottomTrailing`), so the controls sat over about the
+lowest 25 pt of the cube in the macOS layout and could take a tap meant for its bottom faces. The
+controls now rest on the cube's top edge when the cube is in that corner and shown: 108 pt higher,
+which is the cube's 96 pt side plus its 12 pt margin, with the same 8 pt gap above it. With the cube
+in any other corner, or hidden (`controller.showViewCube == false`, followed live), they stay
+exactly where they were, so a host that already moved the cube clear (ACADStudio's `.topTrailing`)
+sees no change. No API change.
+
+A viewport under about 150 pt tall keeps the controls on its bottom edge instead of lifting them out
+of view. A host that laid out around the controls with the default cube corner should expect them
+108 pt higher in the trailing column. The cube's size and margin are not public in
+OCCTSwiftViewport, so the offset mirrors them (96 pt and 12 pt, unchanged since 1.1.15); a test reads
+the resolved source and fails if either moves.
+
 ### Fixed: hiding a capped entity was silently undone by the next cap recompute
 
 Closes [OCCTSwiftInteraction#46](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/46).
