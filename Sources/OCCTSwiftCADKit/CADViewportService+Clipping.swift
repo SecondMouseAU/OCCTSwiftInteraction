@@ -109,13 +109,14 @@ extension CADViewportService {
         simd_length(normal) > 0 ? simd_normalize(normal) : SIMD3<Double>(0, 0, 1)
     }
 
-    /// Records a caller-set visibility on a capped body's snapshot.
+    /// Records a caller-set visibility on every snapshot that restores `isVisible`.
     ///
-    /// `updateCapSurfaces` restores `isVisible` from `clippingCapBackup`, so a visibility write
-    /// to `modelBodies` has to reach the snapshot too or the next restore reverts it. No-op when
-    /// the body is not capped.
+    /// `updateCapSurfaces` restores from `clippingCapBackup` and `undoComparison` from
+    /// `comparisonBackup`, so a visibility write to `modelBodies` has to reach both or the next
+    /// restore reverts it. A no-op for a snapshot the body is not in.
     func recordCallerVisibility(_ isVisible: Bool, forBody bodyID: String) {
         clippingCapBackup[bodyID]?.isVisible = isVisible
+        comparisonBackup[bodyID]?.isVisible = isVisible
     }
 
     /// What a single body's cap recomputation determined, from `cappedShape`.
