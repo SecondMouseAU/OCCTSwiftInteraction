@@ -36,7 +36,9 @@ timestamp: 2026-11-18
   geometry (stock boxes, toolpaths, flat-pattern outlines, annotations) is staged via
   `setOverlay(id:bodies:)` / `clearOverlay(id:)`.
 - **`CADViewportView`**: SwiftUI wrapper around the Metal viewport with a selection-info banner and
-  display-mode controls.
+  display-mode controls. The controls sit bottom-trailing and rest on the view cube's top edge when
+  the cube shares that corner (its default), so they do not cover it (a viewport under about
+  150 pt tall keeps them on the bottom edge instead).
 - **`EscalationCardView`**: SwiftUI presentation for an `EscalationRequest` (question, candidates,
   context), reporting the answer via closures: same explicit-values-plus-callbacks style as
   `CADViewportView`. One adaptive layout capped to a comfortable phone-width column, usable as a
