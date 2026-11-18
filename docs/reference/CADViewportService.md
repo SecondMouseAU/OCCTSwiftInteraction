@@ -386,6 +386,13 @@ viewport.setComparison(nil)   // restores both entities' plain display
 reloading, which removes then re-adds) either the reference or candidate entity clears the
 comparison rather than leaving it referencing stale geometry.
 
+A visibility you set while a comparison is active sticks. `visibility[id] = false` (and `= true`)
+on the reference or the candidate survives clearing the comparison, switching its mode, and any
+clipping-plane change made in the meantime, for `.overlay`/`.sideBySide`/`.wipe`: the clear restores
+the reference's opacity, the candidate's offset and the wiped triangles, but not the visibility the
+entity had when the comparison began. The same holds for an escalation preview body that is a
+model body, and for an entity that is also capped.
+
 See [`ComparisonView`](#comparisonview) / [`ComparisonMode`](#comparisonmode) /
 [`Axis`](#axis) for the full type definitions.
 
@@ -446,9 +453,10 @@ viewport.removeClippingPlane(id: planeID)
 - An independently active `setComparison(_:)` comparison on the same entity survives a
   clipping-plane change (and vice versa) for `.overlay`/`.sideBySide`/`.wipe`: each properly
   undoes and reapplies around the other's recompute, rather than one silently discarding the
-  other's mutation. `.deviation` doesn't need this treatment at all: it has no body for
-  clipping to preserve, and is left untouched by any clipping-plane change (a genuine re-cut
-  of the candidate's own body still correctly clears its scalar field, independently).
+  other's mutation, and a visibility you set meanwhile is kept by both. `.deviation` doesn't
+  need this treatment at all: it has no body for clipping to preserve, and is left untouched
+  by any clipping-plane change (a genuine re-cut of the candidate's own body still correctly
+  clears its scalar field, independently).
 
 See [`ClippingPlane`](#clippingplane) for the full type definition, and `CLAUDE.md`'s
 "Things to be careful about" for the bounds-based heuristics `cappedShape` uses.

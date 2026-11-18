@@ -296,6 +296,10 @@ public final class CADViewportService {
     /// clear or mode switch without reloading.
     ///
     /// `.deviation` doesn't use this; it's undone via `setScalarField`'s own clear path instead.
+    ///
+    /// A snapshot's `isVisible` is the caller's last visibility write, kept by
+    /// `recordCallerVisibility(_:forBody:)`. The one exception is in
+    /// `docs/module-notes/OCCTSwiftCADKit.md`.
     var comparisonBackup: [String: _ViewportBody] = [:]
 
     // MARK: - Clipping

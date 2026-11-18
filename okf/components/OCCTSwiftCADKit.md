@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftCADKit
 tags: [index, api]
 description: OCCTSwiftCADKit public API: one library target wrapping the CAD viewport service and view.
-timestamp: 2026-11-17
+timestamp: 2026-11-18
 ---
 
 # Components
@@ -75,7 +75,8 @@ timestamp: 2026-11-17
   `.sideBySide` offsets the candidate next to the reference (one shared camera), `.wipe(axis:
   position:)` spatially splits the two at a plane by filtering each side's triangles (not
   `OCCTSwiftViewport`'s `clipPlanes`, which is viewport-global). Settable/clearable repeatedly
-  without reloading either entity.
+  without reloading either entity. A visibility set on either entity while a comparison is active
+  survives clearing or switching it (#48).
 - **`ClippingPlane`**: clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:
   normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides
   geometry on one side (a fast, global GPU clip); `showCapSurface: true` (default) additionally

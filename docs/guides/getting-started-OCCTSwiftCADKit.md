@@ -440,6 +440,10 @@ undoes whatever the previous comparison did before applying the new one, so call
 compound. `setComparison(nil)` restores both entities to their plain display without
 reloading either one.
 
+Visibility is yours, not the comparison's: `viewport.visibility["candidate"] = false` while a
+`.overlay`, `.sideBySide` or `.wipe` comparison is active stays hidden after you clear or switch
+the comparison, and showing an entity that was hidden when the comparison began stays shown.
+
 `.wipe` is a plain CPU-side triangle filter (each body keeps only the triangles on its
 side of the plane), not `ViewportController.clipPlanes`: that mechanism clips the whole
 scene uniformly, so it can't show the reference and candidate differently. A side effect:
