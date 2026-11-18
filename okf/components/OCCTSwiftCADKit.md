@@ -77,7 +77,8 @@ timestamp: 2026-11-18
   `.sideBySide` offsets the candidate next to the reference (one shared camera), `.wipe(axis:
   position:)` spatially splits the two at a plane by filtering each side's triangles (not
   `OCCTSwiftViewport`'s `clipPlanes`, which is viewport-global). Settable/clearable repeatedly
-  without reloading either entity.
+  without reloading either entity. A visibility set on either entity while a comparison is active
+  survives clearing or switching it (#48).
 - **`ClippingPlane`**: clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:
   normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides
   geometry on one side (a fast, global GPU clip); `showCapSurface: true` (default) additionally
@@ -105,3 +106,10 @@ timestamp: 2026-11-18
   `okf/decisions/agent-viewport-selection-bridge.md`. Highlights applied this way render
   with `OCCTSwiftAIS.PresentationStyle.agentHighlight`'s distinct hollow treatment instead of
   the ordinary selection color.
+- **`setDrawingSelection(_:)` / `drawingSelection` / `DrawingEntityPick`**
+  (OCCTSwiftInteraction#45, `CADViewportService+DrawingSelection.swift`): how a host publishes a
+  pick on a 2D drawing entity through the same `selection.json`, as a `drawing-entity` entry
+  (`bodyId` names the drawing case, `entity` is SwiftDXF's `Identity.id`, `entityType` is advisory)
+  under the same revision as the model picks. The drawing and model sets are independent and each
+  write carries both. `schemaVersion` is not bumped: a new kind is additive, a reader skips a kind
+  it does not know. An agent cannot highlight a drawing entity; such a request is rejected.

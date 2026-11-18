@@ -46,13 +46,18 @@
         ///   - hostVersion: this host application's version string, written into `host.json`.
         /// - Throws: `CADViewportError.sidecarHostAlreadyRunning` if another process already
         ///   holds `host.lock`; any `FileManager`/`Data` error from creating the directory
-        ///   structure or writing `host.json`/`selection.json`.
+        ///   structure or writing `host.json`/`selection.json`. A start that throws leaves the
+        ///   sidecar stopped.
         public func startSelectionSidecar(
             directory: URL,
             hostName: String = "OCCTSwiftInteraction",
             hostVersion: String = "0.0.0"
         ) throws {
             stopSelectionSidecar()
+            // A start that throws partway must not leave `sidecarDirectory` and `host.lock` held:
+            // nothing would be watching or writing, yet `setDrawingSelection` would write into it.
+            var started = false
+            defer { if !started { stopSelectionSidecar() } }
 
             let highlightRequestsDirectory = Self.highlightRequestsDirectory(in: directory)
             try FileManager.default.createDirectory(
@@ -75,7 +80,8 @@
             // The startup write is revision 0 itself, not an increment from some prior state,
             // per the ADR ("The host creates this file at startup (revision: 0, ...")).
             sidecarRevision = 0
-            try writeSelectionSidecarDocument(selection: interactiveContext.selection)
+            sidecarModelSelection = interactiveContext.selection
+            try writeSelectionSidecarDocument(selection: sidecarModelSelection)
 
             // `.dropFirst()`, matching `InteractiveContext.init`'s own `$pickResult`/
             // `$hoveredBodyID` subscriptions in `OCCTSwiftAIS`: a fresh `.sink` on a
@@ -95,18 +101,7 @@
                 .sink { [weak self] newSelection in
                     MainActor.assumeIsolated {
                         guard let self else { return }
-                        self.sidecarRevision += 1
-                        do {
-                            try self.writeSelectionSidecarDocument(selection: newSelection)
-                        } catch {
-                            // Roll the counter back rather than leave it ahead of what's
-                            // actually on disk: a write failure here (disk full, permissions)
-                            // must not let `sidecarRevision` diverge from `selection.json`'s
-                            // own `revision` field, which is the whole point of the field. The
-                            // next successful write picks up from the last one that actually
-                            // landed, rather than skipping ahead by however many failed.
-                            self.sidecarRevision -= 1
-                        }
+                        self.republishSelectionSidecar(selection: newSelection)
                     }
                 }
 
@@ -117,6 +112,7 @@
             }
             watcher.start()
             sidecarWatcher = watcher
+            started = true
         }
 
         /// Stops the sidecar: releases `host.lock`, stops watching `highlight_requests/`, and
@@ -131,14 +127,39 @@
             sidecarHostLock?.release()
             sidecarHostLock = nil
             sidecarDirectory = nil
+            sidecarModelSelection = Selection()
         }
 
         // MARK: - selection.json
 
-        /// Writes `selection` to `selection.json` at the CURRENT `sidecarRevision` (the caller
-        /// is responsible for bumping it first for anything but the startup write, per the ADR:
-        /// "incremented by exactly 1 on every write of this file, whether or not the selection
-        /// set actually changed").
+        /// Bumps `sidecarRevision` by exactly 1 and writes `selection.json` at the new value.
+        ///
+        /// `selection` is the model selection a change just delivered; `nil` republishes the last
+        /// one, for a write the model selection did not cause.
+        ///
+        /// - Returns: whether the write landed. On failure the revision is rolled back.
+        @discardableResult
+        func republishSelectionSidecar(selection: Selection? = nil) -> Bool {
+            if let selection { sidecarModelSelection = selection }
+            sidecarRevision += 1
+            do {
+                try writeSelectionSidecarDocument(selection: sidecarModelSelection)
+                return true
+            } catch {
+                // Roll the counter back rather than leave it ahead of what's actually on disk: a
+                // write failure here (disk full, permissions) must not let `sidecarRevision`
+                // diverge from `selection.json`'s own `revision` field, which is the whole point
+                // of the field. The next successful write picks up from the last one that
+                // actually landed, rather than skipping ahead by however many failed.
+                sidecarRevision -= 1
+                return false
+            }
+        }
+
+        /// Writes `selection`, then the held drawing picks, to `selection.json` at the CURRENT
+        /// `sidecarRevision` (the caller is responsible for bumping it first for anything but the
+        /// startup write, per the ADR: "incremented by exactly 1 on every write of this file,
+        /// whether or not the selection set actually changed").
         ///
         /// Takes `selection` as a parameter rather than reading `interactiveContext.selection`:
         /// the sink that drives this from a real change fires during `@Published`'s `willSet`,
@@ -153,8 +174,10 @@
                     if lhs.kind != rhs.kind { return lhs.kind < rhs.kind }
                     return lhs.index < rhs.index
                 }
+            // Model entries, then the host's drawing picks: one document, one revision.
             let document = SelectionSidecarDocument(
-                revision: sidecarRevision, updatedAt: Self.isoNow(), selections: entries)
+                revision: sidecarRevision, updatedAt: Self.isoNow(),
+                selections: entries + drawingSelectionSidecarEntries())
             try Self.writeJSON(document, to: directory.appendingPathComponent("selection.json"))
         }
 
@@ -384,6 +407,12 @@
         private func resolveHighlightTarget(bodyId: String, kind: String, index: Int)
             -> ResolvedHighlightTarget
         {
+            // Before the body lookup: a drawing case is not a scene body.
+            if kind == SelectionSidecarEntry.drawingEntityKind {
+                return .rejected(
+                    "kind \"\(kind)\" is not a highlight target: "
+                        + "highlight a face, edge, vertex or body")
+            }
             guard let bodyShape = bodyShapes[bodyId] else {
                 return .rejected("body '\(bodyId)' is not currently loaded")
             }
