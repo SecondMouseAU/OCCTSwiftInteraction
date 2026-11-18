@@ -25,6 +25,22 @@ body to the visibility the caller last set. No API change. A body hidden only be
 it away entirely is unaffected: the snapshot keeps its visible state and it comes back when the
 plane stops clipping it.
 
+### Fixed: a visibility change made during a comparison was lost when it ended or was recomputed
+
+Closes [OCCTSwiftInteraction#48](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/48),
+the same defect class as #46 on the other snapshot. `setComparison(_:)` backs up the reference and
+candidate bodies when an `.overlay`, `.sideBySide` or `.wipe` comparison starts and restores them
+whole when it is cleared or its mode is switched, so a `visibility[id]` change made in between was
+reverted: a hide came back visible, and a show of an entity that was hidden when the comparison began
+came back hidden. The same restore runs around every `updateCapSurfaces()` pass, so the change was
+also lost while the comparison was still active, whenever a clipping plane was added, moved or
+removed, `clippingPlanes` was reassigned, or an unrelated entity was loaded. A body that was both
+capped and compared had two snapshots, and in some orders lost the change through the comparison
+one even though the cap one was right. `setVisible` (the `visibility` setter) and the escalation
+preview show now write the caller's value into the comparison snapshot too, so a restore returns
+the body to the visibility the caller last set. No API change; the clear still restores the
+reference's opacity, the candidate's offset and the wiped triangles exactly as before.
+
 ### Fixed: a `startSelectionSidecar` that throws no longer leaves a half-started sidecar
 
 A start that failed partway (for example when `host.json` cannot be written) left `sidecarDirectory`

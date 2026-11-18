@@ -14,9 +14,9 @@ Run `OCCT_SERIAL=1 swift test --parallel --num-workers 1`. All tests pass; the c
 | Target | Tests | Suites |
 |---|---|---|
 | OCCTSwiftToolsTests | 75 | 12 |
-| OCCTSwiftCADKitTests | 158 | 8 |
+| OCCTSwiftCADKitTests | 168 | 9 |
 | OCCTSwiftAISTests | 206 | 20 |
-| **Total** | **439** | **40** |
+| **Total** | **449** | **41** |
 
 A count that differs from this is either a test added or lost without this page being updated, or a
 suite that failed to run. Treat the second as the default suspicion.
