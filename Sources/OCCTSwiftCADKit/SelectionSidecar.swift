@@ -8,9 +8,11 @@
 // the same data-type/behaviour split as `EscalationRequest.swift` / `+Escalation.swift`.
 //
 // Every type here is `internal`: the sidecar's public surface is
-// `CADViewportService.startSelectionSidecar(directory:)`/`stopSelectionSidecar()` alone, per the
-// issue. A host that wants to read these files itself reads the JSON directly against the ADR's
-// documented shape, rather than linking this package for its wire types.
+// `CADViewportService.startSelectionSidecar(directory:)`/`stopSelectionSidecar()`, plus
+// `setDrawingSelection(_:)`, `drawingSelection` and `DrawingEntityPick` for a host's drawing picks
+// (OCCTSwiftInteraction#45, `CADViewportService+DrawingSelection.swift`). A host that wants to
+// read these files itself reads the JSON directly against the ADR's documented shape, rather than
+// linking this package for its wire types.
 //
 // macOS-only, gated to match `OCCTSwiftIO.DirectoryWatcher`, the dependency the whole feature is
 // built on (Darwin-only: kqueue, and `flock(2)` below).
@@ -35,16 +37,39 @@
     /// request's target: the two share the same `bodyId`/`kind`/`index` vocabulary by design (the
     /// ADR's own words: "kept consistent with it on purpose").
     struct SelectionSidecarEntry: Codable, Equatable {
+        /// A scene body's id, or for `kind == "drawing-entity"` the drawing case's name.
         var bodyId: String
-        /// `"face" | "edge" | "vertex" | "body"`.
+        /// `"face" | "edge" | "vertex" | "body" | "drawing-entity"`.
         ///
         /// A plain `String`, not an enum, so a request naming a kind this version doesn't
         /// recognise decodes cleanly and is rejected by the applier with a reason, rather than
-        /// failing the whole file's decode.
+        /// failing the whole file's decode. The ADR's additive-change rule covers a new kind.
         var kind: String
-        /// Ignored (written as `0`) for `kind == "body"`, per the ADR.
+        /// Ignored (written as `0`) for `kind == "body"` and `kind == "drawing-entity"`, per the
+        /// ADR.
         var index: Int
         var uid: String?
+        /// SwiftDXF's `Identity.id` of the picked drawing entity.
+        ///
+        /// Present only for `kind == "drawing-entity"`, and absent from the encoded entry
+        /// otherwise.
+        var entity: String?
+        /// The DXF record type of the picked drawing entity, advisory.
+        ///
+        /// Same presence rule as `entity`.
+        var entityType: String?
+    }
+
+    extension SelectionSidecarEntry {
+        /// `kind` of an entry that names a drawing entity rather than a scene body's sub-shape.
+        static let drawingEntityKind = "drawing-entity"
+
+        /// A drawing pick as a wire entry: `index` is `0` and ignored, `uid` is absent.
+        init(drawingPick pick: DrawingEntityPick) {
+            self.init(
+                bodyId: pick.drawing, kind: Self.drawingEntityKind, index: 0, uid: nil,
+                entity: pick.entity, entityType: pick.entityType)
+        }
     }
 
     /// `highlight_requests/<id>.json`: a pending highlight (or escalation) request.

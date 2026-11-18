@@ -205,6 +205,16 @@ public final class CADViewportService {
 
         /// Monotonic counter bumped by exactly 1 on every `selection.json` write, per the ADR.
         var sidecarRevision = 0
+
+        /// The model selection `selection.json` last carried, for a write the model did not cause.
+        ///
+        /// Not `interactiveContext.selection`, which reads stale while a change is delivered.
+        var sidecarModelSelection = Selection()
+
+        /// The drawing-entity picks published beside the model selection in `selection.json`.
+        ///
+        /// Set through `setDrawingSelection(_:)`.
+        public internal(set) var drawingSelection: [DrawingEntityPick] = []
     #endif
 
     // MARK: - Bridge to the interactive context's selection state

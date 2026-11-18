@@ -2,24 +2,31 @@
 type: decision
 title: Agent-viewport selection bridge file formats
 resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction/blob/main/okf/decisions/agent-viewport-selection-bridge.md
-tags: [decision, adr, selection, viewport, agent, mcp, bridge, json, sidecar, atomicity]
-description: The wire format for a human's live viewport selection and an agent's highlight requests, exchanged as plain files in the shared scene directory.
-timestamp: 2026-08-21
+tags: [decision, adr, selection, viewport, agent, mcp, bridge, json, sidecar, atomicity, drawing, schema-versioning]
+description: The wire format for a human's live viewport selection (a model sub-shape or a drawing entity) and an agent's highlight requests, exchanged as plain files in the shared scene directory.
+timestamp: 2026-11-18
 ---
 
 # Agent-viewport selection bridge file formats
 
 ## Status
 
-Accepted. Documentation only: no reader or writer for any of the files below ships in this repo.
-The Swift implementation is tracked separately, per repo, and each of those issues cross-references
-this doc rather than restating its content:
+Accepted. This repo's `CADViewportService` sidecar is the reference host-side implementation (the
+writer of `selection.json`, `host.json` and `handled/<id>.json`, and the reader of
+`highlight_requests/`); the MCP-side client lives in OCCTMCP. Each implementation is tracked
+separately, per repo, and each of those issues cross-references this doc rather than restating its
+content:
 
 - This repo's own sidecar work: [OCCTSwiftInteraction#16](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/16)
 - The MCP-side client (`get_selection` / `highlight_selection`):
   [OCCTMCP#189](https://github.com/SecondMouseAU/OCCTMCP/issues/189) /
   [OCCTMCP#190](https://github.com/SecondMouseAU/OCCTMCP/issues/190)
-- ACADStudio's connecting issue (not yet filed as of this writing)
+- ACADStudio, the host built on it: D-124 and ACADStudio#154 for drawing picks
+- Drawing-entity picks (the `drawing-entity` kind, and the rule for adding a kind without a
+  `schemaVersion` bump):
+  [OCCTSwiftInteraction#45](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/45),
+  asked for by ACADStudio's D-124 (ACADStudio#154). The reader side is
+  [OCCTMCP#277](https://github.com/SecondMouseAU/OCCTMCP/issues/277).
 
 ## Context
 
@@ -43,8 +50,9 @@ issue this doc closes.
 discipline formalized below. `OCCTMCP`'s `SelectionRegistry` / `TopologyAnchor` already define an
 analogous `{bodyId, kind, index, uid}` shape for agent-side selections; the entry shape decided
 here is kept consistent with it on purpose, so a `get_selection` implementation can mint a
-`TopologyAnchor` directly from a `selection.json` entry rather than converting through a third
-shape.
+`TopologyAnchor` directly from a model entry of `selection.json` rather than converting through a
+third shape. (A `drawing-entity` entry names a drawing entity, not a topology node, and mints no
+anchor.)
 
 ## Decision
 
@@ -78,23 +86,104 @@ The host's current live selection, one object per file:
 }
 ```
 
-- **`selections`**: an array of `{bodyId: String, kind: "face"|"edge"|"vertex"|"body", index: Int,
-  uid: String?}` entries, one per currently-selected sub-shape (or body). The `"body"` kind
-  represents `SubShape.body` (whole-body selection) and has no corresponding `PickedEntity` case;
-  for `"body"`, `index` is ignored (writers emit `0`). Empty array, not a missing key, when
-  nothing is selected.
-  uid: String?}` entries, one per currently-selected sub-shape (or body). Empty array, not a
-  missing key, when nothing is selected.
+- **`selections`**: an array of `{bodyId: String, kind: String, index: Int, uid: String?}` entries,
+  one per currently-selected sub-shape, body or drawing entity, where `kind` is one of
+  `"face"|"edge"|"vertex"|"body"|"drawing-entity"`. The `drawing-entity` kind adds the `entity`
+  and `entityType` keys (see "The `drawing-entity` kind" below), absent from every other kind. The
+  `"body"` kind represents `SubShape.body` (whole-body selection) and has no corresponding
+  `PickedEntity` case; for `"body"`, `index` is ignored (writers emit `0`). Empty array, not a
+  missing key, when nothing is selected. The array is the whole current selection, model picks and
+  drawing picks together: every write replaces the whole set, never a patch to the previous one.
 - **`revision`**: `Int`, monotonic, incremented by exactly 1 on every write of this file, whether or
   not the selection set actually changed. A consumer polling for freshness compares `revision`
   values, never file mtimes.
 - **`updatedAt`**: `String`, ISO 8601 UTC (`2026-08-21T10:15:32Z`), the timestamp of the write that
   produced this `revision`.
 
-The host creates this file at startup (`revision: 0`, empty `selections`) alongside its `host.json` write, so a reader never has to treat "file absent" as "nothing selected":
-`host.json` write, so a reader never has to treat "file absent" as "nothing selected": file absent
-means the host has not started, or is stale (see `host.lock` below); file present with an empty
-array means the host is live and nothing is selected.
+The host creates this file at startup (`revision: 0`) alongside its `host.json` write, so a reader
+never has to treat "file absent" as "nothing selected": file absent means the host has not started,
+or is stale (see `host.lock` below); file present with an empty array means the host is live and
+nothing is selected. The startup write carries whatever the host already holds, so `selections` is
+empty unless a pick, model or drawing, was held before the sidecar started.
+
+#### The `drawing-entity` kind
+
+A pick on a 2D drawing entity (a line, a dimension, a text) travels in the same `selections` array
+as a model pick, under the same `revision` and `updatedAt`, so one read of the file tells an agent
+"this dimension" and "this face" together
+([OCCTSwiftInteraction#45](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/45),
+ACADStudio D-124):
+
+```json
+{
+  "revision": 43,
+  "updatedAt": "2026-11-18T10:15:40Z",
+  "selections": [
+    { "bodyId": "part1", "kind": "face", "index": 3, "uid": "b7e2f6a1-..." },
+    { "bodyId": "6575N383", "kind": "drawing-entity", "index": 0,
+      "entity": "2C1", "entityType": "DIMENSION" }
+  ]
+}
+```
+
+- **`kind`**: `"drawing-entity"`.
+- **`bodyId`**: names the drawing case (the folder the host holds the drawing in, `6575N383`), not
+  a scene body. A case and a scene body can share a name, so a reader keys on `kind` before it
+  looks `bodyId` up anywhere. A reader that resolves `bodyId` against the scene first reports a
+  drawing pick as "body not found" and drops its `entity`.
+- **`index`**: `0`, and ignored, as for `"body"`.
+- **`uid`**: absent. A `GraphUID` names `BRepGraph` nodes and a drawing has none.
+- **`entity`**: `String`, required for this kind. SwiftDXF's `Identity.id` as one string
+  (OCCTSwiftIO#57): the handle (group 5) where the file has one (`2C1`), else the section and
+  position (`ENTITIES:12`), after the block references an expanded entity came through,
+  outermost first (`8E/31`). Opaque to this contract: a reader compares it as a string and a
+  writer never parses it. A `drawing-entity` entry without it names nothing, and a reader treats
+  it as unusable, like an unknown kind.
+- **`entityType`**: `String?`, optional and advisory. The DXF record type (`DIMENSION`, `LINE`).
+  Nothing may depend on it; it is there so an agent can describe the pick without re-reading the
+  drawing.
+
+`entity` and `entityType` appear on a `drawing-entity` entry only. A model entry never carries
+them, so a `selection.json` that holds no drawing pick is byte-for-byte what it was before this
+kind existed.
+
+The two kinds of pick are independent sets inside the one document. A write that follows a change
+to either set carries both, so a model pick does not drop a drawing pick and a drawing pick does
+not drop a model pick. Clearing one kind is the host's decision (a host that wants a click in the
+viewport to clear the drawing pick clears it itself), and an empty set of one kind leaves the other
+as it was. Entry order carries no meaning; the writer in this repo emits the model entries first,
+as before, then the drawing entries ordered by `bodyId` then `entity`.
+
+Because a drawing pick is part of the document, a change to it advances `revision` exactly as a
+change to a model pick does, and an `ifRevision` composed before it is `superseded` after it. The
+rule that every write bumps `revision`, changed or not, is unchanged. The writer in this repo
+chooses not to write at all when the host re-asserts the drawing picks it already holds. A reader
+that republishes a document only when it differs from the one it last applied (an echo guard, as
+ACADStudio's `SelectionStore` does) would otherwise see `revision` and `updatedAt` change on every
+re-assertion and treat it as a new selection.
+
+### Adding a kind or a field: no `schemaVersion` bump
+
+This is the rule for every future addition of the same shape as the `drawing-entity` kind, stated
+once:
+
+**A new `kind` string, or a new optional field on an existing entry, is additive and does not bump
+`schemaVersion`.** A reader that meets a `kind` it does not know skips that entry, which it may
+report as unusable in its own per-entry way (OCCTMCP's `get_selection` returns an error row), and
+it keeps every other entry in the document. It never refuses the document, and it never drops its
+other entries because of one it cannot use. A reader ignores a field it does not know.
+
+`schemaVersion` is for a change that cannot be read as additive: removing or renaming a field,
+changing a field's type or meaning, or changing the revision, atomicity or single-writer rules.
+
+The reason is the `host.json` rule below: a client that reads a `schemaVersion` it does not know
+refuses to interpret the rest of the directory. A bump for the `drawing-entity` kind would
+therefore have cut every older reader off from the model picks it can read perfectly well, to
+protect it from one entry kind it would skip anyway.
+
+A reader's ordering is the catch. A reader that loads an entry's body before it looks at the
+entry's kind turns a new kind into a "body not found" for that entry, which is why a writer of a
+new kind waits for the readers (for this kind: OCCTMCP#277, then the writer, then the host's pane).
 
 ### `highlight_requests/<id>.json`
 
@@ -115,11 +204,14 @@ A pending highlight (or escalation) request, one file per request, named by its 
 
 - **`id`**: `String`. Always equal to the filename stem (`highlight_requests/<id>.json`); a reader
   that finds a mismatch treats the file as foreign or corrupt and ignores it.
-- **`bodyId` / `kind` / `index`**: identical fields and types to a `selection.json` entry, naming
-  the single sub-shape (or body) this request targets. No `uid` field: a request is authored by the
-  MCP-side client, which mints a request against its own graph, not the host's; the host resolves
-  `bodyId`/`kind`/`index` against its own scene independently. See "Index is per-process advisory"
-  below.
+- **`bodyId` / `kind` / `index`**: identical fields and types to a `selection.json` entry for a
+  model pick, naming the single sub-shape (or body) this request targets. `kind` is `"face"`,
+  `"edge"`, `"vertex"` or `"body"` here; `"drawing-entity"` is not a highlight target (see
+  "Not included"), and a request carrying it is `rejected` (after the `ifRevision`, `target` and
+  `scheme` checks every request gets). No `uid` field: a request is authored
+  by the MCP-side client, which mints a request against its own graph, not the host's; the host
+  resolves `bodyId`/`kind`/`index` against its own scene independently. See "Index is per-process
+  advisory" below.
 - **`scheme`**: `"replace" | "add" | "remove" | "xor"`, the same four-scheme vocabulary this
   package's own `InteractiveContext.select(_:scheme:)` already uses. How the requested entity
   combines with whatever the host currently has highlighted.
@@ -215,7 +307,9 @@ Written once, at host startup, never rewritten while the host is live:
 - **`hostVersion`**: `String`, the host application's own version string.
 - **`schemaVersion`**: `Int`, the version of *this* file-format contract the host was built
   against. Starts at `1` for the contract this doc defines. A client reading a `schemaVersion` it
-  does not recognize refuses to interpret the rest of the directory rather than guessing.
+  does not recognize refuses to interpret the rest of the directory rather than guessing. Because
+  the refusal covers the whole directory, only a change that cannot be read as additive bumps it;
+  see "Adding a kind or a field: no `schemaVersion` bump" above.
 
 ### `host.lock`
 
@@ -251,6 +345,10 @@ Exactly one side writes each path:
 | `highlight_requests/<id>.json` (excluding `handled/`) | the MCP-side client |
 | `highlight_requests/handled/<id>.json` | the host |
 
+A host's own panes are the host here. A drawing pane that has a pick to publish hands it to the
+host's sidecar, which writes `selection.json`; the pane never writes the file, so the
+`drawing-entity` kind adds no row to this table.
+
 Nothing here is ever written by both sides. A request file and its handled file are the one
 two-writer conversation this contract has, and it stays race-free because each side only ever
 writes the path the other side only ever reads: the client creates `<id>.json` and never touches
@@ -266,17 +364,14 @@ process wrote it (the host's tessellation-time ordinal for `selection.json`, the
 own graph-node index for a `highlight_requests/<id>.json` it authored), and the two are not
 guaranteed to be the same index space. A consumer resolves by `uid` first whenever one is present,
 and treats `index` as a best-effort fallback scoped to whichever side minted it, never as a value
-safe to compare across the two processes directly.
+safe to compare across the two processes directly. A `drawing-entity` entry is outside this: its
+identity is `entity`, a string both sides read from the same drawing file, `index` is `0` and
+ignored, and there is no `uid`.
 
-**`uid`, when present, is a `BRepGraph.GraphUID` and inherits its persistence caveat.**
-**`uid`, when present, is a `BRepGraph.GraphUID` (from OCCTSwift) and inherits its persistence caveat.
-`BRepGraph.GraphUID` is `Codable` but instance-scoped: it does not survive a graph rebuild or a
-process restart, so a `uid` written by one host process lifetime is not guaranteed to resolve
-against a graph rebuilt in a later one. A reader that gets a `uid` miss falls back to
-`bodyId`/`kind`/`index`, exactly the rung-2/rung-3 fallback `OCCTMCP`'s own `remap_selection`
-already uses for the equivalent problem one layer up.
-process restart, so a `uid` written by one host process lifetime is not guaranteed to resolve
-against a graph rebuilt in a later one. A reader that gets a `uid` miss falls back to
+**`uid`, when present, is a `BRepGraph.GraphUID` (from OCCTSwift) and inherits its persistence
+caveat.** `BRepGraph.GraphUID` is `Codable` but instance-scoped: it does not survive a graph
+rebuild or a process restart, so a `uid` written by one host process lifetime is not guaranteed to
+resolve against a graph rebuilt in a later one. A reader that gets a `uid` miss falls back to
 `bodyId`/`kind`/`index`, exactly the rung-2/rung-3 fallback `OCCTMCP`'s own `remap_selection`
 already uses for the equivalent problem one layer up.
 
@@ -287,8 +382,15 @@ already uses for the equivalent problem one layer up.
 - A heartbeat/staleness threshold for a non-local (network- or sync-backed) scene directory. Out of
   scope until that case is real; `host.lock` plus `host.json`'s `pid` covers the single-machine case
   this bridge is built for.
-- A versioning/migration strategy for the schema itself, beyond the `schemaVersion` field already
-  specified above.
+- A versioning/migration strategy for the schema itself, beyond the `schemaVersion` field and the
+  additive-change rule specified above.
+- An agent highlighting a drawing entity for the person. `highlight_requests` keeps its model kinds
+  (`face`, `edge`, `vertex` and `body`), and a request with `kind: "drawing-entity"` is `rejected`
+  with a reason. Cross-highlighting between a drawing and the model has its own
+  open questions and is decided elsewhere, not here. The nearest related work is OCCTDesignLoop#91
+  (a ledger row naming the model geometry it measured) and OCCTDesignLoop#92 (a ledger row keying
+  its entity by the DXF handle).
+- The agent writing a drawing pick. As for every other entry, `selection.json` is the host's alone.
 
 ## References
 
@@ -299,6 +401,10 @@ already uses for the equivalent problem one layer up.
 - [OCCTMCP#189](https://github.com/SecondMouseAU/OCCTMCP/issues/189) /
   [OCCTMCP#190](https://github.com/SecondMouseAU/OCCTMCP/issues/190), the MCP-side
   `get_selection` / `highlight_selection` tools this contract backs.
+- [OCCTSwiftInteraction#45](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/45), the
+  `drawing-entity` kind and the additive-change rule; ACADStudio's D-124 asked for it, and
+  [OCCTMCP#277](https://github.com/SecondMouseAU/OCCTMCP/issues/277) is the reader that has to
+  tolerate it first.
 - `Sources/OCCTSwiftTools/SubShape.swift`, `SubShapeRef` / `SubShape` / `InteractiveObject`: the
   identity primitives this doc's entry shapes are kept consistent with.
 - `Sources/OCCTSwiftCADKit/EscalationRequest.swift`, the local escalation shape a

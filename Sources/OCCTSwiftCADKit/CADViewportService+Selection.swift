@@ -124,6 +124,11 @@ extension CADViewportService {
     /// because the `$selection` sink that drives it fires during `willSet`, when the context
     /// still reports the previous value.
     func syncSelection(with newSelection: Selection) {
+        #if os(macOS)
+            // Before anything below can notify a subscriber: a host that reacts to the change by
+            // publishing a drawing pick must find the new model selection already recorded.
+            if sidecarDirectory != nil { sidecarModelSelection = newSelection }
+        #endif
         let subShapes = newSelection.subshapes
         let projected =
             subShapes
