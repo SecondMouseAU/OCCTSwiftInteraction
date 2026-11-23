@@ -1,3 +1,4 @@
+import Foundation
 import OCCTSwift
 import OCCTSwiftViewport
 import Testing
@@ -147,18 +148,12 @@ struct ComparisonScalarFieldTests {
         return (0..<(body.indices.count / 3)).map { indexOf[vertexIndices(body, $0)] }
     }
 
-    /// Expects every triangle of the body `id` to be painted with the key its own triangle in
-    /// `baseline` has, and the rendered body to carry the same paint.
-    @MainActor
+    /// Expects every triangle of `painted` to carry the key its own triangle in `baseline` has.
     private func expectKeyed(
-        _ service: CADViewportService, _ id: String, _ domain: Domain, baseline: _ViewportBody,
-        _ comment: Comment, sourceLocation: SourceLocation = #_sourceLocation
+        _ painted: _ViewportBody, _ domain: Domain, baseline: _ViewportBody, _ comment: Comment,
+        sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        guard let live = body(service, id) else {
-            Issue.record("no model body \(id)", sourceLocation: sourceLocation)
-            return
-        }
-        let expected: [Int?] = baselineTriangles(of: live, in: baseline).map { index in
+        let expected: [Int?] = baselineTriangles(of: painted, in: baseline).map { index in
             guard let index else { return nil }
             switch domain {
             case .perFace: return Int(baseline.faceIndices[index])
@@ -169,8 +164,22 @@ struct ComparisonScalarFieldTests {
             !expected.isEmpty && !expected.contains(nil),
             "sanity check: every triangle is one of the baseline's", sourceLocation: sourceLocation)
         #expect(
-            live.triangleStyles.map { key(paintedOn: $0) } == expected, comment,
+            painted.triangleStyles.map { key(paintedOn: $0) } == expected, comment,
             sourceLocation: sourceLocation)
+    }
+
+    /// Expects every triangle of the body `id` to carry the key its own triangle in `baseline`
+    /// has, and the rendered body to carry the same paint.
+    @MainActor
+    private func expectKeyed(
+        _ service: CADViewportService, _ id: String, _ domain: Domain, baseline: _ViewportBody,
+        _ comment: Comment, sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        guard let live = body(service, id) else {
+            Issue.record("no model body \(id)", sourceLocation: sourceLocation)
+            return
+        }
+        expectKeyed(live, domain, baseline: baseline, comment, sourceLocation: sourceLocation)
         #expect(
             rendered(service, id)?.triangleStyles == live.triangleStyles,
             "and the rendered body carries the same paint", sourceLocation: sourceLocation)
@@ -243,29 +252,14 @@ struct ComparisonScalarFieldTests {
         service.interactiveContext.bodies.first { $0.id == id }
     }
 
-    @MainActor
-    private func fire(_ trigger: Trigger, on service: CADViewportService) {
-        switch trigger {
-        case .resetClippingPlanes:
-            service.clippingPlanes = service.clippingPlanes
-        case .loadUnrelatedEntity:
-            service.loadUnrelatedEntity()
-        case .addUnrelatedHollowPlane:
-            service.addUnrelatedHollowPlane()
-        }
-    }
-
     // MARK: - Clearing or switching the comparison
 
     @MainActor
     @Test("A scalar field set during a comparison survives clearing it", arguments: SingleCase.all)
-    func fieldSurvivesClear(_ testCase: SingleCase) {
+    func fieldSurvivesClear(_ testCase: SingleCase) throws {
         guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
         let id = testCase.target.id
-        guard let baseline = body(service, id) else {
-            Issue.record("no model body \(id)")
-            return
-        }
+        let baseline = try #require(body(service, id))
         let uncompared = comparedState(service)
 
         service.setComparison(view(testCase.mode))
@@ -290,10 +284,9 @@ struct ComparisonScalarFieldTests {
     @Test(
         "A scalar field set during a comparison survives switching its mode",
         arguments: SwitchCase.all)
-    func fieldSurvivesModeSwitch(_ testCase: SwitchCase) {
-        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]),
-            let baseline = body(service, "cand")
-        else { return }
+    func fieldSurvivesModeSwitch(_ testCase: SwitchCase) throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
+        let baseline = try #require(body(service, "cand"))
         let uncompared = comparedState(service)
 
         service.setComparison(view(testCase.from))
@@ -315,15 +308,14 @@ struct ComparisonScalarFieldTests {
     @Test(
         "A scalar field set during a comparison survives an unrelated cap recompute",
         arguments: TriggerCase.all)
-    func fieldSurvivesUnrelatedRecompute(_ testCase: TriggerCase) {
-        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]),
-            let baseline = body(service, "cand")
-        else { return }
+    func fieldSurvivesUnrelatedRecompute(_ testCase: TriggerCase) throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
+        let baseline = try #require(body(service, "cand"))
 
         service.setComparison(view(testCase.mode))
         let compared = comparedState(service)
         service.setScalarField(keyField(testCase.domain), forBody: "cand")
-        fire(testCase.trigger, on: service)
+        service.fire(testCase.trigger)
 
         #expect(service.comparison != nil, "sanity check: the comparison is still active")
         #expect(
@@ -348,11 +340,10 @@ struct ComparisonScalarFieldTests {
     @Test(
         "A per-triangle field set during a wipe paints each triangle with its own value",
         arguments: Target.allCases)
-    func perTriangleFieldDuringWipeIsKeyedByOwnTriangle(_ target: Target) {
-        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]),
-            let baseline = body(service, target.id)
-        else { return }
+    func perTriangleFieldDuringWipeIsKeyedByOwnTriangle(_ target: Target) throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
         let id = target.id
+        let baseline = try #require(body(service, id))
 
         service.setComparison(wipe(at: 1))
         #expect(
@@ -405,7 +396,7 @@ struct ComparisonScalarFieldTests {
     @Test(
         "A scalar field set during a comparison on a capped body survives clearing the comparison",
         arguments: CapCase.all)
-    func fieldOnCappedBodySurvivesClear(_ testCase: CapCase) {
+    func fieldOnCappedBodySurvivesClear(_ testCase: CapCase) throws {
         guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
 
         var planeID = ""
@@ -419,17 +410,20 @@ struct ComparisonScalarFieldTests {
         }
         #expect((service.entityMinX("ref") ?? -2) > -0.5, "sanity check: the body is capped")
         service.setScalarField(keyField(testCase.domain), forBody: "ref")
+        let compared = try #require(body(service, "ref"))
 
         service.setComparison(nil)
         #expect((service.entityMinX("ref") ?? -2) > -0.5, "sanity check: it is still capped")
         #expect(service.scalarField(forBody: "ref") != nil)
         // With the comparison gone the body is the capped mesh again, so its own triangles are
-        // the baseline.
-        if let capped = body(service, "ref") {
-            expectKeyed(
-                service, "ref", testCase.domain, baseline: capped,
-                "clearing the comparison on a capped body must keep the field")
-        }
+        // the baseline, for the body now and for the one the comparison showed.
+        let capped = try #require(body(service, "ref"))
+        expectKeyed(
+            compared, testCase.domain, baseline: capped,
+            "during the comparison the field paints the capped body by its own triangles")
+        expectKeyed(
+            service, "ref", testCase.domain, baseline: capped,
+            "clearing the comparison on a capped body must keep the field")
 
         service.removeClippingPlane(id: planeID)
         #expect(
@@ -438,18 +432,53 @@ struct ComparisonScalarFieldTests {
         expectUnpainted(service, "ref", "and its paint")
     }
 
+    // MARK: - A multi-body entity
+
+    /// Each write steps the whole comparison aside and back, so a second body's write must not
+    /// disturb the first body's field, and the body nobody painted must stay unpainted.
+    @MainActor
+    @Test(
+        "Fields set during a comparison on two bodies of a multi-body entity both survive it",
+        arguments: Mode.allCases)
+    func fieldsOnMultiBodyEntitySurvive(mode: Mode) async throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref"]) else { return }
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "multibody-three-solids", withExtension: "brep",
+                subdirectory: "Fixtures"))
+        _ = try await service.loadFile(from: url, id: "asm")
+        let bodyIDs = try #require(service.entities["asm"]?.bodyIDs)
+        try #require(bodyIDs.count == 3, "sanity check: the fixture has three bodies")
+        let baselines = try bodyIDs.map { try #require(body(service, $0)) }
+
+        service.setComparison(
+            ComparisonView(referenceID: "ref", candidateID: "asm", mode: mode.comparisonMode))
+        service.setScalarField(keyField(.perFace), forBody: bodyIDs[0])
+        service.setScalarField(keyField(.perFace), forBody: bodyIDs[1])
+        service.setComparison(nil)
+
+        expectKeyed(
+            service, bodyIDs[0], .perFace, baseline: baselines[0],
+            "the first body's field survives the second body's write and the clear")
+        expectKeyed(
+            service, bodyIDs[1], .perFace, baseline: baselines[1],
+            "the second body's field survives the clear")
+        expectUnpainted(service, bodyIDs[2], "the third body was never painted")
+        for (id, baseline) in zip(bodyIDs, baselines) {
+            #expect(body(service, id)?.indices == baseline.indices, "\(id) is whole again")
+            #expect(body(service, id)?.transform == baseline.transform, "\(id) is back in place")
+        }
+    }
+
     // MARK: - Neighbours
 
     /// Guard: passes without the fix, since a field set before the comparison is in its snapshot.
     @MainActor
     @Test("A scalar field set before a comparison survives it", arguments: SingleCase.all)
-    func fieldSetBeforeComparisonSurvives(_ testCase: SingleCase) {
+    func fieldSetBeforeComparisonSurvives(_ testCase: SingleCase) throws {
         guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
         let id = testCase.target.id
-        guard let baseline = body(service, id) else {
-            Issue.record("no model body \(id)")
-            return
-        }
+        let baseline = try #require(body(service, id))
         service.setScalarField(keyField(testCase.domain), forBody: id)
 
         service.setComparison(view(testCase.mode))
@@ -465,10 +494,9 @@ struct ComparisonScalarFieldTests {
     /// written straight to the body, and clearing it still clears the candidate's field.
     @MainActor
     @Test("Clearing a deviation comparison still clears the candidate's field")
-    func deviationClearStillClearsTheField() {
-        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]),
-            let baseline = body(service, "cand")
-        else { return }
+    func deviationClearStillClearsTheField() throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
+        let baseline = try #require(body(service, "cand"))
 
         service.setComparison(
             ComparisonView(referenceID: "ref", candidateID: "cand", mode: .deviation))

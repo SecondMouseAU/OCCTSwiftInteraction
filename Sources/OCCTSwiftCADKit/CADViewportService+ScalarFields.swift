@@ -3,7 +3,7 @@
 //
 // Split out of CADViewportService.swift for OCCTSwiftInteraction#13 (code-structure policy).
 // The service's stored state stays in the core file; this is the scalar field surface of the same
-// type. A move, not a rewrite: the bodies below are unchanged.
+// type. The split itself was a move, not a rewrite; what changed since is in the history.
 
 import Combine
 import Foundation

@@ -54,6 +54,19 @@ extension CADViewportService {
         addClippingPlane(origin: SIMD3(0, 0, 100), normal: SIMD3(0, 0, 1), showCapSurface: false)
     }
 
+    /// Runs `trigger`, one of the things that run `updateCapSurfaces()` without being about any
+    /// entity under test.
+    func fire(_ trigger: ComparisonVisibilityTests.Trigger) {
+        switch trigger {
+        case .resetClippingPlanes:
+            clippingPlanes = clippingPlanes
+        case .loadUnrelatedEntity:
+            loadUnrelatedEntity()
+        case .addUnrelatedHollowPlane:
+            addUnrelatedHollowPlane()
+        }
+    }
+
     /// Whether the model body `id` is currently visible, or `nil` if there is no such body.
     func modelBodyIsVisible(_ id: String) -> Bool? {
         modelBodies.first { $0.id == id }?.isVisible

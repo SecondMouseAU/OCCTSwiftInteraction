@@ -306,18 +306,6 @@ struct ComparisonVisibilityTests {
         return body.map { $0.indices.count / 3 }
     }
 
-    @MainActor
-    private func fire(_ trigger: Trigger, on service: CADViewportService) {
-        switch trigger {
-        case .resetClippingPlanes:
-            service.clippingPlanes = service.clippingPlanes
-        case .loadUnrelatedEntity:
-            service.loadUnrelatedEntity()
-        case .addUnrelatedHollowPlane:
-            service.addUnrelatedHollowPlane()
-        }
-    }
-
     // MARK: - Clearing the comparison
 
     @MainActor
@@ -389,7 +377,7 @@ struct ComparisonVisibilityTests {
 
         service.setComparison(view(testCase.mode))
         service.visibility["ref"] = testCase.intent.endsVisible
-        fire(testCase.trigger, on: service)
+        service.fire(testCase.trigger)
 
         #expect(service.comparison != nil, "sanity check: the comparison is still active")
         #expect(
