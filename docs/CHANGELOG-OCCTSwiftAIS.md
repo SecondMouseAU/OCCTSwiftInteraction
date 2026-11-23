@@ -34,7 +34,7 @@ The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKi
 ## 0.1.0 (2026-08-19)
 
 First release of the merged OCCTSwiftInteraction package, which versions this target from here on.
-The headings below this one are releases of the pre-merge OCCTSwiftAIS repository.
+Every older version heading in this file is a release of the pre-merge OCCTSwiftAIS repository.
 
 ### `InteractiveContext.selection` is now the package's only selection store
 

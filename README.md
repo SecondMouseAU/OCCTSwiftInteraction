@@ -56,8 +56,9 @@ Your `import` lines do not change. See [docs/MIGRATION.md](docs/MIGRATION.md).
 - [docs/MIGRATION.md](docs/MIGRATION.md), moving from the three old packages
 - [docs/reference/](docs/reference/), per-type reference across all three targets
 - [docs/guides/](docs/guides/), getting started and cookbook
-- Historical changelogs: [OCCTSwiftTools](docs/CHANGELOG-OCCTSwiftTools.md),
-  [OCCTSwiftAIS](docs/CHANGELOG-OCCTSwiftAIS.md)
+- Changelogs, one per target: [OCCTSwiftTools](docs/CHANGELOG-OCCTSwiftTools.md),
+  [OCCTSwiftAIS](docs/CHANGELOG-OCCTSwiftAIS.md),
+  [OCCTSwiftCADKit](docs/CHANGELOG-OCCTSwiftCADKit.md)
 
 ## Face identity
 

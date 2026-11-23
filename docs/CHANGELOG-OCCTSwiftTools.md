@@ -1,6 +1,6 @@
 # Changelog
 
-Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
+Most recent first. The pre-merge repository was free to break before v1.0.0 and SemVer-stable from it, per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md). The merged package was pre-stable again through 0.x and is SemVer-stable from 2.0.0.
 
 ## Unreleased
 
@@ -56,7 +56,7 @@ New API, both additions:
 ## 0.1.0 (2026-08-19)
 
 First release of the merged OCCTSwiftInteraction package, which versions this target from here on.
-The headings below this one are releases of the pre-merge OCCTSwiftTools repository.
+Every older version heading in this file is a release of the pre-merge OCCTSwiftTools repository.
 
 ### One canonical pick resolver, and the types that name picked topology move down here
 

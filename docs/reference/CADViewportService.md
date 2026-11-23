@@ -924,8 +924,8 @@ no selected entity contributed a bounding box (see
 
 Named `SelectionSummary` until OCCTSwiftInteraction#3, when it was renamed to stop colliding
 with the unrelated public `OCCTSwiftUXKit.SelectionSummary` (the selection pill's caption and
-SF Symbol, which shares no field, no input and no consumer with this). The old name remains
-as a deprecated typealias.
+SF Symbol, which shares no field, no input and no consumer with this). The deprecated
+`SelectionSummary` typealias was removed in 2.0.0.
 
 ```swift
 if let summary = viewport.selectionMeasurements {
