@@ -4,6 +4,8 @@ Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the 
 
 ## Unreleased
 
+## 2.0.0-rc1 (2026-08-21)
+
 ### Platforms narrowed to iOS and macOS
 
 A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
@@ -25,6 +27,8 @@ Closes [OCCTSwiftInteraction#9](https://github.com/SecondMouseAU/OCCTSwiftIntera
 The failure now degrades instead of corrupting: the one ordinal that failed loses its captured shape and its durable uid, and no other ordinal moves. A pick landing on it still names the sub-shape it hit, because `SubShapePickResolver` reads a `nil` entry as a table miss and re-derives through `subShape(type:index:)`, which walks the same `TopTools_IndexedMapOfShape`. Refusing the whole table, and asserting on a count mismatch, were both considered and are recorded in [`docs/reference/ShapeIdentity.md`](reference/ShapeIdentity.md#ordinal-alignment-is-the-invariant).
 
 **Tests:** 3 new in the `ShapeIdentity` suite, 360 total. A genuine conversion failure cannot be provoked through the public API (every `Face` and `Edge` the enumerations hand back already holds a live handle), so they drive it through a new internal seam on `ShapeIdentity.init`, which takes the two conversions as parameters. Same treatment, and same reason, as `edgePolylineOnlyBridge`. Mutation-checked: reinstating `compactMap` fails all three and no others, which also confirms the issue's claim that the shared-face regression test does not catch this, since its fixture converts cleanly.
+
+## 0.2.0 (2026-08-20)
 
 ### One canonical identity-table builder, and a file load can finally return identity
 
@@ -48,6 +52,11 @@ New API, both additions:
 **Tests:** 14 new across two new suites (`ShapeIdentity`, `CADFileLoader identity`), 357 total. The failure cases the three copies disagreed about (nil graph, no faces, the edge-polyline-only branch, and the shape-to-body pairing) had no shared coverage at all before. The pairing test asserts by geometry rather than by index, and was mutation-checked: deliberately shifting the pairing inside the loader fails it.
 
 **One thing in the issue that did not survive contact with the code.** The issue describes `CADViewportService`'s count-mismatch guard as the thing to preserve. Two of its three implementations were redundant: `loadFile(from:id:)` pre-detected the mismatch at the call site *and* `addIdentity` re-detected it, and `rebuildIdentity`'s wholesale wipe ran against dictionaries `resetAllModelState()` had emptied a line earlier. All of it is gone, because the hazard it detected cannot arise once the loader keys identity by body id.
+
+## 0.1.0 (2026-08-19)
+
+First release of the merged OCCTSwiftInteraction package, which versions this target from here on.
+The headings below this one are releases of the pre-merge OCCTSwiftTools repository.
 
 ### One canonical pick resolver, and the types that name picked topology move down here
 

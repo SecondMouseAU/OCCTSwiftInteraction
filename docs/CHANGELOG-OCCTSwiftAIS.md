@@ -9,6 +9,8 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
+## 2.0.0-rc3 (2026-08-23)
+
 ### New: `PresentationStyle.agentHighlight`
 
 Part of [OCCTSwiftInteraction#16](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/16),
@@ -19,6 +21,8 @@ this" at a glance. Applied by `OCCTSwiftCADKit.CADViewportService
 .startSelectionSidecar(directory:)` to a highlight request resolved with no `question`.
 Purely additive; every existing preset is unchanged.
 
+## 2.0.0-rc1 (2026-08-21)
+
 ### Platforms narrowed to iOS and macOS
 
 A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
@@ -26,6 +30,11 @@ A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, an
 The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared, so as not to regress the two targets with the most dependents. That reasoning was wrong in a way invisible from the manifests: the wider claim was never true for any of the three, so there was nothing to regress. Root cause is filed upstream as [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 
 `platforms` is now `.iOS(.v18)`, `.macOS(.v15)`. A consumer that declares a visionOS or tvOS target and depends on this package is now told so at resolution time rather than discovering it at link time.
+
+## 0.1.0 (2026-08-19)
+
+First release of the merged OCCTSwiftInteraction package, which versions this target from here on.
+The headings below this one are releases of the pre-merge OCCTSwiftAIS repository.
 
 ### `InteractiveContext.selection` is now the package's only selection store
 
@@ -88,6 +97,8 @@ end through `handlePick` (previously uncovered on this path) and the corollary t
 no pick points is still not vertex-pickable. 1 more in the CADKit target's `Smoke` suite, which
 imports both targets and so is where the typealiases would show up as an ambiguous name if they
 ever stopped denoting the same types.
+
+## v1.3.2 (2026-08-19)
 
 ### Migrate to OCCTSwift 3.0.0
 
