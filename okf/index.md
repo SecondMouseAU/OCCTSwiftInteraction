@@ -4,7 +4,7 @@ title: OCCTSwiftInteraction
 resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction
 tags: [cad, occt, bridge, viewport, selection, picking, identity, swift, kernel]
 description: Identity, selection and the assembled CAD viewport service. One package vending three targets (OCCTSwiftTools, OCCTSwiftAIS, OCCTSwiftCADKit), merged from three repositories so the layers version and release together.
-timestamp: 2026-08-19
+timestamp: 2026-11-23
 ---
 
 # OCCTSwiftInteraction
@@ -18,10 +18,13 @@ timestamp: 2026-08-19
 
 - **Cluster:** kernel
 - **Depends on:**
-  [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep kernel, >= v3.0.0),
+  [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep kernel),
   [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) (Metal renderer and
-  `ViewportBody`, >= v1.1.26), and
-  [OCCTSwiftIO](https://github.com/SecondMouseAU/OCCTSwiftIO) (headless file I/O, >= v1.7.8).
+  `ViewportBody`, >= v1.2.0), and
+  [OCCTSwiftIO](https://github.com/SecondMouseAU/OCCTSwiftIO) (headless file I/O). Stable 2.0.0
+  takes OCCTSwift >= v3.0.0 and OCCTSwiftIO >= v1.8.0; `main` and the 3.0.0 betas pin OCCTSwift
+  exactly to a `4.0.0-beta` and take an OCCTSwiftIO `2.0.0-beta`. `Package.swift` has the exact
+  pins.
 - **Feeds:** OCCTSwiftUX, OCCTMCP, OCCTSwiftScripts, OCCTParts, PadCAM, OCCTDesignLoop, OCCTStudio.
 - The two kernels below stay decoupled because the bridge lives here: OCCTSwiftViewport carries no
   OCCT dependency at all.
@@ -59,12 +62,16 @@ See [`references/`](references/index.md).
   OCCTSwift's and OCCTSwiftViewport's, and the set is what the kernel actually ships.
   `OCCT.xcframework` carries exactly three slices (`ios-arm64`, `ios-arm64-simulator`,
   `macos-arm64`), so nothing links on visionOS or tvOS. The manifest inherited a `visionOS`/`tvOS`
-  claim from the pre-merge Tools and AIS manifests, where it was never true either; dropped before
-  1.0.0, root cause filed as
+  claim from the pre-merge Tools and AIS manifests, where it was never true either; dropped in
+  2.0.0-rc1, root cause filed as
   [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
-- Version line starts at `0.x`. The gate on `1.0.0` was the picking consolidation (ecosystem#43),
-  and **that gate is now met**: all six phases have landed and the duplication audit below found no
-  unresolved collision. The three old version lines do not continue here.
+- Versions: `0.1.0` and `0.2.0`, then a stable line starting at `2.0.0` rather than `1.0.0`
+  ([#13](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/13)), because tags inherited
+  from the pre-merge repositories (`v1.0.0` to `v1.6.4`, and `v0.2.1` to `v0.7.2`) name pre-merge
+  commits. Those version numbers must never be reused, and those tags never moved. `2.0.0` is the
+  current stable release; `3.0.0` is in beta, a major because OCCTSwift 4.0.0 changed the GD&T
+  types `CADLoadResult` exposes (OCCTSwift#996). The picking consolidation (ecosystem#43) that once
+  gated `1.0.0` is complete. The three old version lines do not continue here.
 - LGPL-2.1, matching OCCT.
 
 ## Settled, so do not re-decide it

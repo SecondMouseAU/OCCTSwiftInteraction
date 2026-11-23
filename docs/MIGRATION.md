@@ -35,8 +35,9 @@ package they come from moved:
 .product(name: "OCCTSwiftAIS",   package: "OCCTSwiftInteraction"),
 ```
 
-If you use the shared `occtDep` sibling helper, a local checkout at `../OCCTSwiftInteraction` is
-found the same way the old ones were.
+The shared `occtDep` helper now resolves every package from its published URL, never from a
+`../<name>` sibling checkout (ecosystem#51), so a local checkout at `../OCCTSwiftInteraction` is
+not picked up.
 
 ## You still only compile what you name
 
@@ -50,11 +51,12 @@ dependency to the `OCCTSwiftTools` target, every headless consumer pays for it.
 
 ## Versioning
 
-The merged package starts at `0.x` and reaches `1.0.0` once the picking consolidation
-([ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43)) has landed and settled. The
-three old version lines (`OCCTSwiftTools` 1.6.4, `OCCTSwiftAIS` 1.3.2, `OCCTSwiftCADKit` 1.1.2) do
-not continue here; continuing any one of them would have silently absorbed the other two histories
-under the wrong line.
+The merged package released `0.1.0` and `0.2.0`, then started its stable line at `2.0.0` rather
+than `1.0.0`, above the `v1.x` versions the old repositories had already used
+([#13](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/13)). The three old version
+lines (`OCCTSwiftTools` 1.6.4, `OCCTSwiftAIS` 1.3.2, `OCCTSwiftCADKit` 1.1.2) do not continue here;
+continuing any one of them would have silently absorbed the other two histories under the wrong
+line.
 
 The old repositories are archived, not deleted. Their tags remain resolvable, so an unmigrated
 consumer keeps building until it chooses to move.

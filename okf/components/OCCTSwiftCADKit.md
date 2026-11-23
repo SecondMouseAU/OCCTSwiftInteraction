@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftCADKit
 tags: [index, api]
 description: OCCTSwiftCADKit public API: one library target wrapping the CAD viewport service and view.
-timestamp: 2026-11-18
+timestamp: 2026-11-23
 ---
 
 # Components
@@ -20,15 +20,14 @@ timestamp: 2026-11-18
   `interactiveContext.selectionMode`. A real pick replaces the selection wholesale; build a
   multi-selection with `select(_:scheme:)` (`SelectionScheme`: `.replace`/`.add`/`.remove`/`.xor`,
   `OCCTSwiftAIS`'s own type, which gained the scheme parameter from this service).
-  `selectionMeasurements` reports aggregate count/area/length/bounds. `selectedFace:
-  PickedFaceInfo?`, `selected: PickedEntity?` and `selectionSummary` still work as deprecated
-  conveniences.
+  `selectionMeasurements` reports aggregate count/area/length/bounds. The deprecated
+  `selectedFace`, `selected` and `selectionSummary` were removed in 2.0.0.
   `load(_:id:transform:)` / `loadFile(from:id:progress:)` / `loadFromData(_:filename:id:progress:)`
   display several parts or assembly occurrences as distinct, addressable **entities**
   (`loadedShapes`, `shape(id:)`, `entityID(forBodyID:)`, `visibility`, `remove(id:)`, `removeAll()`,
-  `focus(on:)`); the single-shape `loadFile(from:)`/`loadShape(_:id:)`/`loadFromData(_:filename:)`
-  still work as a deprecated convenience, and are safe to mix with the new API: both register in
-  the same internal entity registry. `setScalarField(_:forBody:)` paints a `ScalarField` (deviation,
+  `focus(on:)`); the deprecated single-shape `loadFile(from:)`/`loadShape(_:id:)`/
+  `loadFromData(_:filename:)` were removed in 2.0.0.
+  `setScalarField(_:forBody:)` paints a `ScalarField` (deviation,
   curvature, wall thickness, confidence, anything per-face or per-triangle) onto a body by
   rebuilding it (currently a full re-upload, not just the GPU style buffer, see the method's own
   doc comment for a confirmed upstream `OCCTSwiftViewport` caching limitation this works around);
@@ -65,7 +64,7 @@ timestamp: 2026-11-18
   bounds over `CADViewportService.selection`. Named `SelectionSummary` until
   OCCTSwiftInteraction#3, renamed to stop colliding with the unrelated public
   `OCCTSwiftUXKit.SelectionSummary` (a UI caption type sharing no field, input or consumer with
-  it). The old name remains as a deprecated typealias.
+  it). The deprecated `SelectionSummary` typealias was removed in 2.0.0.
 - **`ScalarField`, `ColorMap`, `ScalarFieldLegend`, `LegendStop`**: a per-face/per-triangle scalar
   value plus how it maps to color (`.viridis`/`.magma`/`.turbo` sequential, `.diverging(center:)` for
   signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`), and the legend a UI
