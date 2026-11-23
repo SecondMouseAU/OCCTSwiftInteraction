@@ -66,12 +66,12 @@ See [`references/`](references/index.md).
   2.0.0-rc1, root cause filed as
   [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 - Versions: `0.1.0` and `0.2.0`, then a stable line starting at `2.0.0` rather than `1.0.0`
-  ([#13](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/13)), because tags inherited
-  from the pre-merge repositories (`v1.0.0` to `v1.6.4`, and `v0.2.1` to `v0.7.2`) name pre-merge
-  commits. Those version numbers must never be reused, and those tags never moved. `2.0.0` is the
-  current stable release; `3.0.0` is in beta, a major because OCCTSwift 4.0.0 changed the GD&T
-  types `CADLoadResult` exposes (OCCTSwift#996). The picking consolidation (ecosystem#43) that once
-  gated `1.0.0` is complete. The three old version lines do not continue here.
+  ([#13](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/13)), because the pre-merge
+  repositories had already used the `v1.x` numbers. The repo's `CLAUDE.md` has the rules for those
+  inherited version numbers and tags. `2.0.0` is the current stable release; `3.0.0` is in beta, a
+  major because OCCTSwift 4.0.0 changed the GD&T types `CADLoadResult` exposes (OCCTSwift#996).
+  The picking consolidation (ecosystem#43) that once gated `1.0.0` is complete. The three old
+  version lines do not continue here.
 - LGPL-2.1, matching OCCT.
 
 ## Settled, so do not re-decide it

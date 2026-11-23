@@ -58,8 +58,9 @@ lines (`OCCTSwiftTools` 1.6.4, `OCCTSwiftAIS` 1.3.2, `OCCTSwiftCADKit` 1.1.2) do
 continuing any one of them would have silently absorbed the other two histories under the wrong
 line.
 
-The old repositories are archived, not deleted. Their tags remain resolvable, so an unmigrated
-consumer keeps building until it chooses to move.
+The old repositories are not deleted (OCCTSwiftCADKit is archived; OCCTSwiftTools and OCCTSwiftAIS
+are not). Their tags remain resolvable, so an unmigrated consumer keeps building until it chooses
+to move.
 
 ## Who needs to do this, and in what order
 
