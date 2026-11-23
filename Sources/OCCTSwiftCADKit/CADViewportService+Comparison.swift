@@ -80,6 +80,25 @@ extension CADViewportService {
         comparisonBackup.removeAll()
     }
 
+    /// Runs `write` on a body as the active comparison's snapshot holds it, then applies the
+    /// comparison again over the result.
+    ///
+    /// The write reaches both `comparisonBackup` and the live body, and a `.wipe` filters the
+    /// written body afresh. Runs `write` directly when no `.overlay`, `.sideBySide` or `.wipe`
+    /// comparison holds a snapshot of `bodyID`. The caller rebuilds bodies.
+    func writeThroughComparison(toBody bodyID: String, _ write: () -> Void) {
+        guard let active = comparison, comparisonNeedsBodyPreservation(active),
+            comparisonBackup[bodyID] != nil
+        else {
+            write()
+            return
+        }
+        undoComparison(active)
+        write()
+        backUpComparisonBodies(active)
+        applyComparison(active)
+    }
+
     func applyComparison(_ comparison: ComparisonView) {
         switch comparison.mode {
         case .overlay(let opacity):

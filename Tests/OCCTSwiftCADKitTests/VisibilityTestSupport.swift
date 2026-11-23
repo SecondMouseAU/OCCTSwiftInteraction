@@ -5,8 +5,9 @@ import simd
 
 @testable import OCCTSwiftCADKit
 
-/// Fixtures shared by the suites that check a caller's visibility against the snapshots
-/// `updateCapSurfaces` and `undoComparison` restore from (OCCTSwiftInteraction#46, #48).
+/// Fixtures shared by the suites that check a caller's visibility or scalar field against the
+/// snapshots `updateCapSurfaces` and `undoComparison` restore from (OCCTSwiftInteraction#46, #48,
+/// #49).
 @MainActor
 extension CADViewportService {
     /// A service holding one 4x4x4 box centred on the origin per id, or `nil` if the kernel

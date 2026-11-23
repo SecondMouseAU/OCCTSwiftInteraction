@@ -140,7 +140,7 @@ extension CADViewportService {
     /// "undo" of `undoComparison`, which has no corresponding restore in
     /// `applyComparison`) is what keeps an active deviation heatmap from being silently wiped
     /// by a clipping-plane change that has nothing to do with it; see the fix for #46.
-    private func comparisonNeedsBodyPreservation(_ comparison: ComparisonView) -> Bool {
+    func comparisonNeedsBodyPreservation(_ comparison: ComparisonView) -> Bool {
         switch comparison.mode {
         case .overlay, .sideBySide, .wipe: return true
         case .deviation: return false
