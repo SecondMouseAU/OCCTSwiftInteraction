@@ -20,12 +20,11 @@ package reference in their manifests. See [docs/MIGRATION.md](docs/MIGRATION.md)
 package released `0.1.0` and `0.2.0`, then started its stable line at `2.0.0` rather than `1.0.0`:
 the merge brought the three old repositories' tags with it, so `v1.0.0` to `v1.6.4` (and `v0.2.1`
 to `v0.7.2`) name pre-merge commits, and the Tools and AIS changelogs carry many of them as
-headings.
-`0.1.0` and `0.2.0` had already reused two of the old repositories' numbers (both changelogs
-show it), and in this repository those two tags name this package's releases. No tag was deleted
-to make room. Never reuse another of those version numbers, and never move or re-point one of
-those tags. GitHub carries only this package's own tags (the inherited ones survive only in older
-local clones), so neither a fresh clone nor a remote tag listing will warn you of a collision.
+headings. `v0.1.0` and `v0.2.0` had each been force-moved off an inherited tag onto this package's
+release; starting at `2.0.0` meant no further tag had to move. Never reuse another of those
+version numbers, and never move or re-point a tag. The inherited tags are no longer on GitHub,
+which carries only this package's own, but older local clones still hold them, so neither a fresh
+clone nor a remote tag listing will warn you of a collision.
 
 `2.0.0` is the current stable release. `3.0.0` exists only as pre-releases (`3.0.0-beta.N`, each
 pinned exactly to an OCCTSwift `4.0.0-beta`), which a consumer gets only by naming one. It is a

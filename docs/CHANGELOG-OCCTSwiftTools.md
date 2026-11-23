@@ -428,4 +428,4 @@ Initial release. Lifts the `OCCTSwiftTools` sub-product out of OCCTSwiftViewport
 
 **Test invocation:** `OCCT_SERIAL=1 swift test --parallel --num-workers 1`. The env var + serial workers are required, not optional, due to a known NCollection container-overflow race in OCCT on arm64 macOS.
 
-**Platform floor:** iOS 18 / macOS 15 / visionOS 1 / tvOS 18, the higher of OCCTSwift's and OCCTSwiftViewport's floors. (What that release declared. The visionOS / tvOS half was never true, and was dropped before 1.0.0; see the Unreleased entry above.)
+**Platform floor:** iOS 18 / macOS 15 / visionOS 1 / tvOS 18, the higher of OCCTSwift's and OCCTSwiftViewport's floors. (What that release declared. The visionOS / tvOS half was never true, and was dropped in 2.0.0-rc1; see that entry above.)
