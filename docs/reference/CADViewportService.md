@@ -576,6 +576,49 @@ viewport.stopSelectionSidecar()
   An optional `label` on the request lands in `agentAttentionLabel`, which is nil whenever
   `agentAttention` is nil and is replaced or cleared with it (#35).
   See the ADR and OCCTSwiftInteraction#29.
+- `setAgentAttention(_:label:)` is the one place a label is bounded, so a host calling it
+  directly and a request file get the same answer (#54). The rule:
+  - **Blank is no label.** A label whose every Unicode scalar is whitespace (`White_Space`), a
+    control character (general category Cc), a `Default_Ignorable_Code_Point`, or one of seven
+    named characters draws nothing, and is held as nil. That catches what OCCTMCP's
+    `.whitespacesAndNewlines` trim lets through: a zero-width joiner or non-joiner, a word joiner,
+    a byte order mark, a bidi override, a variation selector, the Hangul fillers (U+115F, U+1160,
+    U+3164, U+FFA0), a control such as BEL. (Apple's Foundation does trim U+200B ZERO WIDTH SPACE,
+    a legacy inclusion, so OCCTMCP already refuses a label of only that.) The named seven exist to
+    draw nothing but are in none of those classes: U+2800 BRAILLE PATTERN BLANK, the interlinear
+    annotation controls U+FFF9 to U+FFFB, U+FFFC OBJECT REPLACEMENT CHARACTER, U+16FE4 KHITAN
+    SMALL SCRIPT FILLER and U+1D159 MUSICAL SYMBOL NULL NOTEHEAD. Format characters (general
+    category Cf) are not blank as a class. The common invisible ones are default-ignorable
+    already. Of the 32 that are not, 13 are the `Prepended_Concatenation_Mark` characters (U+0600
+    ARABIC NUMBER SIGN, U+06DD ARABIC END OF AYAH and their kin), signs written over the text
+    after them; 3 are the named U+FFF9 to U+FFFB; and 16 are the Egyptian hieroglyph format
+    controls U+13430 to U+1343F. The first and last groups are left as visible: whether one draws
+    on its own depends on the font. U+1680 OGHAM SPACE MARK is `White_Space`, so it counts as blank although some
+    fonts draw a stroke for it, the same answer OCCTMCP's trim gives. Only the whole label is
+    judged: an invisible character between visible ones is kept, and leading or trailing
+    whitespace around a visible label is kept, as OCCTMCP writes it.
+  - **At most 80 characters, counted as OCCTMCP counts them.** `String.count`, extended grapheme
+    clusters, matching `SelectionBridgeTools.maxLabelLength`, so a label within OCCTMCP's bound is
+    never cut. A longer one keeps its first 79 characters, less any blank ones at the end, plus
+    `…`, so the reader can see it was cut. A grapheme cluster (a ZWJ emoji, a skin-tone modifier,
+    a flag) is kept whole or dropped whole, and a Prepend character left last (U+0600 before a
+    tab, say) is dropped too, since the `…` would join it. The ellipsis marks that the label was
+    over the bound, not that visible text was lost: a visible label padded past 80 with spaces
+    comes back as the label plus `…`, and one whose first 79 characters are blank comes back as
+    `…` alone. The bound is on characters, not bytes, exactly as OCCTMCP's is: a character carrying
+    a long run of combining marks counts as one, so a label can still be large in scalars while
+    within 80 characters. Neither side bounds that today; a scalar or byte cap belongs in both
+    together.
+  - **Cut, not refused.** The label is a caption on the marker, not the request's substance:
+    refusing the request would throw away a marker that resolved, over its caption. A blank label
+    is dropped rather than refused for the same reason, and `setAgentAttention` has no error to
+    return. The sidecar says what it did in the handled file's `reason` on `applied`, either
+    `label cut from N to M characters` (M being the length held, singular when only `…` is left)
+    or `label dropped: it has no visible character`, so a client learns what happened to its
+    label. A client writing requests itself hears about an over-long label as it would from
+    OCCTMCP's own check; a dropped blank one it hears about only from the host, since OCCTMCP's
+    `.whitespacesAndNewlines` trim lets one through. An absent or empty label carries no reason,
+    as before.
 
 #### Drawing-entity picks
 

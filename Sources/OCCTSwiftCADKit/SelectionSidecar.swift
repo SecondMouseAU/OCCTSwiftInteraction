@@ -93,8 +93,9 @@
         var target: String?
         /// Optional free-text label the agent attaches to its attention marker ("this fillet").
         ///
-        /// Advised at most 80 characters, not enforced here. Ignored when empty, and when the
-        /// request does not land in attention (`target: "selection"`, or a `question`), since
+        /// Held as `CADViewportService.setAgentAttention(_:label:)` holds it: cut to 80
+        /// characters, and no label when it draws nothing (OCCTSwiftInteraction#54). Ignored when
+        /// the request does not land in attention (`target: "selection"`, or a `question`), since
         /// there is no marker to attach it to (OCCTSwiftInteraction#35).
         var label: String?
         /// The `selection.json` revision this request was composed against, if the requester

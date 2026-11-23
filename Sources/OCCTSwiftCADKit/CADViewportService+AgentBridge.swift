@@ -326,20 +326,25 @@
                         + "pass target \"selection\" to select a whole body")
 
             case .entity(let entity) where landsInAttention:
-                let label = (request.label ?? "").isEmpty ? nil : request.label
+                // The label goes through as sent: `setAgentAttention` owns the bound and the
+                // blank rule, so this path and a host's direct call hold the same label.
+                var labelReason: String?
                 switch scheme {
                 case .replace, .add:
-                    setAgentAttention(entity, label: label)
+                    setAgentAttention(entity, label: request.label)
+                    labelReason = Self.labelReason(sent: request.label, held: agentAttentionLabel)
                 case .remove:
                     if agentAttention == entity { setAgentAttention(nil) }
                 case .xor:
                     if agentAttention == entity {
                         setAgentAttention(nil)
                     } else {
-                        setAgentAttention(entity, label: label)
+                        setAgentAttention(entity, label: request.label)
+                        labelReason = Self.labelReason(
+                            sent: request.label, held: agentAttentionLabel)
                     }
                 }
-                return HandledOutcome(outcome: "applied", reason: nil, target: "attention")
+                return HandledOutcome(outcome: "applied", reason: labelReason, target: "attention")
 
             case .wholeBody(let subShape):
                 // `PickedEntity` has no `.body` case (OCCTSwiftInteraction#3's settled design,
@@ -498,6 +503,15 @@
             case "xor": return .xor
             default: return nil
             }
+        }
+
+        /// The `reason` an applied attention request carries when `setAgentAttention` did not
+        /// hold its label as sent, or nil when it did (or the label was absent or empty).
+        private static func labelReason(sent: String?, held: String?) -> String? {
+            guard let sent, !sent.isEmpty, held != sent else { return nil }
+            guard let held else { return "label dropped: it has no visible character" }
+            return "label cut from \(sent.count) to \(held.count) "
+                + (held.count == 1 ? "character" : "characters")
         }
 
         private static func isoNow() -> String {
