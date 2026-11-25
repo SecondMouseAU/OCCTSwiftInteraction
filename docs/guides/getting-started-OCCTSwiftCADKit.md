@@ -586,5 +586,5 @@ an entity a pending escalation references, or a full `removeAll()`: auto-resolve
   full public API: every method signature, the `ShapeBounds` / `PickedEntity` /
   `PickedFaceInfo` / `PickedEdgeInfo` / `PickedVertexInfo` / `SelectionMeasurements` /
   `ScalarField` / `ColorMap` / `ScalarFieldLegend` / `ComparisonView` / `ComparisonMode` /
-  `Axis` / `ClippingPlane` / `EscalationRequest` / `EscalationCandidate` /
+  `ComparisonAxis` / `ClippingPlane` / `EscalationRequest` / `EscalationCandidate` /
   `EscalationResponse` / `FaceBounds` types, and `CADViewportError`.

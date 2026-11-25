@@ -202,7 +202,16 @@ What did **not** merge, and why:
   overwrite each other. That is also why CADKit's bodies are not registered as context entries.
 - **The clip-plane pre-filter stays in CADKit.** It tests the picked primitive's position, which
   an AIS `SelectionFilter` (which sees a resolved `SubShape`) cannot express.
-- **`Axis` in both targets was never a collision**: AIS's is nested inside `ManipulatorWidget`.
+- **`Axis` in both targets was a collision, and CADKit's is now `ComparisonAxis`**
+  ([#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60)). Not the nested
+  `ManipulatorWidget.Axis`, which never collided: AIS also declares a top-level `Axis` (the scene
+  object after OCCT's `AIS_Axis`), and CADKit declared a top-level `Axis` for the `.wipe`
+  comparison. CADKit compiled because its own declaration shadows the import, but a consumer file
+  importing both modules got "'Axis' is ambiguous for type lookup" on a bare `Axis`. CADKit's was
+  the one renamed, in the 3.0.0 betas, because it only parameterises one enum case while AIS's
+  mirrors an OCCT class. There is no same-named alias: a deprecated top-level `typealias Axis`
+  brings the ambiguity straight back (checked by mutation). `AxisNameCollisionTests` imports both
+  modules and writes a bare `Axis`, so a top-level `Axis` reintroduced in CADKit fails to compile.
 - **`SelectionSummary` was never a duplicate of OCCTSwiftUX's.** Different fields, different
   inputs, no shared consumer, and OCCTSwiftUX takes only the `OCCTSwiftTools` and `OCCTSwiftAIS`
   products, not `OCCTSwiftCADKit`. Resolved by naming: CADKit's is now `SelectionMeasurements`;

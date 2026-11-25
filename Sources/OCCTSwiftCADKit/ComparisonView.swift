@@ -2,10 +2,8 @@ import simd
 
 /// Axis a `.wipe` comparison splits along.
 ///
-/// A local mirror of the same concept elsewhere in the ecosystem (e.g.
-/// `OCCTSwiftAIS.ManipulatorWidget.Axis`) rather than a re-export, so this package's public
-/// surface doesn't couple to a widget-specific type for an unrelated concept.
-public enum Axis: Sendable, Equatable, CaseIterable {
+/// Not named `Axis`, which would collide with `OCCTSwiftAIS.Axis` in a file importing both.
+public enum ComparisonAxis: Sendable, Equatable, CaseIterable {
     case x, y, z
 
     var unitVector: SIMD3<Float> {
@@ -36,7 +34,7 @@ public enum ComparisonMode: Sendable, Equatable {
     /// Reference and candidate spatially split by a plane perpendicular to `axis` at world
     /// coordinate `position`: the reference is visible where its geometry's coordinate along
     /// `axis` is less than `position`, the candidate where it's greater or equal.
-    case wipe(axis: Axis, position: Double)
+    case wipe(axis: ComparisonAxis, position: Double)
 }
 
 /// A comparison between two already-loaded entities (typically a source mesh, `referenceID`,
