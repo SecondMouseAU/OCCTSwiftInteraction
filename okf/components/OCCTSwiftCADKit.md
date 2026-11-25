@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction/tree/main/Sources/OCCTSwiftCADKit
 tags: [index, api]
 description: OCCTSwiftCADKit public API: one library target wrapping the CAD viewport service and view.
-timestamp: 2026-11-23
+timestamp: 2026-11-25
 ---
 
 # Components
@@ -69,8 +69,8 @@ timestamp: 2026-11-23
   value plus how it maps to color (`.viridis`/`.magma`/`.turbo` sequential, `.diverging(center:)` for
   signed values, `.threshold(levels:)` for discrete bands, `.custom(stops:)`), and the legend a UI
   renders alongside it.
-- **`ComparisonView`, `ComparisonMode`, `Axis`**: display two already-loaded entities (typically a
-  source mesh and a reconstructed solid) against each other via `setComparison(_:)`:
+- **`ComparisonView`, `ComparisonMode`, `ComparisonAxis`**: display two already-loaded entities
+  (typically a source mesh and a reconstructed solid) against each other via `setComparison(_:)`:
   `.overlay(referenceOpacity:)` ghosts the reference, `.deviation` marks the candidate's
   already-set `ScalarField` as the comparison (CADKit doesn't compute deviation itself),
   `.sideBySide` offsets the candidate next to the reference (one shared camera), `.wipe(axis:

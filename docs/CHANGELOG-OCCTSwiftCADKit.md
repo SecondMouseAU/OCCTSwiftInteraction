@@ -12,6 +12,25 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Breaking: `Axis` is renamed `ComparisonAxis`
+
+Closes [OCCTSwiftInteraction#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60).
+The axis a `.wipe` comparison splits along was a top-level `Axis`, and `OCCTSwiftAIS` declares a
+top-level `Axis` too (its scene-object class, after OCCT's `AIS_Axis`). A file importing both
+modules could not write a bare `Axis`: the compiler reported "'Axis' is ambiguous for type lookup
+in this context" in a type position, and "ambiguous use of 'Axis'" in an expression such as
+`Axis.self`, until it was module-qualified. CADKit's is now `ComparisonAxis`, so a bare `Axis`
+means `OCCTSwiftAIS.Axis` wherever both are imported.
+
+**Migration:** write `ComparisonAxis` wherever code names CADKit's type, including as
+`OCCTSwiftCADKit.Axis`. A call site that never names it, such as `.wipe(axis: .x, position: 0)`,
+compiles unchanged. Code left on the old name fails to compile rather than changing meaning: with
+AIS imported, `Axis` is a class with no `x`, `y` or `z` and is not the type `.wipe` takes.
+
+There is no deprecated `Axis` typealias. A top-level alias of that name keeps the name, and with it
+the ambiguity the rename removes: tried, it fails the new `AxisNameCollisionTests` with the same
+"ambiguous for type lookup" error. No consumer in the fleet names the type today.
+
 ### Fixed: a pick on a body cut by a wipe comparison named the wrong face
 
 Closes [OCCTSwiftInteraction#58](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/58).
