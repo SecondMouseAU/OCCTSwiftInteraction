@@ -3,7 +3,7 @@
 //
 // Split out of CADViewportService.swift for OCCTSwiftInteraction#13 (code-structure policy).
 // The service's stored state stays in the core file; this is the clipping, capping and clip-aware picking surface of the same
-// type. A move, not a rewrite: the bodies below are unchanged.
+// type. The split itself was a move, not a rewrite; what changed since is in the history.
 
 import Combine
 import Foundation
@@ -140,7 +140,7 @@ extension CADViewportService {
     /// "undo" of `undoComparison`, which has no corresponding restore in
     /// `applyComparison`) is what keeps an active deviation heatmap from being silently wiped
     /// by a clipping-plane change that has nothing to do with it; see the fix for #46.
-    private func comparisonNeedsBodyPreservation(_ comparison: ComparisonView) -> Bool {
+    func comparisonNeedsBodyPreservation(_ comparison: ComparisonView) -> Bool {
         switch comparison.mode {
         case .overlay, .sideBySide, .wipe: return true
         case .deviation: return false

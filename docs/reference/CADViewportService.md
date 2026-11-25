@@ -393,6 +393,14 @@ the reference's opacity, the candidate's offset and the wiped triangles, but not
 entity had when the comparison began. The same holds for an escalation preview body that is a
 model body, and for an entity that is also capped.
 
+So does a scalar field. `setScalarField(_:forBody:)` on the reference or the candidate during an
+`.overlay`, `.sideBySide` or `.wipe` comparison (setting a field or clearing one) survives clearing
+the comparison, switching its mode, and any clipping-plane change made in the meantime. Under
+`.wipe`, a `.perTriangle` field is indexed by the body's own triangles, as loaded, not by position
+in the subset the wipe keeps, so each kept triangle shows its own value. Setting a field during a
+`.wipe` re-filters both entities' bodies, the same cost as moving the wipe. A genuine cap cut still
+clears the field, as it does outside a comparison.
+
 See [`ComparisonView`](#comparisonview) / [`ComparisonMode`](#comparisonmode) /
 [`Axis`](#axis) for the full type definitions.
 
