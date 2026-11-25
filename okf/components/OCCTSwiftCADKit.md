@@ -78,7 +78,8 @@ timestamp: 2026-11-23
   `OCCTSwiftViewport`'s `clipPlanes`, which is viewport-global). Settable/clearable repeatedly
   without reloading either entity. A visibility set on either entity while a comparison is active
   survives clearing or switching it (#48), and so does a scalar field set or cleared, which under
-  `.wipe` keeps each triangle's own value (#49).
+  `.wipe` keeps each triangle's own value (#49). Ending a `.deviation` clears the field on every
+  body of the candidate (#59).
 - **`ClippingPlane`**: clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:
   normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides
   geometry on one side (a fast, global GPU clip); `showCapSurface: true` (default) additionally

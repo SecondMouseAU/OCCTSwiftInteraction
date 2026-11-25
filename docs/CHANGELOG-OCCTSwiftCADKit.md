@@ -12,6 +12,18 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: ending a deviation comparison left the heatmap on a candidate loaded from a file
+
+Closes [OCCTSwiftInteraction#59](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/59).
+Ending a `.deviation` comparison (`setComparison(nil)`, switching to another mode, or removing the
+reference) is meant to clear the candidate's scalar field, but it cleared the field stored under the
+candidate's entity id, while `setScalarField(_:forBody:)` stores fields by body id. That only worked
+for an entity whose one body shares its id, which is what `load(_:id:)` makes. A candidate loaded
+with `loadFile(from:id:)` or `loadFromData(_:filename:id:)`, whose bodies are named `<id>-0`,
+`<id>-1` and so on even for a single solid, kept its heatmap, and `scalarField(forBody:)` and
+`scalarFieldLegend` went on reporting it. Ending the comparison now clears the field on each of the
+candidate's bodies. No API change.
+
 ### Fixed: the display-mode controls covered the view cube in the default corner
 
 Closes [OCCTSwiftInteraction#44](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/44).
