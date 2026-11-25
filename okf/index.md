@@ -4,7 +4,7 @@ title: OCCTSwiftInteraction
 resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction
 tags: [cad, occt, bridge, viewport, selection, picking, identity, swift, kernel]
 description: Identity, selection and the assembled CAD viewport service. One package vending three targets (OCCTSwiftTools, OCCTSwiftAIS, OCCTSwiftCADKit), merged from three repositories so the layers version and release together.
-timestamp: 2026-11-23
+timestamp: 2026-11-25
 ---
 
 # OCCTSwiftInteraction
@@ -101,16 +101,17 @@ it enumerated has been resolved. Each of these is an answer someone worked for, 
   Tools resolver (OCCTSwiftUX#29, phase 4), `OCCTMCP.SelectionRegistry` is re-keyed on `GraphUID`
   (OCCTMCP#182, phase 5), and `OCCTSwiftViewport.PickResultFilter` is renamed away from the
   `SelectionFilter` collision (OCCTSwiftViewport#111, phase 1). Four implementations became one.
+- **A bare `Axis` means `OCCTSwiftAIS.Axis`**
+  ([#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60)). AIS's top-level `Axis`
+  is the scene object after OCCT's `AIS_Axis`. CADKit's `.wipe` axis was also a top-level `Axis`,
+  which made a bare `Axis` ambiguous in any file importing both modules, so it was renamed
+  `ComparisonAxis` in the 3.0.0 betas, with no same-named alias (a deprecated top-level alias
+  brings the ambiguity back). `ManipulatorWidget.Axis` is nested and never collided. `AxisNameCollisionTests`
+  fails to compile if CADKit gains a top-level `Axis` again.
 
 ## Known open work
 
-- **`Axis` exists in both `OCCTSwiftAIS` and `OCCTSwiftCADKit`, on purpose.**
-  `ManipulatorWidget.Axis` is nested and carries widget `direction` and `color`;
-  `OCCTSwiftCADKit.Axis` is the axis a `.wipe` comparison splits along, and mirrors the concept
-  rather than re-exporting a widget type for an unrelated purpose. The shared part is three lines
-  of unit-vector arithmetic. What is worth a second look before 1.0 is not the duplication but the
-  name: `Axis` is a broad thing for this package to claim at the top level of its public surface,
-  and public names are much harder to change after 1.0 than before it.
+Tracked as [issues](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues), not here.
 
 ## Policies
 

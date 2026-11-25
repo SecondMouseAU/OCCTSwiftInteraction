@@ -405,7 +405,7 @@ in the subset the wipe keeps, so each kept triangle shows its own value. Setting
 clears the field, as it does outside a comparison.
 
 See [`ComparisonView`](#comparisonview) / [`ComparisonMode`](#comparisonmode) /
-[`Axis`](#axis) for the full type definitions.
+[`ComparisonAxis`](#comparisonaxis) for the full type definitions.
 
 ### Clipping
 
@@ -1118,23 +1118,26 @@ public enum ComparisonMode: Sendable, Equatable {
     case overlay(referenceOpacity: Double)
     case deviation
     case sideBySide
-    case wipe(axis: Axis, position: Double)
+    case wipe(axis: ComparisonAxis, position: Double)
 }
 ```
 
 See the [Comparison](#comparison) section above for what each case does.
 
-## `Axis`
+## `ComparisonAxis`
 
 ```swift
-public enum Axis: Sendable, Equatable, CaseIterable {
+public enum ComparisonAxis: Sendable, Equatable, CaseIterable {
     case x, y, z
 }
 ```
 
-Axis a `.wipe` comparison splits along. A local mirror of the same concept elsewhere in the
-ecosystem (e.g. `OCCTSwiftAIS.ManipulatorWidget.Axis`), kept separate so this package's
-public surface doesn't couple to a widget-specific type for an unrelated concept.
+Axis a `.wipe` comparison splits along. Called `Axis` until
+[#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60): `OCCTSwiftAIS` also
+declares a top-level `Axis` (its scene-object class), so a file importing both modules could not
+write a bare `Axis`. A call site written `.wipe(axis: .x, position: 0)` is unaffected; only code
+that names the type changes. It is separate from `OCCTSwiftAIS.ManipulatorWidget.Axis`, a widget
+type for an unrelated concept.
 
 ## `ClippingPlane`
 
