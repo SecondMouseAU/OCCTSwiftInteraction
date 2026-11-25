@@ -260,6 +260,7 @@ auto-focus, so call `focus(on:)`.
 |---|---|
 | `loadedShape` | `shape(id:)` / `loadedShapes` |
 | `selected`, `selectedFace` | `selection` (`[PickedEntity]`) |
+| `SelectionSummary` | `SelectionMeasurements` |
 | `selectionSummary` | `selectionMeasurements` |
 | `loadShape(_:id:)` | `load(_:id:transform:)` |
 | `loadFile(from:progress:)` | `loadFile(from:id:progress:)` |
@@ -372,7 +373,8 @@ warning rather than an error today. The reason is a name collision, not a merge:
 `OCCTSwiftUXKit.SelectionSummary` is an unrelated public type (a selection pill's caption and SF
 Symbol, built from `EntityRef` values) sharing no field, no input and no consumer with this one.
 The bakeoff on the issue found nothing to merge, so the collision is resolved by naming, the same
-way OCCTSwiftViewport's `SelectionFilter` was in phase 1.
+way OCCTSwiftViewport's `SelectionFilter` was in phase 1. *Correction (#64): 2.0.0 removed both
+aliases (see "Removed" under 2.0.0).*
 
 **2. `selection` is no longer in the order entries were selected.** It is ordered by (body id,
 kind, ordinal). The underlying store is now a `Set<SubShape>`, so there is no insertion order left
