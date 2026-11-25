@@ -1,10 +1,10 @@
 # OCCTSwiftAIS — implementation spec
 
-This document is a brief for the next agent (Claude or human) picking up implementation. Read it end-to-end before writing code, and read [`docs/visualization-research.md`](https://github.com/gsdali/OCCTSwift/blob/main/docs/visualization-research.md) in the OCCTSwift repo first — it captures *why* this layer exists rather than a TKMetal port.
+This document is a brief for the next agent (Claude or human) picking up implementation. Read it end-to-end before writing code, and read [`docs/visualization-research.md`](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/visualization-research.md) in the OCCTSwift repo first: it captures *why* this layer exists rather than a TKMetal port.
 
 ## What this repo is
 
-The high-level "Application Interactive Services" layer for the OCCTSwift / OCCTSwiftViewport stack. Equivalent in role to OCCT's own [`AIS_InteractiveContext`](https://dev.opencascade.org/doc/refman/html/class_a_i_s___interactive_context.html), but built natively in Swift over the existing Metal renderer in [OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport) — not by porting OCCT's `TKV3d` / `TKService` / `TKOpenGl` toolkits.
+The high-level "Application Interactive Services" layer for the OCCTSwift / OCCTSwiftViewport stack. Equivalent in role to OCCT's own [`AIS_InteractiveContext`](https://dev.opencascade.org/doc/refman/html/class_a_i_s___interactive_context.html), but built natively in Swift over the existing Metal renderer in [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport), not by porting OCCT's `TKV3d` / `TKService` / `TKOpenGl` toolkits.
 
 The headline value: **selection-from-topology** (GPU pick → `TopoDS_Face` / `TopoDS_Edge` / `TopoDS_Vertex`), **manipulator widgets** (translate / rotate gizmos), and **dimension annotations** (linear, angular, radial). These are the three things app developers using OCCTSwiftViewport currently have to build themselves; OCCTSwiftAIS lifts them into a reusable, well-tested package.
 
@@ -116,8 +116,8 @@ public final class InteractiveContext: ObservableObject {
 
 // NOTE (OCCTSwiftInteraction#2): InteractiveObject, SubShape and SubShapeRef now live in the
 // OCCTSwiftTools target, alongside the identity tables and the resolver that mints a ref.
-// OCCTSwiftAIS keeps source-compatible typealiases, so the declarations below still read the
-// same from a caller's point of view.
+// The OCCTSwiftAIS typealiases for them were removed in 3.0.0 (OCCTSwiftInteraction#61), so a
+// caller that names one of the declarations below imports OCCTSwiftTools.
 
 /// Erased reference to something in the scene.
 public struct InteractiveObject: Hashable, Sendable {
@@ -126,7 +126,7 @@ public struct InteractiveObject: Hashable, Sendable {
 }
 
 /// A specific TopoDS_Face / TopoDS_Edge / TopoDS_Vertex inside a displayed shape,
-/// or the whole body. `.face`/`.edge`/`.vertex` carry a `SubShapeRef` — the
+/// or the whole body. `.face`/`.edge`/`.vertex` carry a `SubShapeRef`: the
 /// resolved `Shape`, a durable `BRepGraph.GraphUID` when a graph was in
 /// hand at pick time, and the tessellation-time ordinal (render-path only,
 /// see "Selection survival across mutation" below).
@@ -381,8 +381,10 @@ Match OCCTSwift's conventions exactly. Cribbed verbatim:
 This repo does **not** ship a binary. Pure Swift package. Ships its own visual assets (manipulator meshes, dimension fonts) as bundle resources via `.process(...)` in Package.swift.
 
 ```swift
-// downstream Package.swift dependencies
-.package(url: "https://github.com/gsdali/OCCTSwiftAIS.git",   from: "0.1.0"),
+// downstream Package.swift dependencies. Since the merge (ecosystem#42) OCCTSwiftAIS is a
+// product of OCCTSwiftInteraction, so name the package and the product separately.
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
+// in the target: .product(name: "OCCTSwiftAIS", package: "OCCTSwiftInteraction")
 ```
 
 OCCTSwiftAIS transitively brings OCCTSwiftTools → OCCTSwift + OCCTSwiftViewport.

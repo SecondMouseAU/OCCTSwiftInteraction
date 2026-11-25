@@ -35,6 +35,57 @@ whenever a comparison is applied or undone, which includes the undo and reapply 
 clipping-plane change or a scalar field write runs during a comparison. It is rebuilt once per
 viewport update, not once per step. No API change.
 
+## 3.0.0-beta.8 (2026-11-25)
+
+### Breaking: `Axis` is renamed `ComparisonAxis`
+
+Closes [OCCTSwiftInteraction#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60).
+The axis a `.wipe` comparison splits along was a top-level `Axis`, and `OCCTSwiftAIS` declares a
+top-level `Axis` too (its scene-object class, after OCCT's `AIS_Axis`). A file importing both
+modules could not write a bare `Axis`: the compiler reported "'Axis' is ambiguous for type lookup
+in this context" in a type position, and "ambiguous use of 'Axis'" in an expression such as
+`Axis.self`, until it was module-qualified. CADKit's is now `ComparisonAxis`, so a bare `Axis`
+means `OCCTSwiftAIS.Axis` wherever both are imported.
+
+**Migration:** write `ComparisonAxis` wherever code names CADKit's type, including as
+`OCCTSwiftCADKit.Axis`. A call site that never names it, such as `.wipe(axis: .x, position: 0)`,
+compiles unchanged. Code left on the old name fails to compile rather than changing meaning: with
+AIS imported, `Axis` is a class with no `x`, `y` or `z` and is not the type `.wipe` takes.
+
+There is no deprecated `Axis` typealias. A top-level alias of that name keeps the name, and with it
+the ambiguity the rename removes: tried, it fails the new `AxisNameCollisionTests` with the same
+"ambiguous for type lookup" error. No consumer in the fleet names the type today.
+
+### Docs: the bridge ADR now says a handled request file is deleted
+
+Closes [OCCTSwiftInteraction#63](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/63).
+The selection bridge ADR said in one place that a request file stays in `highlight_requests/`
+after it is handled, "not moved or deleted", so a client could read it back beside its outcome,
+and in another that the host may delete it as an implementation detail. The sidecar has always
+deleted it once `handled/<id>.json` is written. Both passages now say that, as part of the
+contract: the outcome is written first, the request file is deleted after, and a client keeps its
+own copy of what it sent. Neither OCCTMCP nor ACADStudio reads a request back. No behaviour
+change.
+
+### Fixed: a blank question opened an escalation card with nothing to read
+
+Closes [OCCTSwiftInteraction#62](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/62).
+The sidecar treated a `highlight_requests` request as an escalation whenever its `question` was not
+the empty string, so a question of only spaces, or only characters that draw nothing (a zero-width
+space, U+3164 HANGUL FILLER, U+2800 BRAILLE PATTERN BLANK), opened an escalation card with a blank
+question, and selected the entity whatever `target` said. A question is now no question when it is
+absent, empty, or draws nothing by the rule a label is judged by (#54). A request carrying one opens
+no escalation and lands exactly where a request without a question lands: in the attention marker
+by default, with its `label` held, or in the selection under `target: "selection"`, where a whole
+body is selected rather than rejected. On `applied`, a non-empty question dropped this way is
+reported in the handled file's `reason` (`question dropped: it has no visible character`), joined
+with `; ` ahead of any label reason; an empty one is dropped without a reason, as before. A
+question with a visible character still escalates, shown exactly as sent. No API change. OCCTMCP's
+`highlight_selection` still treats an empty or blank question as a question, so it skips its
+attention-side checks for one, writes no `label` and lets `kind: "body"` through to the host;
+filed as [OCCTMCP#293](https://github.com/SecondMouseAU/OCCTMCP/issues/293).
+Contract: `okf/decisions/agent-viewport-selection-bridge.md`.
+
 ### Fixed: a pick on a body cut by a wipe comparison named the wrong face
 
 Closes [OCCTSwiftInteraction#58](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/58).
@@ -332,6 +383,7 @@ auto-focus, so call `focus(on:)`.
 |---|---|
 | `loadedShape` | `shape(id:)` / `loadedShapes` |
 | `selected`, `selectedFace` | `selection` (`[PickedEntity]`) |
+| `SelectionSummary` | `SelectionMeasurements` |
 | `selectionSummary` | `selectionMeasurements` |
 | `loadShape(_:id:)` | `load(_:id:transform:)` |
 | `loadFile(from:progress:)` | `loadFile(from:id:progress:)` |
@@ -339,7 +391,9 @@ auto-focus, so call `focus(on:)`.
 | `CADViewportView.init(bodies:controller:selected:...)`, `init(...selectedFace:...)` | `init(...selection:...)` |
 
 Adds the two fixes that landed after 2.0.0-rc3 (`CADViewportView` frozen bodies, face highlight
-z-fighting). Everything else below was in the release candidates.
+z-fighting). Everything else here shipped earlier: the removal above and the platform narrowing in
+2.0.0-rc1, the sidecar in 2.0.0-rc3, #7 in 0.2.0 and #3 in 0.1.0. This changelog's first release
+heading is 2.0.0, so they are filed here rather than under those releases.
 
 ### Fixed: `CADViewportView` froze its bodies at first render
 
@@ -385,7 +439,7 @@ New: `CADViewportError.sidecarHostAlreadyRunning`.
 
 ### Platforms narrowed to iOS and macOS
 
-A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
+A blocker for the stable line, planned as 1.0.0 at the time and shipped as 2.0.0. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
 
 The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared, so as not to regress the two targets with the most dependents. That reasoning was wrong in a way invisible from the manifests: the wider claim was never true for any of the three, so there was nothing to regress. Root cause is filed upstream as [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 
@@ -442,7 +496,8 @@ warning rather than an error today. The reason is a name collision, not a merge:
 `OCCTSwiftUXKit.SelectionSummary` is an unrelated public type (a selection pill's caption and SF
 Symbol, built from `EntityRef` values) sharing no field, no input and no consumer with this one.
 The bakeoff on the issue found nothing to merge, so the collision is resolved by naming, the same
-way OCCTSwiftViewport's `SelectionFilter` was in phase 1.
+way OCCTSwiftViewport's `SelectionFilter` was in phase 1. *Correction (#64): 2.0.0 removed both
+aliases (see "Removed" under 2.0.0).*
 
 **2. `selection` is no longer in the order entries were selected.** It is ordered by (body id,
 kind, ordinal). The underlying store is now a `Set<SubShape>`, so there is no insertion order left

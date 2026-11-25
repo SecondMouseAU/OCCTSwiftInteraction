@@ -9,6 +9,39 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
+## 3.0.0-beta.8 (2026-11-25)
+
+### Breaking: the `InteractiveObject`, `SubShapeRef` and `SubShape` aliases are removed
+
+Closes [OCCTSwiftInteraction#61](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/61).
+The three types moved down to `OCCTSwiftTools` in 0.1.0
+([#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2)), and this target kept
+typealiases for them so that `import OCCTSwiftAIS` alone still resolved the names. The aliases were
+deprecated in 2.0.0 with a message naming 3.0.0 as the release that removes them, and this is that
+removal: `OCCTSwiftAIS` no longer declares any of the three names.
+
+**Migration.** A file that spells `InteractiveObject`, `SubShapeRef` or `SubShape` and imports only
+`OCCTSwiftAIS` adds `import OCCTSwiftTools`, and its target lists the `OCCTSwiftTools` product if it
+does not already. Each alias denoted the identical type, so nothing else changes, and under 2.x
+every affected line already carried the deprecation warning. Code that never spells one of the
+names (holding the result of `display(_:)`, reading `selection`, writing `.face(object, ref: ref)`)
+is unaffected. [MIGRATION.md](MIGRATION.md) has the same recipe.
+
+Nothing inside the package resolved through the aliases: since 2.0.0 this target's own code names
+the `OCCTSwiftTools` types qualified, so no library code changes beyond deleting the alias file.
+The one test that named an alias, on purpose, is covered below.
+
+**Tests:** 1 new here (`MovedSelectionTypesTests`), which imports `OCCTSwiftAIS` without
+`@testable` plus `OCCTSwiftTools`, the way a migrated consumer does, and spells all three names
+unqualified through the public `InteractiveContext` and `Selection` API. Every other use in this
+test target is qualified, so it is where an ambiguous name would surface. The CADKit target's
+`Smoke` test, which used to pin the AIS and Tools spellings to one type, now spells the names
+unqualified with all three modules imported, the shape of a CADKit consumer. Both were
+mutation-checked: declaring a different `InteractiveObject`, `SubShapeRef` and `SubShape` in this
+target fails each of them with "ambiguous for type lookup" at every name, and fails no other file.
+Neither can notice the aliases being added back, because an alias to the same type is not
+ambiguous. 476 to 477 tests in 44 to 45 suites, all passing.
+
 ## 2.0.0-rc3 (2026-08-23)
 
 ### New: `PresentationStyle.agentHighlight`
@@ -21,11 +54,29 @@ this" at a glance. Applied by `OCCTSwiftCADKit.CADViewportService
 .startSelectionSidecar(directory:)` to a highlight request resolved with no `question`.
 Purely additive; every existing preset is unchanged.
 
+## 2.0.0-rc2 (2026-08-21)
+
+### Deprecated: the `InteractiveObject`, `SubShapeRef` and `SubShape` aliases
+
+Landed in [OCCTSwiftInteraction#15](https://github.com/SecondMouseAU/OCCTSwiftInteraction/pull/15).
+The three types moved to `OCCTSwiftTools` in 0.1.0 (#2, below), which left source-compatible
+typealiases here. They are now marked `@available(*, deprecated)`, with a message naming 3.0.0 as
+the removal point. The aliases themselves stay through 2.0.0.
+
+The 0.1.0 entry below explains why they were left un-deprecated then: a same-module typealias
+shadows the imported type it aliases, so deprecating them warned at every one of this target's own
+uses, not only at a consumer's. That is now fixed at the source. This target names the canonical
+`OCCTSwiftTools.*` types directly at all 72 sites, so the deprecation reaches only consumers.
+
+**Consumers that import `OCCTSwiftAIS` and name these three types unqualified now see warnings.**
+The fix is to `import OCCTSwiftTools` and name them there; the types are identical, so nothing else
+changes.
+
 ## 2.0.0-rc1 (2026-08-21)
 
 ### Platforms narrowed to iOS and macOS
 
-A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
+A blocker for the stable line, planned as 1.0.0 at the time and shipped as 2.0.0. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
 
 The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared, so as not to regress the two targets with the most dependents. That reasoning was wrong in a way invisible from the manifests: the wider claim was never true for any of the three, so there was nothing to regress. Root cause is filed upstream as [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 
@@ -97,6 +148,37 @@ end through `handlePick` (previously uncovered on this path) and the corollary t
 no pick points is still not vertex-pickable. 1 more in the CADKit target's `Smoke` suite, which
 imports both targets and so is where the typealiases would show up as an ambiguous name if they
 ever stopped denoting the same types.
+
+### The shared-face test asserts `IsSame` identity, and passes again
+
+Closes [OCCTSwiftInteraction#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1),
+phase 0 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43). Resolves the known
+failure recorded under v1.3.2 below.
+
+`t_sharedFaceBetweenShells_everyPickResolvesToCorrectSubShape` failed 5 expectations because it
+asserted the raw-versus-deduplicated `Shape.faces()` split (7 occurrences against 6 faces) that
+OCCTSwift 2.0.0 erased. #1 decided that face identity is OCCT's `IsSame`, with `faces()` as its
+enumeration (see the OCCTSwiftTools changelog under 0.1.0), so the production code was already
+correct and the test's premise was the stale half. No source change in this target.
+
+The test was rewritten to be stronger, not relaxed:
+
+- It asserts `orientedFaces().count == 7`, so the occurrence distinction the fixture exists for is
+  still pinned down.
+- It locates the shared face by `isSame(as:)` rather than by hardcoded ordinals 0 and 3: under
+  deduplication, ordinal 3 is simply a different face.
+- New: both shells' copies of the shared face must reach the mesh. The shared ordinal's triangles
+  must form exactly two vertex-disjoint groups covering the same geometry, read off the mesh rather
+  than the identity table. Nothing covered a dropped copy before.
+- Every triangle of the shared face, from both copies, is driven through `handlePick` and must
+  resolve to the one durable uid.
+
+Also audited this target against OCCTSwift 2.0.0's break table, which had never been done. Its only
+contact is `Shape.subShape(type:index:)` at three sites in `InteractiveContext.swift`, each a
+fallback behind an identity table, and OCCTSwift moved both sides of that fallback onto the same
+enumeration.
+
+**Tests:** package total unchanged at 314 in 27 suites, now with 0 failures (was 5).
 
 ## v1.3.2 (2026-08-19)
 

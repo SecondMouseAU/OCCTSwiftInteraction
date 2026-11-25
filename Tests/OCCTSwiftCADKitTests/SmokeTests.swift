@@ -68,26 +68,23 @@ struct SmokeTests {
         #expect(bounds.height == 5)
     }
 
-    /// The source-compatibility half of OCCTSwiftInteraction#2.
+    /// The types OCCTSwiftInteraction#2 moved to `OCCTSwiftTools`, named as a CADKit consumer does.
     ///
-    /// `InteractiveObject`, `SubShapeRef` and `SubShape` moved to `OCCTSwiftTools`, with
-    /// typealiases left in `OCCTSwiftAIS`. This target imports both, which is the realistic
-    /// consumer shape, so it is where a name that resolved ambiguously would show up. Written
-    /// against the unqualified names on purpose, plus one explicit round trip between the two
-    /// spellings to pin that they denote the same type rather than two similar ones.
-    @Test("The moved sub-shape types resolve when both targets are imported")
-    func movedSubShapeTypesResolveFromBothTargets() throws {
+    /// `InteractiveObject`, `SubShapeRef` and `SubShape` live only in `OCCTSwiftTools` since the
+    /// `OCCTSwiftAIS` aliases were removed (#61). This target imports CADKit, AIS and Tools
+    /// together, the realistic consumer shape, so it is where a name that resolved ambiguously
+    /// would show up. Written against the unqualified names on purpose, and as type annotations,
+    /// since an initialiser call would let overload resolution settle an ambiguous name quietly.
+    @Test("The moved sub-shape types resolve when CADKit, AIS and Tools are all imported")
+    func movedSubShapeTypesResolveWithEveryTargetImported() throws {
         let box = try #require(Shape.box(width: 2, height: 2, depth: 2))
-        let object = OCCTSwiftTools.InteractiveObject(shape: box)
-        let ref = OCCTSwiftTools.SubShapeRef(shape: box, ordinal: 0)
-        let sub: OCCTSwiftTools.SubShape = .face(object, ref: ref)
+        let object: InteractiveObject = .init(shape: box)
+        let ref: SubShapeRef = .init(shape: box, ordinal: 0)
+        let sub: SubShape = .face(object, ref: ref)
 
         #expect(sub.object == object)
         #expect(sub.ref == ref)
-
-        let viaTools: OCCTSwiftTools.SubShapeRef = ref
-        let viaAIS: OCCTSwiftAIS.SubShapeRef = viaTools
-        #expect(viaAIS.ordinal == 0)
+        #expect(sub.ref?.ordinal == 0)
     }
 
     /// Regression for #25, updated for OCCTSwift v2.0.0 (issue #54). Originally, a face shared

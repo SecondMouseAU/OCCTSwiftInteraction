@@ -114,8 +114,10 @@ Phase 2 of ecosystem#43, done in
 
 `OCCTSwiftTools.SubShapePickResolver` is the only place a render-path ordinal becomes a
 `SubShapeRef`. Both this repo's own targets call it; do not write a fourth copy. `SubShapeRef`,
-`SubShape` and `InteractiveObject` live in `OCCTSwiftTools` for the same reason, with
-source-compatible typealiases left in `OCCTSwiftAIS`, deprecated since 2.0.0.
+`SubShape` and `InteractiveObject` live in `OCCTSwiftTools` for the same reason, and only there:
+the typealiases `OCCTSwiftAIS` kept for them (deprecated in 2.0.0) were removed in 3.0.0
+([#61](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/61)), so code that names one
+imports `OCCTSwiftTools`. Do not add them back.
 
 Three behaviours look like the resolver's job and are not, so they stayed where they were:
 
@@ -202,7 +204,16 @@ What did **not** merge, and why:
   overwrite each other. That is also why CADKit's bodies are not registered as context entries.
 - **The clip-plane pre-filter stays in CADKit.** It tests the picked primitive's position, which
   an AIS `SelectionFilter` (which sees a resolved `SubShape`) cannot express.
-- **`Axis` in both targets was never a collision**: AIS's is nested inside `ManipulatorWidget`.
+- **`Axis` in both targets was a collision, and CADKit's is now `ComparisonAxis`**
+  ([#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60)). Not the nested
+  `ManipulatorWidget.Axis`, which never collided: AIS also declares a top-level `Axis` (the scene
+  object after OCCT's `AIS_Axis`), and CADKit declared a top-level `Axis` for the `.wipe`
+  comparison. CADKit compiled because its own declaration shadows the import, but a consumer file
+  importing both modules got "'Axis' is ambiguous for type lookup" on a bare `Axis`. CADKit's was
+  the one renamed, in the 3.0.0 betas, because it only parameterises one enum case while AIS's
+  mirrors an OCCT class. There is no same-named alias: a deprecated top-level `typealias Axis`
+  brings the ambiguity straight back (checked by mutation). `AxisNameCollisionTests` imports both
+  modules and writes a bare `Axis`, so a top-level `Axis` reintroduced in CADKit fails to compile.
 - **`SelectionSummary` was never a duplicate of OCCTSwiftUX's.** Different fields, different
   inputs, no shared consumer, and OCCTSwiftUX takes only the `OCCTSwiftTools` and `OCCTSwiftAIS`
   products, not `OCCTSwiftCADKit`. Resolved by naming: CADKit's is now `SelectionMeasurements`;
@@ -241,6 +252,13 @@ Per-type reference for all three targets is in [docs/reference/](docs/reference/
 - **CODE_OF_CONDUCT.md**: a short pointer to Contributor Covenant 2.1 only. Never inline the full
   Covenant text.
 - **Release pattern**: commit, push, tag, and create a GitHub release with notes.
+- **A stable release also moves every file that names the current stable version**: the
+  Versioning paragraph above, `README.md`'s status line, `okf/index.md` (the stable floors under
+  "Depends on", and the Versions note), `docs/MIGRATION.md` (its snippet and its list of source
+  changes), the install snippets in `docs/guides/getting-started-*.md` and `docs/index-*.md` (and
+  the CADKit guide's note on what it uses beyond the stable line), and the stable-line remarks in
+  `Package.swift`'s dependency comments. Grep for the outgoing version, outside the changelogs, to
+  catch one this list misses.
 
 ## Platforms are iOS and macOS, and that is settled
 
@@ -255,10 +273,6 @@ planned as 1.0.0 at the time), inherited from the union of what the three pre-me
 declared. The claim was never true for any of the three.
 Root cause is filed upstream as
 [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
-
-## Still to finish after the merge
-
-- `okf/index.md` describes the OCCTSwiftTools half in more detail than the other two.
 
 ## Ecosystem context worth reading before non-trivial changes
 

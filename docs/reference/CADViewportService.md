@@ -409,7 +409,7 @@ in the subset the wipe keeps, so each kept triangle shows its own value. Setting
 clears the field, as it does outside a comparison.
 
 See [`ComparisonView`](#comparisonview) / [`ComparisonMode`](#comparisonmode) /
-[`Axis`](#axis) for the full type definitions.
+[`ComparisonAxis`](#comparisonaxis) for the full type definitions.
 
 ### Clipping
 
@@ -560,7 +560,7 @@ format: `okf/decisions/agent-viewport-selection-bridge.md`.
 ```swift
 try viewport.startSelectionSidecar(directory: sceneDirectory, hostName: "ACADStudio", hostVersion: "1.4.2")
 // ... an MCP-side agent drops highlight_requests/<id>.json, this service applies it,
-// and moves it to highlight_requests/handled/<id>.json with an outcome ...
+// writes the outcome to highlight_requests/handled/<id>.json, then deletes the request ...
 viewport.stopSelectionSidecar()
 ```
 
@@ -576,10 +576,22 @@ viewport.stopSelectionSidecar()
   per the ADR's single-host-per-directory liveness contract. Throws
   `CADViewportError.sidecarHostAlreadyRunning` if another process already holds it. A start that
   throws partway stops the sidecar again, so nothing is left held.
+- Each request gets one `handled/<id>.json` outcome, and the request file is deleted once that
+  outcome is written, never before (#63), so a client reads the outcome back, not the request. A
+  request file that does not decode, or whose `id` is not its filename stem, gets no outcome and is
+  left in place.
 - A highlight request naming a `bodyId` that isn't loaded, or a `kind`/`index` that doesn't
-  resolve, is moved to `handled/` with `outcome: "rejected"` and a reason, never silently
+  resolve, is answered in `handled/` with `outcome: "rejected"` and a reason, never silently
   dropped. A request carrying a `question` is presented via `present(_:)` instead of a plain
-  `select(_:scheme:)`, mapping onto a single-entity `EscalationRequest`.
+  `select(_:scheme:)`, mapping onto a single-entity `EscalationRequest`, with the question shown
+  exactly as sent.
+- A `question` that is absent, empty, or draws nothing (`AgentAttentionLabel.isBlank(_:)`, the rule
+  a label is judged by below) is no question (#62). Its request opens no escalation and lands
+  exactly where a request without a question would, `label` and `target` included, so a blank
+  question can no longer open a card with nothing to read. A dropped non-empty question puts
+  `question dropped: it has no visible character` in the handled file's `reason` on `applied`,
+  joined with `; ` ahead of any label reason; an empty one is dropped silently, as an empty label
+  is. `HighlightRequestPayload.escalationQuestion` is the one place the rule lives.
 - An entity highlighted this way (not via a real pick or a caller's own
   `select(_:scheme:)`) renders with `PresentationStyle.agentHighlight`'s distinct hollow
   treatment instead of the ordinary yellow/cyan/magenta selection color, so a viewer can
@@ -587,7 +599,8 @@ viewport.stopSelectionSidecar()
 - A request lands in `agentAttention` by default (`target` absent or `"attention"`), not in
   `selection`: one entity at a time, human selection untouched, rendering left to the host.
   `target: "selection"` is the explicit opt-in to the behaviour described above, and a request with
-  a `question` always selects. `setAgentAttention(_:label:)` sets or clears the marker directly.
+  a `question` (one with a visible character, as above) always selects.
+  `setAgentAttention(_:label:)` sets or clears the marker directly.
   An optional `label` on the request lands in `agentAttentionLabel`, which is nil whenever
   `agentAttention` is nil and is replaced or cleared with it (#35).
   See the ADR and OCCTSwiftInteraction#29.
@@ -1122,23 +1135,26 @@ public enum ComparisonMode: Sendable, Equatable {
     case overlay(referenceOpacity: Double)
     case deviation
     case sideBySide
-    case wipe(axis: Axis, position: Double)
+    case wipe(axis: ComparisonAxis, position: Double)
 }
 ```
 
 See the [Comparison](#comparison) section above for what each case does.
 
-## `Axis`
+## `ComparisonAxis`
 
 ```swift
-public enum Axis: Sendable, Equatable, CaseIterable {
+public enum ComparisonAxis: Sendable, Equatable, CaseIterable {
     case x, y, z
 }
 ```
 
-Axis a `.wipe` comparison splits along. A local mirror of the same concept elsewhere in the
-ecosystem (e.g. `OCCTSwiftAIS.ManipulatorWidget.Axis`), kept separate so this package's
-public surface doesn't couple to a widget-specific type for an unrelated concept.
+Axis a `.wipe` comparison splits along. Called `Axis` until
+[#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60): `OCCTSwiftAIS` also
+declares a top-level `Axis` (its scene-object class), so a file importing both modules could not
+write a bare `Axis`. A call site written `.wipe(axis: .x, position: 0)` is unaffected; only code
+that names the type changes. It is separate from `OCCTSwiftAIS.ManipulatorWidget.Axis`, a widget
+type for an unrelated concept.
 
 ## `ClippingPlane`
 

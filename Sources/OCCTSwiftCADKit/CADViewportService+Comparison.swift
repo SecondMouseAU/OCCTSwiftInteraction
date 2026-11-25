@@ -207,7 +207,9 @@ extension CADViewportService {
     /// `ViewportBody`), so it can't show reference and candidate on opposite sides of the same
     /// plane; this filters each body's own triangles instead. See `wipeFiltered` for what that
     /// drops. Records which triangles each body kept in `wipeKeptTriangles`.
-    private func applyWipe(referenceID: String, candidateID: String, axis: Axis, position: Double) {
+    private func applyWipe(
+        referenceID: String, candidateID: String, axis: ComparisonAxis, position: Double
+    ) {
         let axisVector = axis.unitVector
         let planePosition = Float(position)
         for (entityID, keepBelow) in [(referenceID, true), (candidateID, false)] {

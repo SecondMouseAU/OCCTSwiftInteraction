@@ -19,6 +19,7 @@ Changing it clears the current selection.
 import OCCTSwift
 import OCCTSwiftViewport
 import OCCTSwiftAIS
+import OCCTSwiftTools   // SubShapeRef, used further down
 
 let ais = InteractiveContext(viewport: ViewportController())
 if let part = Shape.box(width: 10, height: 5, depth: 3) {
@@ -71,8 +72,10 @@ public struct SubShapeRef: Hashable, Sendable {
 - **`ordinal`** is render-path-only (highlight overlays index per-triangle buffers by it); never
   compare sub-shapes by ordinal alone.
 
-`SubShape`, `SubShapeRef` and `InteractiveObject` are `OCCTSwiftTools` types; `import OCCTSwiftAIS`
-alone still resolves all three via source-compatible typealiases, deprecated since 2.0.0.
+`SubShape`, `SubShapeRef` and `InteractiveObject` are `OCCTSwiftTools` types, so code that spells
+one of the three names needs `import OCCTSwiftTools` as well as `import OCCTSwiftAIS` (the
+`OCCTSwiftAIS` aliases for them were removed in 3.0.0). Code that only reads `ais.selection` or
+writes `.face(obj, ref: ...)` lets the type be inferred and needs no extra import.
 `handlePick` mints the ref through
 [`SubShapePickResolver`](../../reference/SubShapePickResolver), the one resolver shared by every
 layer above the bridge. Resolve a pick yourself only if you are not going through
