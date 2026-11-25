@@ -16,8 +16,22 @@ Sources/OCCTSwiftCADKit    Tests/OCCTSwiftCADKitTests
 Module names are unchanged, so consumers keep their existing `import` lines and changed only the
 package reference in their manifests. See [docs/MIGRATION.md](docs/MIGRATION.md).
 
-Version line starts at `0.x`, reaching `1.0.0` once the picking consolidation (ecosystem#43) has
-landed and settled. The three old version lines do not continue here.
+**Versioning** ([#13](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/13)). The
+package released `0.1.0` and `0.2.0`, then started its stable line at `2.0.0` rather than `1.0.0`:
+the merge brought the three old repositories' tags with it, so `v1.0.0` to `v1.6.4` (and `v0.2.1`
+to `v0.7.2`) name pre-merge commits, and the Tools and AIS changelogs carry many of them as
+headings. `v0.1.0` and `v0.2.0` had each been force-moved off an inherited tag onto this package's
+release; starting at `2.0.0` meant no further tag had to move. Never reuse another of those
+version numbers, and never move or re-point a tag. The inherited tags are no longer on this
+repository's GitHub remote, which carries only this package's own (the three old repositories
+still hold theirs), but older local clones of this repository still hold them, so neither a fresh
+clone nor a remote tag listing will warn you of a collision.
+
+`2.0.0` is the current stable release. `3.0.0` exists only as pre-releases (`3.0.0-beta.N`, each
+pinned exactly to an OCCTSwift `4.0.0-beta`), which a consumer gets only by naming one. It is a
+major because OCCTSwift 4.0.0 replaced the untyped GD&T types that `CADLoadResult` exposes
+(OCCTSwift#996), not because it tracks OCCTSwift's version number. The three old version lines do
+not continue here.
 
 ## Layering, and the one rule that matters
 
@@ -67,8 +81,8 @@ OCCTSwift; do not "fix" it by re-enabling parallelism.
 before concluding anything compiles. This is not pedantry: during the OCCTSwift v3.0.0 fanout,
 OCCTSwiftIO built clean with zero errors while carrying three real breaks in its test target.
 
-Dependencies resolve against local siblings when present (`../OCCTSwift` and friends), else the
-published URLs. No binary lives in this repo.
+Every dependency resolves from its published URL, never from a `../<name>` sibling checkout
+(ecosystem#51; the reasoning is at the top of `Package.swift`). No binary lives in this repo.
 
 Expected test counts: [okf/references/test-baseline.md](okf/references/test-baseline.md).
 
@@ -101,7 +115,7 @@ Phase 2 of ecosystem#43, done in
 `OCCTSwiftTools.SubShapePickResolver` is the only place a render-path ordinal becomes a
 `SubShapeRef`. Both this repo's own targets call it; do not write a fourth copy. `SubShapeRef`,
 `SubShape` and `InteractiveObject` live in `OCCTSwiftTools` for the same reason, with
-source-compatible typealiases left in `OCCTSwiftAIS`.
+source-compatible typealiases left in `OCCTSwiftAIS`, deprecated since 2.0.0.
 
 Three behaviours look like the resolver's job and are not, so they stayed where they were:
 
@@ -190,8 +204,9 @@ What did **not** merge, and why:
   an AIS `SelectionFilter` (which sees a resolved `SubShape`) cannot express.
 - **`Axis` in both targets was never a collision**: AIS's is nested inside `ManipulatorWidget`.
 - **`SelectionSummary` was never a duplicate of OCCTSwiftUX's.** Different fields, different
-  inputs, no shared consumer, and OCCTSwiftUX does not depend on this package at all. Resolved
-  by naming: CADKit's is now `SelectionMeasurements`, with a deprecated alias.
+  inputs, no shared consumer, and OCCTSwiftUX takes only the `OCCTSwiftTools` and `OCCTSwiftAIS`
+  products, not `OCCTSwiftCADKit`. Resolved by naming: CADKit's is now `SelectionMeasurements`;
+  the deprecated `SelectionSummary` alias was removed in 2.0.0.
 
 `ComesFromDecomposition` is settled and is **not** going on `SubShapeRef`: `SubShape` is a sum
 type, so `ref == nil` already is "whole body", and the resolver can never mint a whole-body ref.
@@ -235,8 +250,9 @@ else: `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64
 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS
 or tvOS cannot link at all.
 
-The manifest declared `.visionOS(.v1)` and `.tvOS(.v18)` until the 1.0.0 sweep, inherited from the
-union of what the three pre-merge manifests declared. The claim was never true for any of the three.
+The manifest declared `.visionOS(.v1)` and `.tvOS(.v18)` until 2.0.0-rc1 (the pre-stable sweep,
+planned as 1.0.0 at the time), inherited from the union of what the three pre-merge manifests
+declared. The claim was never true for any of the three.
 Root cause is filed upstream as
 [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 

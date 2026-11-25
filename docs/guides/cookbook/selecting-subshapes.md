@@ -72,7 +72,8 @@ public struct SubShapeRef: Hashable, Sendable {
   compare sub-shapes by ordinal alone.
 
 `SubShape`, `SubShapeRef` and `InteractiveObject` are `OCCTSwiftTools` types; `import OCCTSwiftAIS`
-alone still resolves all three via source-compatible typealiases. `handlePick` mints the ref through
+alone still resolves all three via source-compatible typealiases, deprecated since 2.0.0.
+`handlePick` mints the ref through
 [`SubShapePickResolver`](../../reference/SubShapePickResolver), the one resolver shared by every
 layer above the bridge. Resolve a pick yourself only if you are not going through
 `InteractiveContext`, and then call that rather than indexing an enumeration by hand.

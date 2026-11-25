@@ -1,8 +1,10 @@
 # Changelog
 
-Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
+Most recent first. The pre-merge repository was free to break before v1.0.0 and SemVer-stable from it, per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md). The merged package was pre-stable again through 0.x and is SemVer-stable from 2.0.0.
 
 ## Unreleased
+
+## 2.0.0-rc1 (2026-08-21)
 
 ### Platforms narrowed to iOS and macOS
 
@@ -26,6 +28,8 @@ The failure now degrades instead of corrupting: the one ordinal that failed lose
 
 **Tests:** 3 new in the `ShapeIdentity` suite, 360 total. A genuine conversion failure cannot be provoked through the public API (every `Face` and `Edge` the enumerations hand back already holds a live handle), so they drive it through a new internal seam on `ShapeIdentity.init`, which takes the two conversions as parameters. Same treatment, and same reason, as `edgePolylineOnlyBridge`. Mutation-checked: reinstating `compactMap` fails all three and no others, which also confirms the issue's claim that the shared-face regression test does not catch this, since its fixture converts cleanly.
 
+## 0.2.0 (2026-08-20)
+
 ### One canonical identity-table builder, and a file load can finally return identity
 
 Closes [OCCTSwiftInteraction#7](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/7).
@@ -48,6 +52,11 @@ New API, both additions:
 **Tests:** 14 new across two new suites (`ShapeIdentity`, `CADFileLoader identity`), 357 total. The failure cases the three copies disagreed about (nil graph, no faces, the edge-polyline-only branch, and the shape-to-body pairing) had no shared coverage at all before. The pairing test asserts by geometry rather than by index, and was mutation-checked: deliberately shifting the pairing inside the loader fails it.
 
 **One thing in the issue that did not survive contact with the code.** The issue describes `CADViewportService`'s count-mismatch guard as the thing to preserve. Two of its three implementations were redundant: `loadFile(from:id:)` pre-detected the mismatch at the call site *and* `addIdentity` re-detected it, and `rebuildIdentity`'s wholesale wipe ran against dictionaries `resetAllModelState()` had emptied a line earlier. All of it is gone, because the hazard it detected cannot arise once the loader keys identity by body id.
+
+## 0.1.0 (2026-08-19)
+
+First release of the merged OCCTSwiftInteraction package, which versions this target from here on.
+Every older version heading in this file is a release of the pre-merge OCCTSwiftTools repository.
 
 ### One canonical pick resolver, and the types that name picked topology move down here
 
@@ -419,4 +428,4 @@ Initial release. Lifts the `OCCTSwiftTools` sub-product out of OCCTSwiftViewport
 
 **Test invocation:** `OCCT_SERIAL=1 swift test --parallel --num-workers 1`. The env var + serial workers are required, not optional, due to a known NCollection container-overflow race in OCCT on arm64 macOS.
 
-**Platform floor:** iOS 18 / macOS 15 / visionOS 1 / tvOS 18, the higher of OCCTSwift's and OCCTSwiftViewport's floors. (What that release declared. The visionOS / tvOS half was never true, and was dropped before 1.0.0; see the Unreleased entry above.)
+**Platform floor:** iOS 18 / macOS 15 / visionOS 1 / tvOS 18, the higher of OCCTSwift's and OCCTSwiftViewport's floors. (What that release declared. The visionOS / tvOS half was never true, and was dropped in 2.0.0-rc1; see that entry above.)
