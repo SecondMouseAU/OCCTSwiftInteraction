@@ -12,6 +12,8 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+## 3.0.0-beta.8 (2026-11-25)
+
 ### Breaking: `Axis` is renamed `ComparisonAxis`
 
 Closes [OCCTSwiftInteraction#60](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/60).
