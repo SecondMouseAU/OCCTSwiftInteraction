@@ -26,6 +26,7 @@ name: tests
 
 on:
   push:
+    branches: [main]
     paths:
       - 'Sources/**'
       - 'Tests/**'
@@ -38,6 +39,20 @@ on:
       - 'Package.*'
       - '.github/workflows/tests.yml'
   workflow_dispatch:
+
+# One run per workflow per pull request (or per branch, for a push): a new commit cancels the
+# queued or running job for the commit it replaces, so a busy branch does not stack up runs for
+# commits nobody will merge. Runs on main are grouped by commit instead, so none is cancelled
+# or replaced (a shared group would still drop a queued run when a third arrives) and every
+# commit that lands there keeps a full result. `push` is limited to main because a pull request
+# already gets a `pull_request` run for the same commit, and running both doubled the macOS
+# queue. A branch with no pull request open gets no automatic run; use workflow_dispatch if one
+# is wanted.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha
+    || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
