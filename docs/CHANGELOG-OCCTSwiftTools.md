@@ -4,11 +4,23 @@ Most recent first. The pre-merge repository was free to break before v1.0.0 and 
 
 ## Unreleased
 
+## 3.0.0-beta.1 (2026-09-29)
+
+**Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.4.** A consumer only gets this by naming it; the stable line stays at 2.0.0.
+
+### Breaking: `CADLoadResult`'s GD&T element types
+
+OCCTSwift 4.0.0 replaces the untyped `DimensionInfo`, `GeomToleranceInfo` and `DatumInfo` with the typed `Document.Dimension`, `Document.GeomTolerance` and `Document.Datum` ([OCCTSwift#996](https://github.com/SecondMouseAU/OCCTSwift/issues/996)). `CADLoadResult.dimensions`, `.geomTolerances` and `.datums`, and their initializer parameters, use the new types, so the major version moves. `Document.Dimension.value` is `Double?` and a range dimension reports its bounds through `.bounds`.
+
+`CADLoadResult` is this target's type, so this is the break behind the 3.0.0 major. The [CADKit changelog](CHANGELOG-OCCTSwiftCADKit.md) records the same change under its own 3.0.0-beta.1 heading, with the dependency reasoning.
+
+**Dependencies:** `OCCTSwift exact: "4.0.0-beta.4"` (exact, because `v4.0.0-kernel.N` tags sort above every beta and a `from:` range would resolve to one of them) and `OCCTSwiftIO from: "2.0.0-beta.1"`, the release that carries the same GD&T type change.
+
 ## 2.0.0-rc1 (2026-08-21)
 
 ### Platforms narrowed to iOS and macOS
 
-A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
+A blocker for the stable line, planned as 1.0.0 at the time and shipped as 2.0.0. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
 
 The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared, so as not to regress the two targets with the most dependents. That reasoning was wrong in a way invisible from the manifests: the wider claim was never true for any of the three, so there was nothing to regress. Root cause is filed upstream as [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 
@@ -16,7 +28,7 @@ The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKi
 
 ### A failed sub-shape conversion no longer shifts every later ordinal
 
-Closes [OCCTSwiftInteraction#9](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/9). A 1.0.0 blocker.
+Closes [OCCTSwiftInteraction#9](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/9). A blocker for the stable line, planned as 1.0.0 at the time and shipped as 2.0.0.
 
 `ShapeIdentity` built its face and edge tables with `compactMap`, so a failed `Shape.fromFace` / `Shape.fromEdge` was dropped rather than held in place. The ordinals in `ViewportBody.faceIndices` index the **full** `faces()` enumeration, because that is what the mesher walks, so one failure at ordinal `k` moved every later face down one: `shapes[ordinal]` returned the face *after* the one the pick hit, and `uid(forOrdinal:)` minted a durable identity for it. No error, no assertion, no diagnostic. The pick resolved and highlighted confidently on a neighbour.
 
@@ -72,6 +84,26 @@ New API:
 **Deliberately not absorbed**, per the behaviour matrix on ecosystem#43: clip-plane awareness (the caller's, since clip planes are the viewport service's state and this target has no business knowing about them), geometry enrichment (presentation, and it belongs above), and the whole-body fallback (a selection-mode decision, so it stays in `OCCTSwiftAIS`). The shared resolver is the identity concern only.
 
 **Tests:** 13 new in a new `SubShapePickResolver` suite, covering both indirection paths, the bounds checks, the empty-array cases in both directions, the table-over-re-derivation rule, and every vertex case the AIS copy used to get wrong.
+
+### Face identity is `IsSame`, recorded where `FaceIdentityTable` is defined
+
+Closes [OCCTSwiftInteraction#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1), phase 0 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43).
+
+No API or behaviour change. OCCTSwift 2.0.0 had already moved `Shape.faces()` onto the deduplicated enumeration (see v1.6.3), which left open what face identity means when a face is shared between two shells. #1 decided it: identity keys on OCCT's `TopoDS_Shape::IsSame` (same `TShape`, same `Location`, orientation may differ). So `faces()`, deduplicated through `TopTools_IndexedMapOfShape`, is the enumeration `FaceIdentityTable` is built from, and `orientedFaces()`, which is occurrence-based (`IsEqual`), is not an identity. A face shared between two shells is one entry in `shapes`; a caller needing to know which use of it was picked reads orientation off the returned `Shape`.
+
+`FaceIdentityTable` was already built from `faces()`, so the code was correct under the decision. What changed is the type's documentation, which now states the decision and the consequence that is easy to miss: the mesher still walks face occurrences, so a shared face is tessellated once per owning shell and both triangulations carry the one deduplicated ordinal. The OCCTSwiftAIS target's `InteractiveContextMutationTests` holds that down; see the OCCTSwiftAIS changelog under 0.1.0.
+
+## v1.6.4 (2026-08-19)
+
+**Repin OCCTSwift floor to 3.0.0**, part of the ecosystem-wide v3.0.0 fanout ([ecosystem#39](https://github.com/SecondMouseAU/ecosystem/issues/39)). The last release of the pre-merge repository. Its changelog was never given this heading, so it is written here from the [release notes](https://github.com/SecondMouseAU/OCCTSwiftTools/releases/tag/v1.6.4).
+
+**No source change.** All three OCCTSwift v3.0.0 breaks are unreachable from this package, verified by the compiler rather than by grep. Two call sites look like hits and are not: `CADFileLoader.swift` calls `shape.measure()`, whose `ShapeMeasurements` carries areas, lengths, centroids and perimeters computed inside OCCTSwift with no bounding-box member, and `CADFileLoaderTests.swift` asserts `direct.boundingBox != nil`, which is `OCCTSwiftViewport.ViewportBody.boundingBox`, already Optional and untouched by that release. The deprecated `TopAbs_ShapeEnum` alias emitted no warning, confirming it is unused here.
+
+Requires OCCTSwiftIO v1.7.8 or later, which resolves automatically inside the existing `1.7.0..<2.0.0` range.
+
+**Verification:** `swift build` and `swift build --build-tests` clean, 45 tests in 9 suites passing, resolved against real v3.0.0 source.
+
+**Dep bump:** `OCCTSwift from: "2.0.0"` to `from: "3.0.0"`.
 
 ## v1.6.3 (2026-08-10)
 

@@ -10,18 +10,27 @@ Platforms: iOS 18+ / macOS 15+.
 
 ## 1. Add the package
 
-`OCCTSwiftCADKit` depends on the OCCTSwift ecosystem (`OCCTSwift`, `OCCTSwiftViewport`,
-`OCCTSwiftTools`, `OCCTSwiftAIS`); Swift Package Manager resolves these transitively.
+`OCCTSwiftCADKit` is a product of the `OCCTSwiftInteraction` package. It builds on that package's
+other two targets (`OCCTSwiftTools`, `OCCTSwiftAIS`) and on `OCCTSwift`, `OCCTSwiftViewport` and
+`OCCTSwiftIO`; Swift Package Manager resolves these transitively.
 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/SecondMouseAU/OCCTSwiftCADKit.git", from: "0.1.0"),
+    .package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
 ],
 targets: [
-    .target(name: "MyApp", dependencies: ["OCCTSwiftCADKit"]),
+    .target(
+        name: "MyApp",
+        dependencies: [.product(name: "OCCTSwiftCADKit", package: "OCCTSwiftInteraction")]
+    ),
 ]
 ```
+
+This guide follows `main`, which is ahead of the stable line. The only API it uses that 2.0.0
+lacks is in section 2: `CADViewportView(service:)`, the long initializer's `onMouseDown:` and
+`noteMouseDown(windowWasActive:)`, all first shipped in 3.0.0-beta.2. On 2.0.0, use the long
+initializer as section 3 shows it.
 
 ```swift
 import OCCTSwiftCADKit
@@ -454,7 +463,8 @@ field still paints each visible triangle with its own value.
 side of the plane), not `ViewportController.clipPlanes`: that mechanism clips the whole
 scene uniformly, so it can't show the reference and candidate differently. A side effect:
 a wiped body's wireframe edges and vertex-picking aren't preserved, only its shaded
-triangles, the split is a review affordance, not a full re-tessellation.
+triangles, the split is a review affordance, not a full re-tessellation. Face picking is
+preserved: a pick on a wiped body names the face under the cursor.
 
 `.overlay`/`.sideBySide` mutate a body's color/transform in place, cheap, since the
 renderer reads both fresh every frame rather than caching them (unlike the scalar-field
