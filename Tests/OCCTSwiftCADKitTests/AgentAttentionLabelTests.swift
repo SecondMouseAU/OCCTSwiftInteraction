@@ -75,9 +75,11 @@ private func sendLabel(
 }
 
 #if os(macOS)
+    // Internal, not private: `AgentQuestionTests` posts its requests through these too.
+
     /// Starts the sidecar of `service` in a fresh temporary directory and returns that directory.
     @MainActor
-    private func startSidecar(on service: CADViewportService) throws -> URL {
+    func startSidecar(on service: CADViewportService) throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(
             "occt-attention-label-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -86,14 +88,14 @@ private func sendLabel(
     }
 
     @MainActor
-    private func stopSidecar(on service: CADViewportService, in dir: URL) {
+    func stopSidecar(on service: CADViewportService, in dir: URL) {
         service.stopSelectionSidecar()
         try? FileManager.default.removeItem(at: dir)
     }
 
     /// Writes `request` as a client would, has `service` process it, and returns the outcome.
     @MainActor
-    private func post(
+    func post(
         _ request: HighlightRequestPayload, to service: CADViewportService, in dir: URL
     ) throws -> HandledOutcome {
         let name = "\(request.id).json"

@@ -83,6 +83,7 @@
         /// `"replace" | "add" | "remove" | "xor"`, `OCCTSwiftAIS.SelectionScheme`'s own
         /// vocabulary. A plain `String` for the same reason as `kind` above.
         var scheme: String
+        /// The question to escalate with, as sent; read it through `escalationQuestion`.
         var question: String?
         /// Where the request lands: `"attention"` or `"selection"`.
         ///
@@ -95,8 +96,9 @@
         ///
         /// Held as `CADViewportService.setAgentAttention(_:label:)` holds it: cut to 80
         /// characters, and no label when it draws nothing (OCCTSwiftInteraction#54). Ignored when
-        /// the request does not land in attention (`target: "selection"`, or a `question`), since
-        /// there is no marker to attach it to (OCCTSwiftInteraction#35).
+        /// the request does not land in attention (`target: "selection"`, or an
+        /// `escalationQuestion`), since there is no marker to attach it to
+        /// (OCCTSwiftInteraction#35).
         var label: String?
         /// The `selection.json` revision this request was composed against, if the requester
         /// wants the apply to be conditional on it.
@@ -114,6 +116,16 @@
         /// the human did in the meantime (clearing a highlight, say) should not have to pretend
         /// it does. Costs one integer comparison when present.
         var ifRevision: Int?
+    }
+
+    extension HighlightRequestPayload {
+        /// `question` when it makes this request an escalation, as sent; nil when it is absent,
+        /// empty, or draws nothing by the label rule, `AgentAttentionLabel.isBlank(_:)`
+        /// (OCCTSwiftInteraction#62).
+        var escalationQuestion: String? {
+            guard let question, !AgentAttentionLabel.isBlank(question) else { return nil }
+            return question
+        }
     }
 
     /// `highlight_requests/handled/<id>.json`: the outcome of a processed request.

@@ -103,8 +103,8 @@ timestamp: 2026-11-25
   selection bridge. Writes `selection.json` on every `interactiveContext.$selection` change,
   watches `<directory>/highlight_requests/` (`OCCTSwiftIO.DirectoryWatcher`, macOS-only) for
   a request an MCP-side agent dropped, and applies each well-formed one via
-  `select(_:scheme:)` or `present(_:)` (when it carries a `question`), moving it to
-  `highlight_requests/handled/<id>.json` with an outcome. Full wire format:
+  `select(_:scheme:)` or `present(_:)` (when it carries a `question`), writing its outcome to
+  `highlight_requests/handled/<id>.json` and then deleting the request file. Full wire format:
   `okf/decisions/agent-viewport-selection-bridge.md`. Highlights applied this way render
   with `OCCTSwiftAIS.PresentationStyle.agentHighlight`'s distinct hollow treatment instead of
   the ordinary selection color.

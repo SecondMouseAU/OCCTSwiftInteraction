@@ -31,6 +31,36 @@ There is no deprecated `Axis` typealias. A top-level alias of that name keeps th
 the ambiguity the rename removes: tried, it fails the new `AxisNameCollisionTests` with the same
 "ambiguous for type lookup" error. No consumer in the fleet names the type today.
 
+### Docs: the bridge ADR now says a handled request file is deleted
+
+Closes [OCCTSwiftInteraction#63](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/63).
+The selection bridge ADR said in one place that a request file stays in `highlight_requests/`
+after it is handled, "not moved or deleted", so a client could read it back beside its outcome,
+and in another that the host may delete it as an implementation detail. The sidecar has always
+deleted it once `handled/<id>.json` is written. Both passages now say that, as part of the
+contract: the outcome is written first, the request file is deleted after, and a client keeps its
+own copy of what it sent. Neither OCCTMCP nor ACADStudio reads a request back. No behaviour
+change.
+
+### Fixed: a blank question opened an escalation card with nothing to read
+
+Closes [OCCTSwiftInteraction#62](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/62).
+The sidecar treated a `highlight_requests` request as an escalation whenever its `question` was not
+the empty string, so a question of only spaces, or only characters that draw nothing (a zero-width
+space, U+3164 HANGUL FILLER, U+2800 BRAILLE PATTERN BLANK), opened an escalation card with a blank
+question, and selected the entity whatever `target` said. A question is now no question when it is
+absent, empty, or draws nothing by the rule a label is judged by (#54). A request carrying one opens
+no escalation and lands exactly where a request without a question lands: in the attention marker
+by default, with its `label` held, or in the selection under `target: "selection"`, where a whole
+body is selected rather than rejected. On `applied`, a non-empty question dropped this way is
+reported in the handled file's `reason` (`question dropped: it has no visible character`), joined
+with `; ` ahead of any label reason; an empty one is dropped without a reason, as before. A
+question with a visible character still escalates, shown exactly as sent. No API change. OCCTMCP's
+`highlight_selection` still treats an empty or blank question as a question, so it skips its
+attention-side checks for one, writes no `label` and lets `kind: "body"` through to the host;
+filed as [OCCTMCP#293](https://github.com/SecondMouseAU/OCCTMCP/issues/293).
+Contract: `okf/decisions/agent-viewport-selection-bridge.md`.
+
 ### Fixed: a pick on a body cut by a wipe comparison named the wrong face
 
 Closes [OCCTSwiftInteraction#58](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/58).
