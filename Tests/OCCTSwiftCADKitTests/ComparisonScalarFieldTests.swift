@@ -132,6 +132,8 @@ struct ComparisonScalarFieldTests {
 
     // MARK: - Painting a key and reading it back
 
+    // Static so `WipePickTests` reads paint and wiped triangles the same way.
+
     /// The highest key a field here carries: a 4x4x4 box meshes to 12 triangles on 6 faces.
     static let maxKey = 11
 
@@ -142,21 +144,21 @@ struct ComparisonScalarFieldTests {
     ])
 
     /// A field whose value for each key, a face ordinal or a triangle index, is the key itself.
-    private func keyField(_ domain: Domain) -> ScalarField {
+    static func keyField(_ domain: Domain) -> ScalarField {
         ScalarField(
             domain: domain.fieldDomain, values: (0...Self.maxKey).map(Double.init),
             colorMap: Self.keyMap, label: "key")
     }
 
     /// The key a style was painted from, or `nil` for an unpainted triangle.
-    private func key(paintedOn style: TriangleStyle) -> Int? {
+    static func key(paintedOn style: TriangleStyle) -> Int? {
         guard style.color.w == 1 else { return nil }
         return Int((Double(style.color.x) * Double(Self.maxKey)).rounded())
     }
 
     /// Each triangle of `body` matched by its vertex indices, which a wipe copies unchanged, to
     /// its index in `baseline`.
-    private func baselineTriangles(of body: _ViewportBody, in baseline: _ViewportBody) -> [Int?] {
+    static func baselineTriangles(of body: _ViewportBody, in baseline: _ViewportBody) -> [Int?] {
         func vertexIndices(_ b: _ViewportBody, _ triangle: Int) -> [UInt32] {
             Array(b.indices[(triangle * 3)..<(triangle * 3 + 3)])
         }
@@ -172,7 +174,7 @@ struct ComparisonScalarFieldTests {
         _ painted: _ViewportBody, _ domain: Domain, baseline: _ViewportBody, _ comment: Comment,
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        let expected: [Int?] = baselineTriangles(of: painted, in: baseline).map { index in
+        let expected: [Int?] = Self.baselineTriangles(of: painted, in: baseline).map { index in
             guard let index else { return nil }
             switch domain {
             case .perFace: return Int(baseline.faceIndices[index])
@@ -183,7 +185,7 @@ struct ComparisonScalarFieldTests {
             !expected.isEmpty && !expected.contains(nil),
             "sanity check: every triangle is one of the baseline's", sourceLocation: sourceLocation)
         #expect(
-            painted.triangleStyles.map { key(paintedOn: $0) } == expected, comment,
+            painted.triangleStyles.map { Self.key(paintedOn: $0) } == expected, comment,
             sourceLocation: sourceLocation)
     }
 
@@ -225,7 +227,7 @@ struct ComparisonScalarFieldTests {
         _ service: CADViewportService, _ id: String, baseline: _ViewportBody
     ) -> Bool {
         guard let live = body(service, id) else { return true }
-        let kept = baselineTriangles(of: live, in: baseline)
+        let kept = Self.baselineTriangles(of: live, in: baseline)
         return kept == (0..<kept.count).map { Int?($0) }
     }
 
@@ -302,7 +304,7 @@ struct ComparisonScalarFieldTests {
         let compared = comparedState(service)
         #expect(compared != uncompared, "sanity check: the comparison applied")
 
-        service.setScalarField(keyField(testCase.domain), forBody: id)
+        service.setScalarField(Self.keyField(testCase.domain), forBody: id)
         #expect(comparedState(service) == compared, "setting the field leaves the comparison be")
         expectKeyed(
             service, id, testCase.domain, baseline: baseline,
@@ -326,7 +328,7 @@ struct ComparisonScalarFieldTests {
         let uncompared = comparedState(service)
 
         service.setComparison(view(testCase.from))
-        service.setScalarField(keyField(testCase.domain), forBody: "cand")
+        service.setScalarField(Self.keyField(testCase.domain), forBody: "cand")
         service.setComparison(view(testCase.to))
 
         #expect(comparedState(service) != uncompared, "sanity check: the new mode applied")
@@ -350,7 +352,7 @@ struct ComparisonScalarFieldTests {
 
         service.setComparison(view(testCase.mode))
         let compared = comparedState(service)
-        service.setScalarField(keyField(testCase.domain), forBody: "cand")
+        service.setScalarField(Self.keyField(testCase.domain), forBody: "cand")
         service.fire(testCase.trigger)
 
         #expect(service.comparison != nil, "sanity check: the comparison is still active")
@@ -385,7 +387,7 @@ struct ComparisonScalarFieldTests {
         #expect(
             !keepsLeadingTriangles(service, id, baseline: baseline),
             "sanity check: the wipe keeps triangles other than the first ones")
-        service.setScalarField(keyField(.perTriangle), forBody: id)
+        service.setScalarField(Self.keyField(.perTriangle), forBody: id)
         expectKeyed(
             service, id, .perTriangle, baseline: baseline,
             "each kept triangle carries its own value, not the one at its wiped position")
@@ -414,7 +416,7 @@ struct ComparisonScalarFieldTests {
     func fieldClearedDuringComparisonStaysCleared(_ testCase: SingleCase) {
         guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
         let id = testCase.target.id
-        service.setScalarField(keyField(testCase.domain), forBody: id)
+        service.setScalarField(Self.keyField(testCase.domain), forBody: id)
 
         service.setComparison(view(testCase.mode))
         service.setScalarField(nil, forBody: id)
@@ -445,7 +447,7 @@ struct ComparisonScalarFieldTests {
             planeID = service.addHalfCap()
         }
         #expect((service.entityMinX("ref") ?? -2) > -0.5, "sanity check: the body is capped")
-        service.setScalarField(keyField(testCase.domain), forBody: "ref")
+        service.setScalarField(Self.keyField(testCase.domain), forBody: "ref")
         let compared = try #require(body(service, "ref"))
 
         service.setComparison(nil)
@@ -483,8 +485,8 @@ struct ComparisonScalarFieldTests {
 
         service.setComparison(
             ComparisonView(referenceID: "ref", candidateID: "asm", mode: mode.comparisonMode))
-        service.setScalarField(keyField(.perFace), forBody: bodyIDs[0])
-        service.setScalarField(keyField(.perFace), forBody: bodyIDs[1])
+        service.setScalarField(Self.keyField(.perFace), forBody: bodyIDs[0])
+        service.setScalarField(Self.keyField(.perFace), forBody: bodyIDs[1])
         service.setComparison(nil)
 
         expectKeyed(
@@ -509,7 +511,7 @@ struct ComparisonScalarFieldTests {
         guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
         let id = testCase.target.id
         let baseline = try #require(body(service, id))
-        service.setScalarField(keyField(testCase.domain), forBody: id)
+        service.setScalarField(Self.keyField(testCase.domain), forBody: id)
 
         service.setComparison(view(testCase.mode))
         expectKeyed(
@@ -530,7 +532,7 @@ struct ComparisonScalarFieldTests {
 
         service.setComparison(
             ComparisonView(referenceID: "ref", candidateID: "cand", mode: .deviation))
-        service.setScalarField(keyField(.perFace), forBody: "cand")
+        service.setScalarField(Self.keyField(.perFace), forBody: "cand")
         expectKeyed(
             service, "cand", .perFace, baseline: baseline, "the field paints the candidate")
 
@@ -557,7 +559,7 @@ struct ComparisonScalarFieldTests {
         service.setComparison(
             ComparisonView(referenceID: "ref", candidateID: "asm", mode: .deviation))
         for id in bodyIDs {
-            service.setScalarField(keyField(.perFace), forBody: id)
+            service.setScalarField(Self.keyField(.perFace), forBody: id)
         }
         for (id, baseline) in zip(bodyIDs, baselines) {
             expectKeyed(service, id, .perFace, baseline: baseline, "sanity check: \(id) is painted")

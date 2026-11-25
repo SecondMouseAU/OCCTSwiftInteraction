@@ -454,7 +454,8 @@ field still paints each visible triangle with its own value.
 side of the plane), not `ViewportController.clipPlanes`: that mechanism clips the whole
 scene uniformly, so it can't show the reference and candidate differently. A side effect:
 a wiped body's wireframe edges and vertex-picking aren't preserved, only its shaded
-triangles, the split is a review affordance, not a full re-tessellation.
+triangles, the split is a review affordance, not a full re-tessellation. Face picking is
+preserved: a pick on a wiped body names the face under the cursor.
 
 `.overlay`/`.sideBySide` mutate a body's color/transform in place, cheap, since the
 renderer reads both fresh every frame rather than caching them (unlike the scalar-field

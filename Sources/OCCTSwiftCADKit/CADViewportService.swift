@@ -313,6 +313,13 @@ public final class CADViewportService {
     /// field, kept by `writeThroughComparison(toBody:_:)`.
     var comparisonBackup: [String: _ViewportBody] = [:]
 
+    /// For each body the active `.wipe` has filtered, the unwiped index of each kept triangle.
+    ///
+    /// In drawn order, and read through `unwipedTriangle(ofBody:)`. Written by `applyWipe` and
+    /// emptied with `comparisonBackup` by `undoComparison`, the only paths that filter a body
+    /// or put a filtered one back.
+    var wipeKeptTriangles: [String: [Int]] = [:]
+
     // MARK: - Clipping
 
     /// Every currently configured clipping plane.

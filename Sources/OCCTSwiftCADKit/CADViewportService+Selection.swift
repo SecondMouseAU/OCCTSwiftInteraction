@@ -3,7 +3,7 @@
 //
 // Split out of CADViewportService.swift for OCCTSwiftInteraction#13 (code-structure policy).
 // The service's stored state stays in the core file; this is the selection surface of the same
-// type. A move, not a rewrite: the bodies below are unchanged.
+// type. The split itself was a move, not a rewrite; what changed since is in the history.
 
 import Combine
 import Foundation
@@ -344,6 +344,10 @@ extension CADViewportService {
     /// deliberately does not own: the mode gate, the clip-plane pre-filter (clip planes are this
     /// service's state, not the bridge layer's), and the geometry enrichment below, which is
     /// presentation.
+    ///
+    /// `triangleIndex` is the triangle as drawn. The clip test reads it off the live body, which
+    /// is what is drawn; the face table and a scalar field are indexed by the unwiped body, so
+    /// those reads go through `unwipedTriangle(ofBody:)`.
     func resolveFacePick(bodyID: String, triangleIndex: Int) -> PickedFaceInfo? {
         guard selectionModes.contains(.face) else { return nil }
         if let centroid = triangleWorldCentroid(bodyID: bodyID, triangleIndex: triangleIndex),
@@ -351,16 +355,17 @@ extension CADViewportService {
         {
             return nil
         }
-        guard let meta = metadata[bodyID],
+        guard let triangle = unwipedTriangle(ofBody: bodyID)(triangleIndex),
+            let meta = metadata[bodyID],
             let ref = SubShapePickResolver.resolveFace(
-                triangleIndex: triangleIndex,
+                triangleIndex: triangle,
                 faceIndices: meta.faceIndices,
                 identity: faceIdentity[bodyID],
                 shape: bodyShapes[bodyID])
         else {
             return nil
         }
-        return enrichFace(ref: ref, bodyID: bodyID, triangleIndex: triangleIndex)
+        return enrichFace(ref: ref, bodyID: bodyID, triangleIndex: triangle)
     }
 
     /// The presentation half of a face pick: everything `PickedFaceInfo` carries beyond the
@@ -369,7 +374,8 @@ extension CADViewportService {
     /// Split out of `resolveFacePick` so a sub-shape that reached the selection some other way
     /// (through `interactiveContext` directly, or by area selection) is enriched by the same
     /// code rather than a second copy of it. `triangleIndex` is `nil` for those, which only
-    /// affects a `.perTriangle` scalar field: there is no triangle to sample.
+    /// affects a `.perTriangle` scalar field: there is no triangle to sample. Otherwise it is the
+    /// picked triangle's index in the unwiped body, the order the field is indexed by.
     ///
     /// Internal rather than private so `CADViewportService+AgentBridge.swift` can build a
     /// `PickedEntity` from a highlight request's already-resolved `SubShapeRef` (an ordinal
@@ -613,10 +619,12 @@ extension CADViewportService {
                 else { continue }
                 let faceIndex = Int32(info.faceIndex)
                 let triCount = body.indices.count / 3
+                // `tri` walks the live body as drawn; the face table is the unwiped body's.
+                let unwiped = unwipedTriangle(ofBody: info.bodyID)
                 for tri in 0..<triCount {
-                    guard tri < meta.faceIndices.count, meta.faceIndices[tri] == faceIndex else {
-                        continue
-                    }
+                    guard let source = unwiped(tri), source < meta.faceIndices.count,
+                        meta.faceIndices[source] == faceIndex
+                    else { continue }
                     let i0 = Int(body.indices[tri * 3])
                     let i1 = Int(body.indices[tri * 3 + 1])
                     let i2 = Int(body.indices[tri * 3 + 2])

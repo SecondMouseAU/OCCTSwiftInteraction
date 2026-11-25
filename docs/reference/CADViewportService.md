@@ -381,7 +381,9 @@ viewport.setComparison(nil)   // restores both entities' plain display
   equal. Implemented by filtering each body's own triangles (not
   `ViewportController.clipPlanes`, which clips the whole scene uniformly and can't show
   the two sides differently), see `CLAUDE.md`'s "Things to be careful about" for why, and
-  what a wiped body loses (wireframe edges, vertex-picking) as a result.
+  what a wiped body loses (wireframe edges, vertex-picking) as a result. A face pick on a
+  wiped body names the face under the cursor, and its `scalarValue` is the value painted on
+  the picked triangle.
 
 `comparison` reports the currently active `ComparisonView`, or `nil`. Removing (or
 reloading, which removes then re-adds) either the reference or candidate entity clears the
