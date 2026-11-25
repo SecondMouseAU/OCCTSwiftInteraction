@@ -7,8 +7,8 @@ import simd
 
 @testable import OCCTSwiftCADKit
 
-/// Geometry shared by the suites that check a selection highlight against the model bodies a
-/// comparison draws (OCCTSwiftInteraction#72, #73).
+/// Geometry shared by the suites that check a selection highlight against the model bodies as
+/// drawn (OCCTSwiftInteraction#72, #73, #78, #79).
 ///
 /// Every point is in world space: a body's local position under its own `transform`. A check
 /// written that way holds whether a body is placed by its transform or by its vertex data.
@@ -39,20 +39,25 @@ enum HighlightGeometry {
         }
     }
 
-    /// The world centroid of each triangle `body` draws on the face `shape`.
+    /// The index of each triangle `body` draws on the face `shape`.
     ///
     /// A triangle is on the face when its local centroid is inside the face's bounding box, which
     /// is exact for a box: its faces are axis-aligned squares, so no other face's triangle
     /// centroid falls inside one.
-    static func worldCentroids(onFace shape: Shape, of body: _ViewportBody) -> [SIMD3<Double>] {
+    static func triangles(onFace shape: Shape, of body: _ViewportBody) -> [Int] {
         guard let bounds = Face(shape)?.bounds else { return [] }
         let tolerance = 1e-4
-        return (0..<(body.indices.count / 3)).compactMap { triangle in
+        return (0..<(body.indices.count / 3)).filter { triangle in
             let local = localCentroid(of: triangle, in: body)
             let point = SIMD3<Double>(Double(local.x), Double(local.y), Double(local.z))
-            guard all(point .>= bounds.min - tolerance), all(point .<= bounds.max + tolerance)
-            else { return nil }
-            return world(local, under: body.transform)
+            return all(point .>= bounds.min - tolerance) && all(point .<= bounds.max + tolerance)
+        }
+    }
+
+    /// The world centroid of each triangle `body` draws on the face `shape`.
+    static func worldCentroids(onFace shape: Shape, of body: _ViewportBody) -> [SIMD3<Double>] {
+        triangles(onFace: shape, of: body).map {
+            world(localCentroid(of: $0, in: body), under: body.transform)
         }
     }
 
@@ -71,6 +76,20 @@ enum HighlightGeometry {
             }
         }
         return points
+    }
+
+    /// The world position of each point `body` draws at the vertex `shape`.
+    ///
+    /// Found by position, not by ordinal: a box draws each of its vertices once, at the vertex's
+    /// own point, and no two of them coincide.
+    static func worldPoints(atVertex shape: Shape, of body: _ViewportBody) -> [SIMD3<Double>] {
+        guard let position = shape.vertices().first else { return [] }
+        let tolerance = 1e-4
+        return body.vertices.compactMap { local in
+            let point = SIMD3<Double>(Double(local.x), Double(local.y), Double(local.z))
+            guard simd_distance(point, position) <= tolerance else { return nil }
+            return world(local, under: body.transform)
+        }
     }
 
     /// The world position of each point a highlight body draws, empty for `nil`.
@@ -154,6 +173,46 @@ extension CADViewportService {
             return SubShapeRef(shape: shape, uid: table.uid(forOrdinal: ordinal), ordinal: ordinal)
         }
         return nil
+    }
+
+    /// What the model body of `entity` draws for it, in world space: the centroid of each
+    /// triangle on a face, each end of each segment of an edge, or a vertex's point.
+    ///
+    /// Empty when the body draws none of it, or there is no such body.
+    func drawnPoints(of entity: PickedEntity) -> [SIMD3<Double>] {
+        guard let body = modelBody(entity.bodyID) else { return [] }
+        switch entity {
+        case .face(let info):
+            return HighlightGeometry.worldCentroids(onFace: info.shape, of: body)
+        case .edge(let info):
+            return HighlightGeometry.worldEndpoints(ofEdge: info.edgeIndex, in: body)
+        case .vertex(let info):
+            return HighlightGeometry.worldPoints(atVertex: info.shape, of: body)
+        }
+    }
+
+    /// What the highlight of the kind of `entity` lights, in world space.
+    ///
+    /// In the units `drawnPoints(of:)` uses for that kind.
+    func litPoints(ofKindOf entity: PickedEntity) -> [SIMD3<Double>] {
+        switch entity {
+        case .face: highlightedFaceCentroids
+        case .edge: HighlightGeometry.worldPoints(of: selectionHighlight("edge"))
+        case .vertex: HighlightGeometry.worldPoints(of: selectionHighlight("vertex"))
+        }
+    }
+
+    /// The first vertex of body `id` at X = `x`, enriched as a selection made without a pick, or
+    /// `nil` if the body has no vertex there.
+    func vertex(ofBody id: String, atX x: Double) -> PickedVertexInfo? {
+        guard let table = vertexIdentity[id],
+            let ordinal = table.shapes.indices.first(where: { ordinal in
+                table.shapes[ordinal].vertices().first.map { abs($0.x - x) < 1e-6 } == true
+            })
+        else { return nil }
+        let ref = SubShapeRef(
+            shape: table.shapes[ordinal], uid: table.uid(forOrdinal: ordinal), ordinal: ordinal)
+        return enrichVertex(ref: ref, bodyID: id, renderPosition: nil)
     }
 
     /// Selects the face `ref` of body `id` with `scheme`, as a selection made without a pick.

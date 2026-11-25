@@ -157,6 +157,7 @@ extension CADViewportService {
     /// know in advance which one a given candidate's preview lives in.
     private func setBodyVisible(_ isVisible: Bool, bodyID: String) {
         if let index = modelBodies.firstIndex(where: { $0.id == bodyID }) {
+            if modelBodies[index].isVisible != isVisible { selectionBodiesAreStale = true }
             modelBodies[index].isVisible = isVisible
             recordCallerVisibility(isVisible, forBody: bodyID)
             rebuildBodies()

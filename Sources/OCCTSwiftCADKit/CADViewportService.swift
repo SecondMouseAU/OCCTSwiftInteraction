@@ -115,7 +115,7 @@ public final class CADViewportService {
     /// a real multi-body file on disk.
     var metadata: [String: CADBodyMetadata] = [:]
     var overlays: [String: [_ViewportBody]] = [:]
-    /// Up to three highlight bodies, one per kind present in `selection`, since each
+    /// Up to three highlight bodies, one per kind `selection` lights, since each
     /// kind renders with a different primitive (translucent triangle patch / polyline /
     /// point sprite) that can't share one `_ViewportBody`.
     var selectionBodies: [_ViewportBody] = []
@@ -123,7 +123,9 @@ public final class CADViewportService {
     /// `rebuildBodies()` cuts them again before it publishes.
     ///
     /// Set by `undoComparison` and `applyComparison`, which change a comparison's bodies without
-    /// changing the selection.
+    /// changing the selection, and by `setVisible(_:forEntity:)`, `setBodyVisible(_:bodyID:)` and
+    /// `updateCapSurfaces()` when they hide or show a model body, since the highlight lights
+    /// nothing of a hidden one.
     var selectionBodiesAreStale = false
     private var ownedBodyIDs: Set<String> = []
     private var bodiesSubscription: AnyCancellable?
