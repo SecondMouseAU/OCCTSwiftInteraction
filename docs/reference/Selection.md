@@ -13,10 +13,10 @@ TopoDS sub-shapes), `SubShapeRef` (the durable handle a `.face`/`.edge`/`.vertex
 `OCCTSwiftTools` in
 [OCCTSwiftInteraction#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2): the type
 naming a piece of topology belongs in the lowest layer that can produce it, which is the layer
-holding the identity tables and minting the `BRepGraph.GraphUID`. `OCCTSwiftAIS` keeps
-source-compatible typealiases for all three (deprecated since 2.0.0), so `import OCCTSwiftAIS`
-alone still resolves the names; new code should prefer naming them in `OCCTSwiftTools`. `SelectionMode` and `Selection` are
-still `OCCTSwiftAIS` types. Minting a `SubShapeRef` from a pick is
+holding the identity tables and minting the `BRepGraph.GraphUID`. Code that names any of the
+three imports `OCCTSwiftTools`: the `OCCTSwiftAIS` typealiases for them, deprecated in 2.0.0, were
+removed in 3.0.0 ([#61](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/61)).
+`SelectionMode` and `Selection` are still `OCCTSwiftAIS` types. Minting a `SubShapeRef` from a pick is
 [`SubShapePickResolver`](SubShapePickResolver)'s job.
 
 ## Topics

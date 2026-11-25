@@ -116,8 +116,8 @@ public final class InteractiveContext: ObservableObject {
 
 // NOTE (OCCTSwiftInteraction#2): InteractiveObject, SubShape and SubShapeRef now live in the
 // OCCTSwiftTools target, alongside the identity tables and the resolver that mints a ref.
-// OCCTSwiftAIS keeps source-compatible typealiases, so the declarations below still read the
-// same from a caller's point of view.
+// The OCCTSwiftAIS typealiases for them were removed in 3.0.0 (OCCTSwiftInteraction#61), so a
+// caller that names one of the declarations below imports OCCTSwiftTools.
 
 /// Erased reference to something in the scene.
 public struct InteractiveObject: Hashable, Sendable {
@@ -126,7 +126,7 @@ public struct InteractiveObject: Hashable, Sendable {
 }
 
 /// A specific TopoDS_Face / TopoDS_Edge / TopoDS_Vertex inside a displayed shape,
-/// or the whole body. `.face`/`.edge`/`.vertex` carry a `SubShapeRef` — the
+/// or the whole body. `.face`/`.edge`/`.vertex` carry a `SubShapeRef`: the
 /// resolved `Shape`, a durable `BRepGraph.GraphUID` when a graph was in
 /// hand at pick time, and the tessellation-time ordinal (render-path only,
 /// see "Selection survival across mutation" below).

@@ -9,7 +9,28 @@ the API the merged package changed after the last pre-merge releases (2.0.0 remo
 
 The module names are deliberately unchanged. `import OCCTSwiftTools`, `import OCCTSwiftAIS` and
 `import OCCTSwiftCADKit` all still work, because each is still its own SwiftPM target. Only the
-package that vends them moved.
+package that vends them moved. There is one exception from 3.0.0, below.
+
+## Moving to 3.0.0: name the moved selection types in `OCCTSwiftTools`
+
+`InteractiveObject`, `SubShapeRef` and `SubShape` moved from `OCCTSwiftAIS` down to
+`OCCTSwiftTools` in [#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2).
+`OCCTSwiftAIS` kept typealiases for them through 2.x, deprecated in 2.0.0, and 3.0.0 removes them
+([#61](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/61)). A file that spells one of
+the three names while importing only `OCCTSwiftAIS` stops compiling, with `cannot find type
+'SubShape' in scope` where the name is a type, or `cannot find 'SubShapeRef' in scope` where it is
+called as an initialiser. The fix is one line:
+
+```swift
+import OCCTSwiftAIS
+import OCCTSwiftTools   // InteractiveObject, SubShapeRef, SubShape
+```
+
+Nothing else changes, because each alias denoted the identical type. If the target does not
+already list the `OCCTSwiftTools` product among its dependencies, add it there too. A file that
+only handles these values through `OCCTSwiftAIS` API without spelling a name (`ais.display(_:)`,
+`ais.selection`, `.face(object, ref: ref)`) needs no change. 2.x already flagged every affected
+line with a deprecation warning.
 
 ## What to change
 
