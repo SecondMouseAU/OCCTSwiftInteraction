@@ -446,6 +446,9 @@ reloading either one.
 Visibility is yours, not the comparison's: `viewport.visibility["candidate"] = false` while a
 `.overlay`, `.sideBySide` or `.wipe` comparison is active stays hidden after you clear or switch
 the comparison, and showing an entity that was hidden when the comparison began stays shown.
+Scalar fields are yours too: a field you set or clear with `setScalarField(_:forBody:)` during one
+of those comparisons stays that way after you clear or switch it, and under `.wipe` a per-triangle
+field still paints each visible triangle with its own value.
 
 `.wipe` is a plain CPU-side triangle filter (each body keeps only the triangles on its
 side of the plane), not `ViewportController.clipPlanes`: that mechanism clips the whole

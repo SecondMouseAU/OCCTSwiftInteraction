@@ -3,7 +3,7 @@
 //
 // Split out of CADViewportService.swift for OCCTSwiftInteraction#13 (code-structure policy).
 // The service's stored state stays in the core file; this is the reference/candidate comparison surface of the same
-// type. A move, not a rewrite: the bodies below are unchanged.
+// type. The split itself was a move, not a rewrite; what changed since is in the history.
 
 import Combine
 import Foundation
@@ -78,6 +78,25 @@ extension CADViewportService {
             }
         }
         comparisonBackup.removeAll()
+    }
+
+    /// Runs `write` on a body as the active comparison's snapshot holds it, then applies the
+    /// comparison again over the result.
+    ///
+    /// The write reaches both `comparisonBackup` and the live body, and a `.wipe` filters the
+    /// written body afresh. Runs `write` directly when no `.overlay`, `.sideBySide` or `.wipe`
+    /// comparison holds a snapshot of `bodyID`. The caller rebuilds bodies.
+    func writeThroughComparison(toBody bodyID: String, _ write: () -> Void) {
+        guard let active = comparison, comparisonNeedsBodyPreservation(active),
+            comparisonBackup[bodyID] != nil
+        else {
+            write()
+            return
+        }
+        undoComparison(active)
+        write()
+        backUpComparisonBodies(active)
+        applyComparison(active)
     }
 
     func applyComparison(_ comparison: ComparisonView) {

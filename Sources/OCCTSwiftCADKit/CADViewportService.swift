@@ -309,7 +309,8 @@ public final class CADViewportService {
     ///
     /// A snapshot's `isVisible` is the caller's last visibility write, kept by
     /// `recordCallerVisibility(_:forBody:)`. The one exception is in
-    /// `docs/module-notes/OCCTSwiftCADKit.md`.
+    /// `docs/module-notes/OCCTSwiftCADKit.md`. Its `triangleStyles` are the caller's last scalar
+    /// field, kept by `writeThroughComparison(toBody:_:)`.
     var comparisonBackup: [String: _ViewportBody] = [:]
 
     // MARK: - Clipping
