@@ -125,7 +125,8 @@ public final class CADViewportService {
     /// Set by `undoComparison` and `applyComparison`, which change a comparison's bodies without
     /// changing the selection, and by `setVisible(_:forEntity:)`, `setBodyVisible(_:bodyID:)` and
     /// `updateCapSurfaces()` when they hide or show a model body, since the highlight lights
-    /// nothing of a hidden one. `replaceBody` sets it too, when a cap recuts a body;
+    /// nothing of a hidden one. `replaceBody` sets it too, when a cap recuts a body, and so does
+    /// `reinstall(_:asBody:at:shape:)`, when a failed re-mesh puts the uncut body back;
     /// `updateCapSurfaces()` then remaps the selection onto the new body
     /// (`remapSelection(acrossRecutOf:)`) before its `rebuildBodies()` cuts the highlight.
     var selectionBodiesAreStale = false
@@ -354,20 +355,41 @@ public final class CADViewportService {
     /// already-cut shape).
     var clippingSourceShapes: [String: OCCTSwift.Shape] = [:]
 
-    /// Bodies as they were immediately before `updateCapSurfaces()` last replaced them with a
-    /// capped (or hidden) version, keyed by body id.
+    /// Each body `updateCapSurfaces()` has cut or hidden, as it was before the first cut or hide,
+    /// keyed by body id.
     ///
-    /// Restored at the START of every `updateCapSurfaces()` call before recomputing, mirroring
-    /// `comparisonBackup`'s pattern. Its `isVisible` is the caller's last visibility write, kept
-    /// current by `recordCallerVisibility(_:forBody:)`.
-    var clippingCapBackup: [String: _ViewportBody] = [:]
+    /// An entry is the mark of a capped body, and goes when the cap does. The restore meshes the
+    /// body again from `clippingSourceShapes`, with the caller-set state of the entry's `body`; a
+    /// re-mesh that fails puts the whole entry back, mesh and tables together
+    /// (OCCTSwiftInteraction#86). Its `body`'s `isVisible` is the caller's last visibility write,
+    /// kept current by `recordCallerVisibility(_:forBody:)`.
+    var clippingCapBackup: [String: UncutBody] = [:]
+
+    /// How `replaceBody` meshes a body a cap cuts or restores: the settings the body was loaded
+    /// with (`bodyMeshing`), through `meshForCap`.
+    ///
+    /// Internal and settable so a test can make the re-mesh fail, which no public API provokes
+    /// (OCCTSwiftInteraction#86). The same kind of seam as `ShapeIdentity`'s internal initializer
+    /// taking its two conversions.
+    @ObservationIgnored var capMesher:
+        (OCCTSwift.Shape, String, SIMD4<Float>, BodyMeshing) -> (_ViewportBody?, CADBodyMetadata?) =
+            CADViewportService.meshForCap
+
+    /// `shape` meshed with `meshing`, as body `bodyID` in `color`: what `capMesher` does unless a
+    /// test replaces it.
+    nonisolated static func meshForCap(
+        _ shape: OCCTSwift.Shape, bodyID: String, color: SIMD4<Float>, meshing: BodyMeshing
+    ) -> (_ViewportBody?, CADBodyMetadata?) {
+        meshing.mesh(shape, id: bodyID, color: color)
+    }
 
     /// Where each sub-shape of a capped body came from, keyed by body id and aligned with that
     /// body's identity tables.
     ///
-    /// Written by `replaceBody` with every cut and removed with every restore, so a body absent
-    /// here is uncut and each of its sub-shapes is its own `CapOrigin.source`. Read by
-    /// `remapSelection(acrossRecutOf:)`, which carries the selection from one cut to the next.
+    /// Written by `replaceBody` with every cut and removed with every restore (and by `reinstall`,
+    /// when a failed re-mesh puts the uncut body back), so a body absent here is uncut and each of
+    /// its sub-shapes is its own `CapOrigin.source`. Read by `remapSelection(acrossRecutOf:)`,
+    /// which carries the selection from one cut to the next.
     var capOrigins: [String: CapOrigins] = [:]
 
     // MARK: - Meshing
