@@ -455,7 +455,8 @@ side of the plane), not `ViewportController.clipPlanes`: that mechanism clips th
 scene uniformly, so it can't show the reference and candidate differently. A side effect:
 a wiped body's wireframe edges and vertex-picking aren't preserved, only its shaded
 triangles, the split is a review affordance, not a full re-tessellation. Face picking is
-preserved: a pick on a wiped body names the face under the cursor.
+preserved: a pick on a wiped body names the face under the cursor, and a selected face's
+highlight lights only what the wipe leaves of it, following the wipe as you move or clear it.
 
 `.overlay`/`.sideBySide` mutate a body's color/transform in place, cheap, since the
 renderer reads both fresh every frame rather than caching them (unlike the scalar-field

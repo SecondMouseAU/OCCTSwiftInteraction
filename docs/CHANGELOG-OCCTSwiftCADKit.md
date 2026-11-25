@@ -12,6 +12,18 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: a selection highlight went stale when a comparison changed the bodies under it
+
+Closes [OCCTSwiftInteraction#72](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/72).
+The selection highlight is copied out of the model bodies as drawn, but it was rebuilt only when
+the selection changed, while `setComparison(_:)` changes the bodies themselves. A face selected
+before a `.wipe` stayed lit over the part the wipe cut away. A face selected during a wipe stayed lit
+only on the part the wipe had left, after the wipe moved, was cleared, switched to another mode, or
+ended because the other entity was removed. The highlight is now rebuilt from the bodies as drawn
+whenever a comparison is applied or undone, which includes the undo and reapply that a
+clipping-plane change or a scalar field write runs during a comparison. It is rebuilt once per
+viewport update, not once per step. No API change.
+
 ### Fixed: a pick on a body cut by a wipe comparison named the wrong face
 
 Closes [OCCTSwiftInteraction#58](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/58).

@@ -214,7 +214,8 @@ aggregating every selected face's own triangles, a bright cyan polyline aggregat
 selected edge's segments, a bright magenta point sprite per selected vertex. A body whose
 `ViewportBody` has no `edgeIndices`/`vertices` populated (not edge/vertex pickable) simply
 never produces an edge/vertex pick on that body, face picking on the same body is
-unaffected.
+unaffected. Highlights are copied from the bodies as drawn, and are rebuilt when the selection
+changes and whenever a [comparison](#comparison) changes those bodies.
 
 `selectionModes` **is** `interactiveContext.selectionMode`, not a copy of it: reading or
 writing either reads or writes the other. It is initialised to `[.face]` at `init`,
@@ -383,7 +384,9 @@ viewport.setComparison(nil)   // restores both entities' plain display
   the two sides differently), see `CLAUDE.md`'s "Things to be careful about" for why, and
   what a wiped body loses (wireframe edges, vertex-picking) as a result. A face pick on a
   wiped body names the face under the cursor, and its `scalarValue` is the value painted on
-  the picked triangle.
+  the picked triangle. A selected face's highlight lights only the triangles the wipe leaves
+  drawn, whether the face was selected before the wipe or during it, and follows the wipe as it
+  moves, switches mode or is cleared.
 
 `comparison` reports the currently active `ComparisonView`, or `nil`. Removing (or
 reloading, which removes then re-adds) either the reference or candidate entity clears the

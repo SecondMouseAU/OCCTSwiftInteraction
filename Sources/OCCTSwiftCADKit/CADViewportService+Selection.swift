@@ -543,7 +543,19 @@ extension CADViewportService {
         )
     }
 
-    /// Rebuilds the highlight bodies from the whole `selection` (not just the latest pick).
+    /// Rebuilds the highlight bodies from the whole `selection` (not just the latest pick) and
+    /// publishes them.
+    private func rebuildSelectionHighlights() {
+        refreshSelectionBodies()
+        rebuildBodies()
+    }
+
+    /// Cuts `selectionBodies` from the model bodies as they are drawn now, without publishing
+    /// them.
+    ///
+    /// `rebuildSelectionHighlights()` runs this when the selection changes, and
+    /// `rebuildBodies()` when `selectionBodiesAreStale` says the bodies changed under an
+    /// unchanged selection.
     ///
     /// Split into two groups so an agent's highlight reads distinctly from a human's ordinary
     /// selection (OCCTSwiftInteraction#16): the ordinary group (everything in `selection` not
@@ -553,7 +565,8 @@ extension CADViewportService {
     /// helper with `PresentationStyle.agentHighlight`'s color and a larger vertex point
     /// radius. With no agent-highlighted entities (the sidecar not running, the common case)
     /// the agent group is always empty, so this produces exactly the bodies it always has.
-    private func rebuildSelectionHighlights() {
+    func refreshSelectionBodies() {
+        selectionBodiesAreStale = false
         // `selection` and `agentHighlightedEntities` are both small (a handful of picks at
         // once, in practice), so an O(n) `contains` per entity via `PickedEntity`'s existing
         // `Equatable` (which is `isSamePick`, the one identity rule this codebase already has
@@ -582,10 +595,9 @@ extension CADViewportService {
             ))
 
         selectionBodies = bodies
-        rebuildBodies()
     }
 
-    /// The geometry-gathering half of `rebuildSelectionHighlights`, extracted so the ordinary
+    /// The geometry-gathering half of `refreshSelectionBodies`, extracted so the ordinary
     /// and agent-highlighted groups share one implementation instead of two near-identical
     /// copies: up to three bodies (`<idPrefix>_face`/`_edge`/_vertex`), a translucent triangle
     /// patch aggregating every selected face's own triangles, a polyline aggregating every

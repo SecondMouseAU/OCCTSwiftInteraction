@@ -119,6 +119,12 @@ public final class CADViewportService {
     /// kind renders with a different primitive (translucent triangle patch / polyline /
     /// point sprite) that can't share one `_ViewportBody`.
     var selectionBodies: [_ViewportBody] = []
+    /// Whether the model bodies `selectionBodies` were cut from have changed since, so the next
+    /// `rebuildBodies()` cuts them again before it publishes.
+    ///
+    /// Set by `undoComparison` and `applyComparison`, which change a comparison's bodies without
+    /// changing the selection.
+    var selectionBodiesAreStale = false
     private var ownedBodyIDs: Set<String> = []
     private var bodiesSubscription: AnyCancellable?
     private var selectionSubscription: AnyCancellable?
@@ -481,6 +487,7 @@ public final class CADViewportService {
     // MARK: - Private
 
     func rebuildBodies() {
+        if selectionBodiesAreStale { refreshSelectionBodies() }
         var fresh: [_ViewportBody] = []
         fresh.append(contentsOf: modelBodies)
         for key in overlays.keys.sorted() {
