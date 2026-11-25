@@ -502,6 +502,90 @@ struct CapRecutSelectionTests {
         #expect(service.selectionHighlight("face") == nil, "nothing is lit as an ordinary pick")
     }
 
+    // MARK: - The cut itself
+
+    /// A shape and a plane to cut it with, for holding the cap's own split to
+    /// `Shape.split(atPlane:normal:)`.
+    enum SplitCase: CaseIterable, Sendable, CustomTestStringConvertible {
+        case boxCutThrough
+        case boxMissed
+        case boxCutAtAnAngle
+        case boxPlaneOnAFace
+        case solidsInACompound
+        case shell
+        case loneFace
+
+        var testDescription: String {
+            switch self {
+            case .boxCutThrough: "a box, cut through"
+            case .boxMissed: "a box, a plane that misses it"
+            case .boxCutAtAnAngle: "a box, a plane at an angle"
+            case .boxPlaneOnAFace: "a box, a plane on one of its faces"
+            case .solidsInACompound: "three solids in a compound, cut across two of them"
+            case .shell: "a shell, cut through"
+            case .loneFace: "a lone face, cut through"
+            }
+        }
+
+        var plane: (origin: SIMD3<Double>, normal: SIMD3<Double>) {
+            switch self {
+            case .boxCutThrough, .shell, .loneFace: (.zero, SIMD3(1, 0, 0))
+            case .boxMissed: (SIMD3(10, 0, 0), SIMD3(1, 0, 0))
+            case .boxCutAtAnAngle: (.zero, simd_normalize(SIMD3(1, 1, 0)))
+            case .boxPlaneOnAFace: (SIMD3(0, 0, 2), SIMD3(0, 0, 1))
+            case .solidsInACompound: (SIMD3(0, 2, 0), SIMD3(0, 1, 0))
+            }
+        }
+
+        func shape() -> Shape? {
+            guard let box = Shape.box(width: 4, height: 4, depth: 4) else { return nil }
+            switch self {
+            case .boxCutThrough, .boxMissed, .boxCutAtAnAngle, .boxPlaneOnAFace:
+                return box
+            case .solidsInACompound:
+                // `fuseAll` (a general fuse) of touching boxes leaves three solids in a compound.
+                guard let base = Shape.box(width: 6, height: 2, depth: 2),
+                    let prong = Shape.box(width: 2, height: 4, depth: 2),
+                    let left = prong.translated(by: SIMD3(-2, 3, 0)),
+                    let right = prong.translated(by: SIMD3(2, 3, 0))
+                else { return nil }
+                return Shape.fuseAll([base, left, right])
+            case .shell:
+                return box.subShapes(ofType: .shell).first
+            case .loneFace:
+                return box.faces().first.flatMap(Shape.fromFace)
+            }
+        }
+    }
+
+    /// The cap repeats the OCCT calls of `Shape.split(atPlane:normal:)` to keep the history, so
+    /// after an OCCTSwift bump this is what notices the two diverging.
+    @MainActor
+    @Test(
+        "The cap's split gives the pieces Shape.split(atPlane:normal:) gives, in order",
+        arguments: SplitCase.allCases)
+    func capSplitMatchesUpstreamSplit(_ testCase: SplitCase) throws {
+        let shape = try #require(testCase.shape())
+        let (origin, normal) = testCase.plane
+        let upstream = try #require(shape.split(atPlane: origin, normal: normal))
+        let ours = try #require(
+            CADViewportService().split(shape, atPlane: origin, normal: normal, planeID: "p")
+        ).pieces
+
+        // Rounded, since the first split can raise the tolerances of the input both splits share.
+        func summary(_ piece: Shape) -> String {
+            let box = piece.bounds.map { bounds in
+                [bounds.min, bounds.max].map { point in
+                    [point.x, point.y, point.z].map { String(format: "%.3f", $0) }
+                        .joined(separator: " ")
+                }
+                .joined(separator: " ... ")
+            }
+            return "\(piece.shapeType) \(piece.faces().count) faces \(box ?? "no bounds")"
+        }
+        #expect(ours.map(summary) == upstream.map(summary))
+    }
+
     // MARK: - Unrelated recomputes
 
     /// Guard: passes without the fix.

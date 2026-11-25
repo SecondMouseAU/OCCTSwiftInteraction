@@ -273,8 +273,9 @@ extension CADViewportService {
     ///
     /// Which returned piece is "kept" is determined by testing each piece's OWN bounds-center
     /// against the plane equation: `Shape.split(atPlane:normal:)`, whose OCCT calls
-    /// `split(_:atPlane:normal:planeID:)` repeats, documents no return-order guarantee. This is a bounds-center heuristic, not an exact interior-point
-    /// test: a piece whose true bulk sits on the kept side but whose bounding-box center
+    /// `split(_:atPlane:normal:planeID:)` repeats, documents no return-order guarantee. This is a
+    /// bounds-center heuristic, not an exact interior-point test: a piece whose true bulk sits on
+    /// the kept side but whose bounding-box center
     /// happens to fall just past the plane (an unusual, non-convex shape) could be
     /// misclassified. Adequate for a review affordance; not a substitute for a real
     /// point-containment query if that ever proves necessary.
@@ -334,27 +335,38 @@ extension CADViewportService {
     /// `BRepAlgoAPI_Splitter` with the shape as argument and that face as tool, then the solids
     /// of the result, else its shells, else the result itself. `split(atPlane:normal:)` throws
     /// the splitter, and with it the history, away, and OCCTSwift has no variant that returns it;
-    /// `splitWithFullHistory(by:)` keeps it but returns the result's top-level children, which
-    /// is why the solids are gathered here.
+    /// `splitWithFullHistory(by:)` keeps it but returns the children of the result rather than
+    /// the result, which is why the argument is wrapped and the solids are gathered here.
     ///
     /// `nil` where `split(atPlane:normal:)` returns `nil`: the shape has no bounding box, or the
     /// face or the split fails.
-    private func split(
+    ///
+    /// Internal rather than private so `CapRecutSelectionTests` can hold it to
+    /// `split(atPlane:normal:)` piece for piece: after an OCCTSwift bump, that test is what notices
+    /// the two diverging.
+    func split(
         _ shape: OCCTSwift.Shape, atPlane origin: SIMD3<Double>, normal: SIMD3<Double>,
         planeID: String
     ) -> (pieces: [OCCTSwift.Shape], step: CapCutStep)? {
         guard let bounds = shape.bounds else { return nil }
         let reach = simd_length(bounds.max - bounds.min) * 2
+        // The argument is `shape` in a compound of one, not `shape` itself. The splitter returns a
+        // compound only when its result holds more than one item, and a single item on its own,
+        // so the children `splitWithFullHistory(by:)` returns were a solid's shells for a plane
+        // that misses it, or a shell's faces. Wrapped, they are always the result's own items.
+        // Sub-shape identity, and so the history, is the same either way.
         guard
+            let argument = OCCTSwift.Shape.compound([shape]),
             let tool = OCCTSwift.Shape.faceFromPlane(
                 origin: origin, normal: normal, uRange: -reach...reach, vRange: -reach...reach),
-            let (children, history) = shape.splitWithFullHistory(by: tool)
+            let (children, history) = argument.splitWithFullHistory(by: tool)
         else { return nil }
         let step = CapCutStep(input: shape, tool: tool, history: history, planeID: planeID)
         let solids = children.flatMap { $0.subShapes(ofType: .solid) }
         if !solids.isEmpty { return (solids, step) }
         let shells = children.flatMap { $0.subShapes(ofType: .shell) }
         if !shells.isEmpty { return (shells, step) }
+        if children.count == 1 { return (children, step) }
         return (OCCTSwift.Shape.compound(children).map { [$0] } ?? [], step)
     }
 
