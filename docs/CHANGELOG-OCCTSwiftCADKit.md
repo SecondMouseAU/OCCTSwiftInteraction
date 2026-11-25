@@ -16,13 +16,42 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 Part of [OCCTSwiftInteraction#77](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/77),
 below. When a cap recut remaps the selection on a body, `selectionChanges` publishes the change with
-this source, one change per body whose selection changed. Like `bodyRemoved(bodyID:)`, it says
-that a pick stored from before the change no longer names anything on that body: the recut
-renumbered its sub-shapes and minted its durable uids afresh.
+this source, one change per recut body with a face, edge or vertex selected (since
+[#85](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/85), also when the remapped
+entities compare equal to the old ones, below). Like `bodyRemoved(bodyID:)`, it says that a pick
+stored from before the change no longer names anything on that body: the recut renumbered its
+sub-shapes and minted its durable uids afresh.
 
 **Migration.** A `switch` over `SelectionChangeSource` with no `default` needs the new case.
 Handle it as you handle `bodyRemoved(bodyID:)` if you keep picks per body, as a selection history
 does.
+
+### Fixed: the attention marker, a pending escalation and a graphless selection kept a recut body's old sub-shapes
+
+Closes [OCCTSwiftInteraction#85](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/85).
+The remap below carried the selection across a cap recut, but three other things kept naming the
+body by its old tables, so after a cap cut, moved or went away they could point at another
+sub-shape, or at one the body no longer has:
+
+- **`agentAttention`** now follows the recut onto the image of the entity it holds, with the new
+  ordinal and uid, and keeps its label. One whose sub-shape the cut divided stays on the piece with
+  the lowest ordinal, since the marker holds one entity. **One with no image is cleared, label and
+  all**, as when its body is removed. An agent's `remove` or `xor` attention request naming the
+  body as the host has it now matches the marker again.
+- **`pendingEscalation`** is replaced by the same request (id, question, candidates and context)
+  whose `entities` name the images, each entity replaced by all of its images as a selected one
+  is. One with no image leaves `entities`. **The escalation stays pending, even with no entity
+  left**: a cap changes what is drawn, not the model, so it neither answers nor rejects the
+  question, and the human can still answer by picking. Removing the body still rejects it, as long
+  as it names something on the body.
+- **On a body whose graph failed to build**, refs compare by ordinal, so a remapped entity at the
+  old ordinal compared equal to the old one and `selection` kept the old shape, area and other
+  details. A recut now always takes the re-enriched entities, and publishes its
+  `.bodyRecut(bodyID:)` change, even when they compare unchanged. No public API makes such a body.
+
+No API change. `selectionChanges` can now publish a `.bodyRecut(bodyID:)` change whose `previous`
+and `current` compare equal, `agentAttention` can be cleared by a clipping-plane change, and
+`pendingEscalation` can change without being answered or replaced by `present(_:)`.
 
 ### Fixed: a cap recut left the selection naming the uncut body's sub-shapes
 
