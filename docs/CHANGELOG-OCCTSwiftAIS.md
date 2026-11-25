@@ -38,7 +38,7 @@ unqualified with all three modules imported, the shape of a CADKit consumer. Bot
 mutation-checked: declaring a different `InteractiveObject`, `SubShapeRef` and `SubShape` in this
 target fails each of them with "ambiguous for type lookup" at every name, and fails no other file.
 Neither can notice the aliases being added back, because an alias to the same type is not
-ambiguous. 469 to 470 tests in 43 to 44 suites, all passing.
+ambiguous. 476 to 477 tests in 44 to 45 suites, all passing.
 
 ## 2.0.0-rc3 (2026-08-23)
 
