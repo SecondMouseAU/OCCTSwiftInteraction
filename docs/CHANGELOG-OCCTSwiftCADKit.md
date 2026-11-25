@@ -12,6 +12,28 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: an attention label was held at any length, and a blank-drawing one was kept
+
+Closes [OCCTSwiftInteraction#54](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/54).
+`setAgentAttention(_:label:)` and a `highlight_requests` payload kept `label` exactly as written,
+only an empty string becoming nil. OCCTMCP's `highlight_selection` bounds a label, but a client
+writing the request file itself, or a host calling `setAgentAttention` directly, was not held to
+that. `setAgentAttention` now applies the bound for both, and the sidecar passes the label straight
+through to it. A label over 80 characters (counted as OCCTMCP counts them, `String.count`) keeps
+its first 79, less any blank ones at the cut and a Prepend character the `…` would join, plus `…`,
+never splitting a grapheme cluster. A label is also held to 4096 UTF-8 bytes, `…` included, since
+one character can carry any number of combining marks and OCCTMCP's count takes it as one; no
+label of ordinary characters within 80 comes near that bound. A cut that leaves nothing visible in
+front of the `…` drops the label rather than holding an ellipsis alone, so a host falls back to
+its own caption. A label made only of characters that draw nothing (whitespace,
+control characters, default-ignorable code points such as a zero-width joiner or the Hangul
+fillers, and a few named ones such as U+2800 BRAILLE PATTERN BLANK) is now no label, where before
+anything but the empty string was kept and drew as a blank caption. The marker itself still lands
+in both cases. The sidecar reports a cut or dropped label in the handled file's `reason` on
+`applied`; an absent or empty label still carries no reason. No API change. A label within 80
+characters with any visible character is held exactly as sent. Rule and reasoning:
+[CADViewportService reference](reference/CADViewportService.md).
+
 ### Fixed: the display-mode controls covered the view cube in the default corner
 
 Closes [OCCTSwiftInteraction#44](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/44).
