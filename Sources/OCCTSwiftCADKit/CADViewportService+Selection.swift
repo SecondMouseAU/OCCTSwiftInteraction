@@ -543,7 +543,19 @@ extension CADViewportService {
         )
     }
 
-    /// Rebuilds the highlight bodies from the whole `selection` (not just the latest pick).
+    /// Rebuilds the highlight bodies from the whole `selection` (not just the latest pick) and
+    /// publishes them.
+    private func rebuildSelectionHighlights() {
+        refreshSelectionBodies()
+        rebuildBodies()
+    }
+
+    /// Cuts `selectionBodies` from the model bodies as they are drawn now, without publishing
+    /// them.
+    ///
+    /// `rebuildSelectionHighlights()` runs this when the selection changes, and
+    /// `rebuildBodies()` when `selectionBodiesAreStale` says the bodies changed under an
+    /// unchanged selection.
     ///
     /// Split into two groups so an agent's highlight reads distinctly from a human's ordinary
     /// selection (OCCTSwiftInteraction#16): the ordinary group (everything in `selection` not
@@ -553,7 +565,8 @@ extension CADViewportService {
     /// helper with `PresentationStyle.agentHighlight`'s color and a larger vertex point
     /// radius. With no agent-highlighted entities (the sidecar not running, the common case)
     /// the agent group is always empty, so this produces exactly the bodies it always has.
-    private func rebuildSelectionHighlights() {
+    func refreshSelectionBodies() {
+        selectionBodiesAreStale = false
         // `selection` and `agentHighlightedEntities` are both small (a handful of picks at
         // once, in practice), so an O(n) `contains` per entity via `PickedEntity`'s existing
         // `Equatable` (which is `isSamePick`, the one identity rule this codebase already has
@@ -582,20 +595,19 @@ extension CADViewportService {
             ))
 
         selectionBodies = bodies
-        rebuildBodies()
     }
 
-    /// The geometry-gathering half of `rebuildSelectionHighlights`, extracted so the ordinary
+    /// The geometry-gathering half of `refreshSelectionBodies`, extracted so the ordinary
     /// and agent-highlighted groups share one implementation instead of two near-identical
     /// copies: up to three bodies (`<idPrefix>_face`/`_edge`/_vertex`), a translucent triangle
     /// patch aggregating every selected face's own triangles, a polyline aggregating every
     /// selected edge's own segments, and a point sprite body for every selected vertex's own
     /// position, one omitted for a kind not present in `entities`.
     ///
-    /// Bodies loaded via `load(_:id:transform:)` are always in world-space already (the
-    /// transform is baked into the shape before tessellation, not applied as a separate
-    /// `_ViewportBody.transform`), so combining geometry gathered from different source
-    /// bodies into one aggregate highlight body is safe.
+    /// Each piece is copied in world space, placed by the `transform` of the body it came from
+    /// (`HighlightPlacement`), so one aggregate body can hold pieces of bodies placed
+    /// differently, such as a `.sideBySide` candidate and its reference, and carries no
+    /// `transform` of its own.
     private func highlightBodies(
         for entities: [PickedEntity],
         idPrefix: String,
@@ -619,6 +631,7 @@ extension CADViewportService {
                 else { continue }
                 let faceIndex = Int32(info.faceIndex)
                 let triCount = body.indices.count / 3
+                let placement = HighlightPlacement(body.transform)
                 // `tri` walks the live body as drawn; the face table is the unwiped body's.
                 let unwiped = unwipedTriangle(ofBody: info.bodyID)
                 for tri in 0..<triCount {
@@ -631,7 +644,8 @@ extension CADViewportService {
                     for idx in [i0, i1, i2] {
                         let base = idx * stride
                         guard base + stride <= body.vertexData.count else { continue }
-                        faceVerts.append(contentsOf: body.vertexData[base..<(base + stride)])
+                        placement.append(
+                            vertex: body.vertexData[base..<(base + stride)], to: &faceVerts)
                         faceIndices.append(faceVertCount)
                         faceVertCount += 1
                     }
@@ -642,6 +656,7 @@ extension CADViewportService {
                     continue
                 }
                 let edgeIndex = Int32(info.edgeIndex)
+                let placement = HighlightPlacement(body.transform)
                 var segmentCursor = 0
                 for polyline in body.edges {
                     let segmentCount = max(polyline.count - 1, 0)
@@ -651,15 +666,18 @@ extension CADViewportService {
                         guard segmentCursor < body.edgeIndices.count,
                             body.edgeIndices[segmentCursor] == edgeIndex
                         else { continue }
-                        edgeSegments.append([polyline[s], polyline[s + 1]])
+                        edgeSegments.append(
+                            [placement.point(polyline[s]), placement.point(polyline[s + 1])])
                     }
                 }
 
             case .vertex(let info):
+                // `position` is the vertex's own, in the frame its body was tessellated in.
+                let transform = modelBodies.first { $0.id == info.bodyID }?.transform
+                let position = SIMD3<Float>(
+                    Float(info.position.x), Float(info.position.y), Float(info.position.z))
                 vertexPoints.append(
-                    SIMD3<Float>(
-                        Float(info.position.x), Float(info.position.y), Float(info.position.z)
-                    ))
+                    HighlightPlacement(transform ?? matrix_identity_float4x4).point(position))
             }
         }
 
@@ -709,5 +727,46 @@ extension CADViewportService {
                 ))
         }
         return bodies
+    }
+}
+
+/// A body's `transform`, applied to geometry copied out of the body into a highlight.
+private struct HighlightPlacement {
+    private let transform: simd_float4x4
+    /// The inverse transpose of the transform's linear part, which keeps a normal perpendicular
+    /// to its surface under a scale or shear as well as a rotation.
+    private let normalMatrix: simd_float3x3
+    private let isIdentity: Bool
+
+    init(_ transform: simd_float4x4) {
+        self.transform = transform
+        isIdentity = transform == matrix_identity_float4x4
+        let linear = simd_float3x3(
+            SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
+            SIMD3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
+            SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z))
+        normalMatrix = linear.determinant == 0 ? linear : linear.inverse.transpose
+    }
+
+    /// `point` in world space.
+    func point(_ point: SIMD3<Float>) -> SIMD3<Float> {
+        guard !isIdentity else { return point }
+        let placed = transform * SIMD4<Float>(point, 1)
+        return SIMD3(placed.x, placed.y, placed.z)
+    }
+
+    /// Appends an interleaved `[px, py, pz, nx, ny, nz]` vertex to `buffer`, in world space.
+    func append(vertex: ArraySlice<Float>, to buffer: inout [Float]) {
+        guard !isIdentity else {
+            buffer.append(contentsOf: vertex)
+            return
+        }
+        let base = vertex.startIndex
+        let position = point(SIMD3(vertex[base], vertex[base + 1], vertex[base + 2]))
+        var normal = normalMatrix * SIMD3(vertex[base + 3], vertex[base + 4], vertex[base + 5])
+        let length = simd_length(normal)
+        if length > 0 { normal /= length }
+        buffer.append(contentsOf: [position.x, position.y, position.z])
+        buffer.append(contentsOf: [normal.x, normal.y, normal.z])
     }
 }

@@ -214,7 +214,9 @@ aggregating every selected face's own triangles, a bright cyan polyline aggregat
 selected edge's segments, a bright magenta point sprite per selected vertex. A body whose
 `ViewportBody` has no `edgeIndices`/`vertices` populated (not edge/vertex pickable) simply
 never produces an edge/vertex pick on that body, face picking on the same body is
-unaffected.
+unaffected. A face or edge highlight is copied from the body as drawn, and a vertex highlight is
+drawn at the vertex's own position; all of them are rebuilt when the selection changes and
+whenever a [comparison](#comparison) changes the bodies.
 
 `selectionModes` **is** `interactiveContext.selectionMode`, not a copy of it: reading or
 writing either reads or writes the other. It is initialised to `[.face]` at `init`,
@@ -374,7 +376,8 @@ viewport.setComparison(nil)   // restores both entities' plain display
 - **`.sideBySide`** offsets the candidate's bodies along X so it sits beside the reference
   rather than overlapping it, via `_ViewportBody.transform` (also read live per frame, so
   no re-tessellation). Since there's only ever one camera/viewport, "linked cameras" is
-  automatic.
+  automatic. A face, edge or vertex selected on the candidate is highlighted on the candidate,
+  offset with it, and goes back with it when the comparison ends.
 - **`.wipe(axis:position:)`** spatially splits the two at a plane perpendicular to `axis`
   at world coordinate `position`: the reference is visible where its geometry's
   coordinate along `axis` is less than `position`, the candidate where it's greater or
@@ -383,7 +386,11 @@ viewport.setComparison(nil)   // restores both entities' plain display
   the two sides differently), see `CLAUDE.md`'s "Things to be careful about" for why, and
   what a wiped body loses (wireframe edges, vertex-picking) as a result. A face pick on a
   wiped body names the face under the cursor, and its `scalarValue` is the value painted on
-  the picked triangle.
+  the picked triangle. A selected face's highlight lights only the triangles the wipe leaves
+  drawn, whether the face was selected before the wipe or during it, and follows the wipe as it
+  moves, switches mode or is cleared. A wiped body draws no edges, so an edge selected on it is
+  not lit while the wipe lasts and is lit again when it ends; a vertex highlight stays at the
+  vertex's position whatever the wipe.
 
 `comparison` reports the currently active `ComparisonView`, or `nil`. Removing (or
 reloading, which removes then re-adds) either the reference or candidate entity clears the

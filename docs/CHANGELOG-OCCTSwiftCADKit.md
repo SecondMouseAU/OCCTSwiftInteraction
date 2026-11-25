@@ -12,6 +12,32 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: a highlight on a side-by-side candidate was drawn where the candidate was not
+
+Closes [OCCTSwiftInteraction#73](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/73).
+`.sideBySide` moves the candidate through its bodies' transform, but a selection highlight copies the
+selected geometry out of the candidate's own vertex data, which the transform leaves alone, and the
+highlight carried no transform of its own. A face, edge or vertex selected on the candidate was
+therefore highlighted where the candidate would be without the offset, beside the reference rather
+than on the candidate. Each highlight now copies its geometry in world space, placed by the
+transform of the body it came from, and with the fix below it follows the offset as it appears,
+moves (a cap that narrows either side changes the gap) and goes. No API change.
+
+### Fixed: a selection highlight went stale when a comparison changed the bodies under it
+
+Closes [OCCTSwiftInteraction#72](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/72).
+The selection highlight is copied out of the model bodies as drawn, but it was rebuilt only when
+the selection changed, while `setComparison(_:)` changes the bodies themselves. A face selected
+before a `.wipe` stayed lit over the part the wipe cut away. A face selected during a wipe stayed lit
+only on the part the wipe had left, after the wipe moved, was cleared, switched to another mode, or
+ended because the other entity was removed. The highlight is now rebuilt from the bodies as drawn
+whenever a comparison is applied or undone, which includes the undo and reapply that a
+clipping-plane change or a scalar field write runs during a comparison. It is rebuilt once per
+viewport update, not once per step. An edge highlight is rebuilt the same way, so an edge selected
+before a wipe is not lit while the wipe lasts, since a wiped body draws no edges, and is lit again
+when the wipe ends; before, it stayed lit across the whole edge. A vertex highlight is drawn at the
+vertex's own position, as before, so a wipe does not hide it. No API change.
+
 ## 3.0.0-beta.8 (2026-11-25)
 
 ### Breaking: `Axis` is renamed `ComparisonAxis`

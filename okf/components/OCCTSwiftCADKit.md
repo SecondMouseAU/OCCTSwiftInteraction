@@ -80,7 +80,9 @@ timestamp: 2026-11-25
   survives clearing or switching it (#48), and so does a scalar field set or cleared, which under
   `.wipe` keeps each triangle's own value (#49). Ending a `.deviation` clears the field on every
   body of the candidate (#59). A face pick on a wiped body names the face under the cursor and
-  reports the value painted there (#58).
+  reports the value painted there (#58). The selection highlight is rebuilt from the bodies as
+  drawn whenever a comparison is set, moved, switched or cleared (#72), and lights a `.sideBySide`
+  candidate's selection where the candidate is drawn (#73).
 - **`ClippingPlane`**: clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:
   normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides
   geometry on one side (a fast, global GPU clip); `showCapSurface: true` (default) additionally

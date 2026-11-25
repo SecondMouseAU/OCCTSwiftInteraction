@@ -83,6 +83,7 @@ extension CADViewportService {
         }
         comparisonBackup.removeAll()
         wipeKeptTriangles.removeAll()
+        selectionBodiesAreStale = true
     }
 
     /// Maps a drawn triangle of `bodyID` to its index in the unwiped body.
@@ -116,7 +117,13 @@ extension CADViewportService {
         applyComparison(active)
     }
 
+    /// Applies `comparison` to the bodies as they are now.
+    ///
+    /// This and `undoComparison(_:)` are the only writers of a comparison's changes to
+    /// `modelBodies`, so both mark the selection highlight stale; the caller's
+    /// `rebuildBodies()` cuts it again from the bodies as drawn.
     func applyComparison(_ comparison: ComparisonView) {
+        selectionBodiesAreStale = true
         switch comparison.mode {
         case .overlay(let opacity):
             applyOverlay(referenceID: comparison.referenceID, opacity: opacity)
