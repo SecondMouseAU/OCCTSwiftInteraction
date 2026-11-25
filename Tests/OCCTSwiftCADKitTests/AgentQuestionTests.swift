@@ -66,13 +66,13 @@
 
         /// Posts one request at `kind` (the face's ordinal for `"face"`) and returns its outcome.
         func send(
-            kind: String = "face", question: String?, target: String? = nil,
-            label: String? = nil
+            id: String = "q", kind: String = "face", scheme: String = "replace",
+            question: String?, target: String? = nil, label: String? = nil
         ) throws -> HandledOutcome {
             try post(
                 HighlightRequestPayload(
-                    id: "q", bodyId: "box", kind: kind,
-                    index: kind == "face" ? pick.faceIndex : 0, scheme: "replace",
+                    id: id, bodyId: "box", kind: kind,
+                    index: kind == "face" ? pick.faceIndex : 0, scheme: scheme,
                     question: question, target: target, label: label),
                 to: service, in: dir)
         }
@@ -111,6 +111,35 @@
             #expect(fixture.service.pendingEscalation == nil, "no escalation card")
             #expect(fixture.service.agentAttention == .face(fixture.pick))
             #expect(fixture.service.agentAttentionLabel == "the datum face")
+            #expect(fixture.service.selection.isEmpty, "the human's selection is untouched")
+        }
+
+        @MainActor
+        @Test(
+            "No question with xor or remove: the marker toggles and clears, each reported",
+            arguments: noQuestions)
+        func noQuestionTogglesAttention(noQuestion: NoQuestion) throws {
+            let fixture = try Fixture()
+            defer { fixture.tearDown() }
+
+            let on = try fixture.send(id: "on", scheme: "xor", question: noQuestion.question)
+            #expect(on.outcome == "applied")
+            #expect(on.target == "attention")
+            #expect(on.reason == noQuestion.reason)
+            #expect(fixture.service.agentAttention == .face(fixture.pick))
+
+            let off = try fixture.send(id: "off", scheme: "xor", question: noQuestion.question)
+            #expect(off.target == "attention")
+            #expect(off.reason == noQuestion.reason)
+            #expect(fixture.service.agentAttention == nil)
+
+            _ = try fixture.send(id: "set", question: nil)
+            let removed = try fixture.send(
+                id: "remove", scheme: "remove", question: noQuestion.question)
+            #expect(removed.target == "attention")
+            #expect(removed.reason == noQuestion.reason)
+            #expect(fixture.service.agentAttention == nil)
+            #expect(fixture.service.pendingEscalation == nil, "no escalation card")
             #expect(fixture.service.selection.isEmpty, "the human's selection is untouched")
         }
 
