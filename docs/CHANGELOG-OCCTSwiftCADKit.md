@@ -12,6 +12,17 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: a highlight on a side-by-side candidate was drawn where the candidate was not
+
+Closes [OCCTSwiftInteraction#73](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/73).
+`.sideBySide` moves the candidate through its bodies' transform, but a selection highlight copies the
+selected geometry out of the candidate's own vertex data, which the transform leaves alone, and the
+highlight carried no transform of its own. A face, edge or vertex selected on the candidate was
+therefore highlighted where the candidate would be without the offset, beside the reference rather
+than on the candidate. Each highlight now copies its geometry in world space, placed by the
+transform of the body it came from, and with the fix below it follows the offset as it appears,
+moves (a cap that narrows either side changes the gap) and goes. No API change.
+
 ### Fixed: a selection highlight went stale when a comparison changed the bodies under it
 
 Closes [OCCTSwiftInteraction#72](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/72).

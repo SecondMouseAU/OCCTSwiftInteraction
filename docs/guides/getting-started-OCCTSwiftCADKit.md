@@ -460,7 +460,8 @@ highlight lights only what the wipe leaves of it, following the wipe as you move
 
 `.overlay`/`.sideBySide` mutate a body's color/transform in place, cheap, since the
 renderer reads both fresh every frame rather than caching them (unlike the scalar-field
-style buffer above). `.wipe` rebuilds each side's body (a fresh `generation`, like
+style buffer above). A selection on the `.sideBySide` candidate is highlighted where the
+candidate is drawn, offset with it. `.wipe` rebuilds each side's body (a fresh `generation`, like
 `setScalarField` does), scaled to that body's triangle count.
 
 ## 11. Clipping and section planes (optional)

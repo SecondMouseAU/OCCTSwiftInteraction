@@ -375,7 +375,8 @@ viewport.setComparison(nil)   // restores both entities' plain display
 - **`.sideBySide`** offsets the candidate's bodies along X so it sits beside the reference
   rather than overlapping it, via `_ViewportBody.transform` (also read live per frame, so
   no re-tessellation). Since there's only ever one camera/viewport, "linked cameras" is
-  automatic.
+  automatic. A face, edge or vertex selected on the candidate is highlighted on the candidate,
+  offset with it, and goes back with it when the comparison ends.
 - **`.wipe(axis:position:)`** spatially splits the two at a plane perpendicular to `axis`
   at world coordinate `position`: the reference is visible where its geometry's
   coordinate along `axis` is less than `position`, the candidate where it's greater or
