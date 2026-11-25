@@ -39,20 +39,25 @@ enum HighlightGeometry {
         }
     }
 
-    /// The world centroid of each triangle `body` draws on the face `shape`.
+    /// The index of each triangle `body` draws on the face `shape`.
     ///
     /// A triangle is on the face when its local centroid is inside the face's bounding box, which
     /// is exact for a box: its faces are axis-aligned squares, so no other face's triangle
     /// centroid falls inside one.
-    static func worldCentroids(onFace shape: Shape, of body: _ViewportBody) -> [SIMD3<Double>] {
+    static func triangles(onFace shape: Shape, of body: _ViewportBody) -> [Int] {
         guard let bounds = Face(shape)?.bounds else { return [] }
         let tolerance = 1e-4
-        return (0..<(body.indices.count / 3)).compactMap { triangle in
+        return (0..<(body.indices.count / 3)).filter { triangle in
             let local = localCentroid(of: triangle, in: body)
             let point = SIMD3<Double>(Double(local.x), Double(local.y), Double(local.z))
-            guard all(point .>= bounds.min - tolerance), all(point .<= bounds.max + tolerance)
-            else { return nil }
-            return world(local, under: body.transform)
+            return all(point .>= bounds.min - tolerance) && all(point .<= bounds.max + tolerance)
+        }
+    }
+
+    /// The world centroid of each triangle `body` draws on the face `shape`.
+    static func worldCentroids(onFace shape: Shape, of body: _ViewportBody) -> [SIMD3<Double>] {
+        triangles(onFace: shape, of: body).map {
+            world(localCentroid(of: $0, in: body), under: body.transform)
         }
     }
 
