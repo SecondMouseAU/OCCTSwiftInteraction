@@ -3,7 +3,7 @@
 //
 // Split out of CADViewportService.swift for OCCTSwiftInteraction#13 (code-structure policy).
 // The service's stored state stays in the core file; this is the scalar field surface of the same
-// type. A move, not a rewrite: the bodies below are unchanged.
+// type. The split itself was a move, not a rewrite; what changed since is in the history.
 
 import Combine
 import Foundation
@@ -27,7 +27,7 @@ extension CADViewportService {
     /// because `OCCTSwiftViewport` (pinned floor 1.1.26) doesn't actually apply an in-place
     /// style-only mutation to an already-rendered body: its renderer only rebuilds a body's
     /// GPU buffers when `generation` changes, which an in-place mutation never does. See the
-    /// doc comment on `applyTriangleStyles` for how this was confirmed.
+    /// doc comment on `styledBody(_:with:)` for how this was confirmed.
     public func setScalarField(_ field: ScalarField?, forBody id: String) {
         guard let field else {
             scalarFields.removeValue(forKey: id)
@@ -65,18 +65,29 @@ extension CADViewportService {
         return ScalarFieldLegend(label: field.label, unit: field.unit, range: range, stops: stops)
     }
 
+    /// Paints `field` onto the body `id` and onto any comparison snapshot of that body.
+    ///
+    /// Goes through `writeThroughComparison(toBody:_:)`, so a field set during a comparison
+    /// outlives it and is indexed by the body's own triangles, not a wipe's subset of them.
+    private func applyTriangleStyles(_ field: ScalarField?, forBody id: String) {
+        guard modelBodies.contains(where: { $0.id == id }) else { return }
+        writeThroughComparison(toBody: id) {
+            guard let index = modelBodies.firstIndex(where: { $0.id == id }) else { return }
+            modelBodies[index] = styledBody(modelBodies[index], with: field)
+        }
+        rebuildBodies()
+    }
+
     /// Builds a `TriangleStyle` per triangle from `field`.
     ///
     /// `nil`, or a field whose `effectiveRange` is `nil`, clears every style back to empty
     /// (not a full array of `.none`; `ViewportBody.triangleStyles`'s own contract
     /// distinguishes "empty" (skips the highlight pass for this body entirely) from
     /// "populated but all zero-alpha" (still builds a style buffer and runs the pass, just
-    /// compositing nothing)) and writes it into `id`'s body. See this method's
+    /// compositing nothing)) and returns `body` rebuilt with it. See this method's
     /// implementation comment below for why that's a full body reconstruction rather than
     /// an in-place `triangleStyles` mutation.
-    private func applyTriangleStyles(_ field: ScalarField?, forBody id: String) {
-        guard let index = modelBodies.firstIndex(where: { $0.id == id }) else { return }
-        let body = modelBodies[index]
+    private func styledBody(_ body: _ViewportBody, with field: ScalarField?) -> _ViewportBody {
         let triCount = body.indices.count / 3
         var styles: [TriangleStyle] = []
 
@@ -119,7 +130,7 @@ extension CADViewportService {
         // OCCTSwiftViewport's caching can distinguish a style-only change, this should
         // go back to the in-place mutation to actually deliver the cheap update its own
         // API promises.
-        modelBodies[index] = _ViewportBody(
+        return _ViewportBody(
             id: body.id,
             vertexData: body.vertexData,
             indices: body.indices,
@@ -145,7 +156,6 @@ extension CADViewportService {
             meshPositions: body.meshPositions,
             meshNormals: body.meshNormals
         )
-        rebuildBodies()
     }
 
     /// The scalar value at a resolved face pick, if a field is set on that body.

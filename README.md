@@ -8,8 +8,8 @@ Identity, selection, and the assembled CAD viewport service for the OCCTSwift st
 
 Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md).
 
-> Status: **0.x**, heading for `1.0.0` once the picking consolidation
-> ([ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43)) has landed and settled.
+> Status: **2.0.0** is the current stable release. The 3.0.0 line is in beta, pinned exactly to
+> OCCTSwift 4.0.0 betas, and a consumer gets it only by naming a beta.
 
 ## Three targets, one package
 
@@ -56,8 +56,9 @@ Your `import` lines do not change. See [docs/MIGRATION.md](docs/MIGRATION.md).
 - [docs/MIGRATION.md](docs/MIGRATION.md), moving from the three old packages
 - [docs/reference/](docs/reference/), per-type reference across all three targets
 - [docs/guides/](docs/guides/), getting started and cookbook
-- Historical changelogs: [OCCTSwiftTools](docs/CHANGELOG-OCCTSwiftTools.md),
-  [OCCTSwiftAIS](docs/CHANGELOG-OCCTSwiftAIS.md)
+- Changelogs, one per target: [OCCTSwiftTools](docs/CHANGELOG-OCCTSwiftTools.md),
+  [OCCTSwiftAIS](docs/CHANGELOG-OCCTSwiftAIS.md),
+  [OCCTSwiftCADKit](docs/CHANGELOG-OCCTSwiftCADKit.md)
 
 ## Face identity
 

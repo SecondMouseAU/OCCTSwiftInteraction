@@ -5,8 +5,9 @@ import simd
 
 @testable import OCCTSwiftCADKit
 
-/// Fixtures shared by the suites that check a caller's visibility against the snapshots
-/// `updateCapSurfaces` and `undoComparison` restore from (OCCTSwiftInteraction#46, #48).
+/// Fixtures shared by the suites that check a caller's visibility or scalar field against the
+/// snapshots `updateCapSurfaces` and `undoComparison` restore from (OCCTSwiftInteraction#46, #48,
+/// #49).
 @MainActor
 extension CADViewportService {
     /// A service holding one 4x4x4 box centred on the origin per id, or `nil` if the kernel
@@ -51,6 +52,19 @@ extension CADViewportService {
     @discardableResult
     func addUnrelatedHollowPlane() -> String {
         addClippingPlane(origin: SIMD3(0, 0, 100), normal: SIMD3(0, 0, 1), showCapSurface: false)
+    }
+
+    /// Runs `trigger`, one of the things that run `updateCapSurfaces()` without being about any
+    /// entity under test.
+    func fire(_ trigger: ComparisonVisibilityTests.Trigger) {
+        switch trigger {
+        case .resetClippingPlanes:
+            clippingPlanes = clippingPlanes
+        case .loadUnrelatedEntity:
+            loadUnrelatedEntity()
+        case .addUnrelatedHollowPlane:
+            addUnrelatedHollowPlane()
+        }
     }
 
     /// Whether the model body `id` is currently visible, or `nil` if there is no such body.

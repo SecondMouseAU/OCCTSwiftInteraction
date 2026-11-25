@@ -78,6 +78,24 @@ preview show now write the caller's value into the comparison snapshot too, so a
 the body to the visibility the caller last set. No API change; the clear still restores the
 reference's opacity, the candidate's offset and the wiped triangles exactly as before.
 
+### Fixed: a scalar field set during a comparison was lost when it ended, and misplaced under a wipe
+
+Closes [OCCTSwiftInteraction#49](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/49),
+the same defect class as #46 and #48 on a different field. `setScalarField(_:forBody:)` painted only
+the live body, so a field set on the reference or candidate while an `.overlay`, `.sideBySide` or
+`.wipe` comparison was active disappeared when the comparison was cleared or its mode switched, and
+on any `updateCapSurfaces()` pass meanwhile (a clipping plane added, moved or removed,
+`clippingPlanes` reassigned, an unrelated entity loaded), while `scalarField(forBody:)` and
+`scalarFieldLegend` went on reporting it as set. Clearing a field during a comparison failed the
+other way: the paint came back when the comparison ended. Under `.wipe`, a `.perTriangle` field set
+during the comparison was indexed by position in the wiped subset of triangles, so it painted the
+wrong ones: a wipe at X = 1 left a 4x4x4 box candidate the two triangles of its +X face and painted
+them with `values[0]` and `values[1]`, which belong to the -X face. `setScalarField` now paints the
+body as the comparison's snapshot holds it, whole and in its loaded triangle order, and applies the
+comparison again over the result, so the field survives the clear, the switch and the recompute,
+and a wiped body shows each kept triangle's own value. No API change. Under `.wipe`, setting a field
+during the comparison now re-filters both entities' bodies, which costs the same as moving the wipe.
+
 ### Fixed: a `startSelectionSidecar` that throws no longer leaves a half-started sidecar
 
 A start that failed partway (for example when `host.json` cannot be written) left `sidecarDirectory`
