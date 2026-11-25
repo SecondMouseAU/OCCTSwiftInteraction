@@ -114,8 +114,10 @@ Phase 2 of ecosystem#43, done in
 
 `OCCTSwiftTools.SubShapePickResolver` is the only place a render-path ordinal becomes a
 `SubShapeRef`. Both this repo's own targets call it; do not write a fourth copy. `SubShapeRef`,
-`SubShape` and `InteractiveObject` live in `OCCTSwiftTools` for the same reason, with
-source-compatible typealiases left in `OCCTSwiftAIS`, deprecated since 2.0.0.
+`SubShape` and `InteractiveObject` live in `OCCTSwiftTools` for the same reason, and only there:
+the typealiases `OCCTSwiftAIS` kept for them (deprecated in 2.0.0) were removed in 3.0.0
+([#61](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/61)), so code that names one
+imports `OCCTSwiftTools`. Do not add them back.
 
 Three behaviours look like the resolver's job and are not, so they stayed where they were:
 

@@ -281,10 +281,13 @@ widget.endDrag(commit: true)
 
 A `Dimension` is a labeled measurement anchored on sub-shapes. Three concrete types:
 
-- `LinearDimension(from:to:plane:?)` — distance between two anchors. Optional `WorkPlane` projects
+- `LinearDimension(from:to:plane:?)`: distance between two anchors. Optional `WorkPlane` projects
   both anchors orthogonally before measuring.
-- `AngularDimension(arms:apex:)` — angle at the apex.
-- `RadialDimension(circularEdge:showDiameter:?)` — radius (or diameter) of a circular edge.
+- `AngularDimension(arms:apex:)`: angle at the apex.
+- `RadialDimension(circularEdge:showDiameter:?)`: radius (or diameter) of a circular edge.
+
+`SubShapeRef` is an `OCCTSwiftTools` type, so a file that spells it, as this one does, needs
+`import OCCTSwiftTools` alongside `import OCCTSwiftAIS`.
 
 ```swift
 let part = ais.display(Shape.cylinder(radius: 4, height: 8)!)

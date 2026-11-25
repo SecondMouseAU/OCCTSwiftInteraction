@@ -21,6 +21,7 @@ in-plane length.
 ```swift
 import OCCTSwift
 import OCCTSwiftAIS
+import OCCTSwiftTools   // SubShapeRef
 
 let ais = InteractiveContext(viewport: ViewportController())
 let part = ais.display(Shape.box(width: 10, height: 5, depth: 3)!)

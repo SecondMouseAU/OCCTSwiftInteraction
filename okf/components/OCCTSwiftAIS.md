@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftAIS
 tags: [index, api]
 description: OCCTSwiftAIS public API: one library target covering selection, manipulators, dimensions, and scene objects.
-timestamp: 2026-11-23
+timestamp: 2026-11-25
 ---
 
 # Components
@@ -17,8 +17,9 @@ Its API surface groups into:
   `selectionMode`, `Selection`. Identity resolution itself is
   `OCCTSwiftTools.SubShapePickResolver`'s since OCCTSwiftInteraction#2; what stays here is the
   selection-mode gate and the whole-body fallback, both selection-mode decisions rather than
-  identity ones. `SubShapeRef` / `SubShape` / `InteractiveObject` moved down to `OCCTSwiftTools`
-  with source-compatible typealiases left behind, deprecated since 2.0.0.
+  identity ones. `SubShapeRef` / `SubShape` / `InteractiveObject` moved down to `OCCTSwiftTools`;
+  the typealiases left behind here were deprecated in 2.0.0 and removed in 3.0.0
+  (OCCTSwiftInteraction#61), so code that names one imports `OCCTSwiftTools` too.
   **`InteractiveContext.selection` is the package's only selection store since
   OCCTSwiftInteraction#3**: `OCCTSwiftCADKit.CADViewportService` drives it rather than keeping a
   parallel one, so `CADViewportService.selection` is a projection of it and

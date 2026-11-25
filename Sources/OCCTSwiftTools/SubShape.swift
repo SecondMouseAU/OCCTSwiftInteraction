@@ -4,7 +4,7 @@
 // The types that name a piece of picked topology. Moved down from the OCCTSwiftAIS target in
 // OCCTSwiftInteraction#2 (phase 2 of ecosystem#43): the type naming a piece of topology belongs in
 // the lowest layer that can produce it, which is the layer holding the identity tables and minting
-// the `BRepGraph.GraphUID`. `OCCTSwiftAIS` keeps source-compatible aliases.
+// the `BRepGraph.GraphUID`.
 
 import Foundation
 import OCCTSwift

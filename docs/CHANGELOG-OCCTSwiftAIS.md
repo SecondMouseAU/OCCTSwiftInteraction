@@ -9,6 +9,37 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
+### Breaking: the `InteractiveObject`, `SubShapeRef` and `SubShape` aliases are removed
+
+Closes [OCCTSwiftInteraction#61](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/61).
+The three types moved down to `OCCTSwiftTools` in 0.1.0
+([#2](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/2)), and this target kept
+typealiases for them so that `import OCCTSwiftAIS` alone still resolved the names. The aliases were
+deprecated in 2.0.0 with a message naming 3.0.0 as the release that removes them, and this is that
+removal: `OCCTSwiftAIS` no longer declares any of the three names.
+
+**Migration.** A file that spells `InteractiveObject`, `SubShapeRef` or `SubShape` and imports only
+`OCCTSwiftAIS` adds `import OCCTSwiftTools`, and its target lists the `OCCTSwiftTools` product if it
+does not already. Each alias denoted the identical type, so nothing else changes, and under 2.x
+every affected line already carried the deprecation warning. Code that never spells one of the
+names (holding the result of `display(_:)`, reading `selection`, writing `.face(object, ref: ref)`)
+is unaffected. [MIGRATION.md](MIGRATION.md) has the same recipe.
+
+Nothing inside the package resolved through the aliases: since 2.0.0 this target's own code names
+the `OCCTSwiftTools` types qualified, so no library code changes beyond deleting the alias file.
+The one test that named an alias, on purpose, is covered below.
+
+**Tests:** 1 new here (`MovedSelectionTypesTests`), which imports `OCCTSwiftAIS` without
+`@testable` plus `OCCTSwiftTools`, the way a migrated consumer does, and spells all three names
+unqualified through the public `InteractiveContext` and `Selection` API. Every other use in this
+test target is qualified, so it is where an ambiguous name would surface. The CADKit target's
+`Smoke` test, which used to pin the AIS and Tools spellings to one type, now spells the names
+unqualified with all three modules imported, the shape of a CADKit consumer. Both were
+mutation-checked: declaring a different `InteractiveObject`, `SubShapeRef` and `SubShape` in this
+target fails each of them with "ambiguous for type lookup" at every name, and fails no other file.
+Neither can notice the aliases being added back, because an alias to the same type is not
+ambiguous. 469 to 470 tests in 43 to 44 suites, all passing.
+
 ## 2.0.0-rc3 (2026-08-23)
 
 ### New: `PresentationStyle.agentHighlight`

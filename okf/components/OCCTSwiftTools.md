@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftTools
 tags: [index]
 description: Public modules / API surfaces exposed by OCCTSwiftTools.
-timestamp: 2026-11-23
+timestamp: 2026-11-25
 ---
 
 # Components
@@ -37,7 +37,8 @@ and SPEC.md):
   the layers that own them.
 - **`SubShapeRef`** / **`SubShape`** / **`InteractiveObject`**: the types naming a picked piece of
   topology and the scene entry it belongs to. Moved down from the `OCCTSwiftAIS` target
-  (OCCTSwiftInteraction#2), which keeps source-compatible typealiases, deprecated since 2.0.0.
+  (OCCTSwiftInteraction#2). The typealiases it kept for them were deprecated in 2.0.0 and removed
+  in 3.0.0 (OCCTSwiftInteraction#61), so a consumer that names one imports `OCCTSwiftTools`.
 - **`ExportManager`** / **`ExportFormat`**: shape export to OBJ / PLY / STEP / BREP.
 - **Per-domain converters**: `CurveConverter` (`curve2DToBody` / `curve3DToBody`),
   `SurfaceConverter` (UV isoparametric grid bodies), `WireConverter` (wire → edge polyline),
