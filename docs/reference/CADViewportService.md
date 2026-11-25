@@ -295,6 +295,8 @@ on.
   partial selection on the way.
 - **`select(_ addresses:scheme:)`** selects the sub-shapes [`SubShapeAddress`](#subshapeaddress)
   values name, as one change, and returns the addresses that name nothing, in the order given.
+  With two list forms, an untyped empty literal (`select([])`) is ambiguous: write
+  `[PickedEntity]()`, or call `clearSelection()`.
 - **`pickedEntities(at:)`** gives the entities an address names without selecting them, enriched
   exactly as a viewport pick of each (`description`, bounds, area, curve type, length, position).
   Use it for `setAgentAttention(_:label:)`, an `EscalationRequest`, or a description shown before
@@ -305,7 +307,8 @@ on.
 
 **An address's ordinal is the body's as loaded, and a cap does not change it.** It indexes
 `loadedIdentity(ofBody:)`'s tables, which number the sub-shapes of the shape the body was loaded
-from, as a host's own `ShapeIdentity(shape:)` of that shape does. A cap-enabled clipping plane
+from (as placed, when it was loaded with a `transform`), as a host's own `ShapeIdentity(shape:)`
+of that shape does. A cap-enabled clipping plane
 recuts the body and renumbers it as drawn, but each entry point maps the address onto the body as
 drawn when it is called, through the same split history the selection follows across a recut:
 

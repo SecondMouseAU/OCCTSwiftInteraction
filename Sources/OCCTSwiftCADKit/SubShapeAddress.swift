@@ -10,12 +10,13 @@ import OCCTSwift
 /// body's identity table **as loaded**.
 ///
 /// The ordinal indexes the tables `CADViewportService.loadedIdentity(ofBody:)` returns: the
-/// `ShapeIdentity` of the shape the body was loaded from. That is the numbering a host's own
-/// `ShapeIdentity(shape:)` of the same shape gives, and the one a cap does not change. It is not
-/// the numbering `CADViewportService.selection` reports while a cap is active (`faceIndex`,
-/// `edgeIndex`, `vertexIndex`, `selection.json`'s `index`), which is the cut body's as it is
-/// drawn, renumbered by every recut. `CADViewportService.select(_:scheme:)` and
-/// `pickedEntities(at:)` map an address onto the body as drawn when they are called.
+/// `ShapeIdentity` of the shape the body was loaded from (as placed, when it was loaded with a
+/// `transform`). That is the numbering a host's own `ShapeIdentity(shape:)` of the same shape
+/// gives, and the one a cap does not change. It is not the numbering `CADViewportService.selection`
+/// reports while a cap is active (`faceIndex`, `edgeIndex`, `vertexIndex`, `selection.json`'s
+/// `index`), which is the cut body's as it is drawn, renumbered by every recut.
+/// `CADViewportService.select(_:scheme:)` and `pickedEntities(at:)` map an address onto the body
+/// as drawn when they are called.
 public struct SubShapeAddress: Sendable, Hashable {
     /// Which kind of sub-shape an address names.
     public enum Kind: String, Sendable, Hashable, CaseIterable {

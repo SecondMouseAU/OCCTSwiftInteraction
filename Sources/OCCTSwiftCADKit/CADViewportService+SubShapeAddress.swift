@@ -14,8 +14,9 @@ extension CADViewportService {
 
     // MARK: - Sub-shapes known by address
 
-    /// The identity of body `bodyID` as it was loaded: the shape it was loaded from, that shape's
-    /// graph, and its face, edge and vertex tables. `nil` for a body this service has not loaded.
+    /// The identity of body `bodyID` as it was loaded: the shape it was loaded from (as placed,
+    /// when `load(_:id:graph:transform:)` was given a `transform`), that shape's graph, and its
+    /// face, edge and vertex tables. `nil` for a body this service has not loaded.
     ///
     /// The tables are the ordinal space a `SubShapeAddress` names, so a host that looks a
     /// sub-shape up in them (by geometry, say) has the ordinal to address it by, without building a
@@ -78,7 +79,8 @@ extension CADViewportService {
     ///
     /// The list is a set: an entity listed twice counts once, so `.xor` toggles it once. An empty
     /// list with `.replace` clears the selection; with any other scheme it changes nothing and
-    /// publishes nothing.
+    /// publishes nothing. An untyped empty literal, `select([])`, is ambiguous between this and
+    /// `select(_ addresses:scheme:)`: write `[PickedEntity]()`, or call `clearSelection()`.
     public func select(_ entities: [PickedEntity], scheme: SelectionScheme = .replace) {
         guard !entities.isEmpty || scheme == .replace else { return }
         var subShapes: Set<OCCTSwiftTools.SubShape> = []
