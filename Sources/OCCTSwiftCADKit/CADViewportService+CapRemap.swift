@@ -131,8 +131,8 @@ extension CADViewportService {
     /// the same id, question, candidates and context, even with no entity left: a cap changes what
     /// is drawn, not the model, so it neither answers the question nor rejects it on the human's
     /// behalf, and the human can still answer by picking. Removing the body is what rejects it
-    /// (`pruneEscalation(removingBodyIDs:)`), and that reads `entities`, so an escalation left
-    /// naming nothing on the body is no longer rejected when the body goes.
+    /// (`pruneEscalation(removingBodyIDs:)`), which also reads the bodies the escalation was
+    /// presented about, so one left naming nothing on the body is still rejected when it goes.
     private func remapPendingEscalation(
         onBody bodyID: String, from old: CapRecutIdentity, to new: CapRecutIdentity
     ) {

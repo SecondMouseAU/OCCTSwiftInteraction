@@ -42,8 +42,9 @@ sub-shape, or at one the body no longer has:
   whose `entities` name the images, each entity replaced by all of its images as a selected one
   is. One with no image leaves `entities`. **The escalation stays pending, even with no entity
   left**: a cap changes what is drawn, not the model, so it neither answers nor rejects the
-  question, and the human can still answer by picking. Removing the body still rejects it, as long
-  as it names something on the body.
+  question, and the human can still answer by picking. Removing the body still rejects it, even
+  once the cap has left it naming nothing there: the service remembers the bodies it was
+  presented about.
 - **On a body whose graph failed to build**, refs compare by ordinal, so a remapped entity at the
   old ordinal compared equal to the old one and `selection` kept the old shape, area and other
   details. A recut now always takes the re-enriched entities, and publishes its

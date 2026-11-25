@@ -238,6 +238,28 @@ struct CapRecutStaleRefsTests {
         #expect(service.pendingEscalation == nil)
     }
 
+    @MainActor
+    @Test("Removing a body an escalation was about rejects it, even once a cap left it naming none")
+    func escalationLeftNamingNothingIsRejectedWithItsBody() async throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref"]) else { return }
+        let face = try #require(service.entity(.face, ofBody: "ref", at: Faces.minusX))
+        let request = EscalationRequest(id: "which", entities: [face], question: "This one?")
+        let answer = Task { @MainActor in await service.present(request) }
+        await Task.yield()
+        service.addHalfCap()
+        try #require(
+            service.pendingEscalation?.entities.isEmpty == true, "sanity check: naming nothing")
+
+        service.remove(id: "ref")
+
+        #expect(service.pendingEscalation == nil, "removing the body rejected it")
+        // Cancelling resolves a still-pending escalation `.deferred`, so a failure here fails
+        // rather than leaving the run waiting on an answer that never comes.
+        if service.pendingEscalation != nil { answer.cancel() }
+        let response = await answer.value
+        #expect(response == .rejected(reason: "referenced geometry was removed"))
+    }
+
     // MARK: - Order
 
     @MainActor

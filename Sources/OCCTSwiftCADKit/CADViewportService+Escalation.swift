@@ -71,6 +71,7 @@ extension CADViewportService {
             respond(.deferred)
         }
         pendingEscalation = request
+        pendingEscalationBodyIDs = Set(request.entities.map(\.bodyID))
 
         if let first = request.entities.first {
             select(first, scheme: .replace)
@@ -110,6 +111,7 @@ extension CADViewportService {
         guard let continuation = escalationContinuation else { return }
         escalationContinuation = nil
         pendingEscalation = nil
+        pendingEscalationBodyIDs = []
         continuation.resume(returning: response)
     }
 
@@ -145,10 +147,14 @@ extension CADViewportService {
     /// Auto-resolves the pending escalation as `.rejected` if it referenced any of the
     /// just-removed bodies, rather than leaving a `present(_:)` call suspended forever over
     /// geometry that no longer exists.
+    ///
+    /// Reads the bodies it was presented about (`pendingEscalationBodyIDs`) as well as its
+    /// current `entities`: a cap recut can leave it naming nothing on a body it is still about
+    /// (OCCTSwiftInteraction#85).
     func pruneEscalation(removingBodyIDs bodyIDs: [String]) {
         guard let request = pendingEscalation else { return }
-        let removed = Set(bodyIDs)
-        guard request.entities.contains(where: { removed.contains($0.bodyID) }) else { return }
+        let referenced = pendingEscalationBodyIDs.union(request.entities.map(\.bodyID))
+        guard !referenced.isDisjoint(with: bodyIDs) else { return }
         respond(.rejected(reason: "referenced geometry was removed"))
     }
 

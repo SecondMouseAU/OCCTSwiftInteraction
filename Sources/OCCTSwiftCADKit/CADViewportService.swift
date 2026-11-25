@@ -487,6 +487,14 @@ public final class CADViewportService {
     /// image is dropped, and the escalation stays pending even with no entity left.
     public internal(set) var pendingEscalation: EscalationRequest?
 
+    /// The bodies `pendingEscalation` was presented about, which `pruneEscalation` rejects it for.
+    ///
+    /// Set by `beginPresenting(_:)` and cleared by `respond(_:)`. Held apart from
+    /// `pendingEscalation.entities` because a cap recut can leave the request naming nothing on a
+    /// body it is still about (OCCTSwiftInteraction#85), and removing that body must still reject
+    /// it rather than leave `present(_:)` suspended over geometry that no longer exists.
+    var pendingEscalationBodyIDs: Set<String> = []
+
     var escalationContinuation: CheckedContinuation<EscalationResponse, Never>?
 
     // MARK: - Shape Info

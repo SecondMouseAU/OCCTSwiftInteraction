@@ -570,8 +570,8 @@ A cap that cuts, moves off or stops cutting a body the escalation names does not
 `pendingEscalation` becomes the same request (same id, so `present(_:)` still returns its
 answer) with each entity on that body replaced by its images on the recut body, as the selection
 is, and an entity with no image dropped. It stays pending even when no entity is left: the cap
-changes what is drawn, not the model (OCCTSwiftInteraction#85). An escalation left naming nothing
-on a body is not rejected when that body is later removed.
+changes what is drawn, not the model (OCCTSwiftInteraction#85). Removing a body it was presented
+about still rejects it, even once it names nothing on that body.
 
 See [`EscalationRequest`](#escalationrequest) / [`EscalationCandidate`](#escalationcandidate) /
 [`EscalationResponse`](#escalationresponse) for the full type definitions, and
