@@ -22,8 +22,9 @@ the merge brought the three old repositories' tags with it, so `v1.0.0` to `v1.6
 to `v0.7.2`) name pre-merge commits, and the Tools and AIS changelogs carry many of them as
 headings. `v0.1.0` and `v0.2.0` had each been force-moved off an inherited tag onto this package's
 release; starting at `2.0.0` meant no further tag had to move. Never reuse another of those
-version numbers, and never move or re-point a tag. The inherited tags are no longer on GitHub,
-which carries only this package's own, but older local clones still hold them, so neither a fresh
+version numbers, and never move or re-point a tag. The inherited tags are no longer on this
+repository's GitHub remote, which carries only this package's own (the three old repositories
+still hold theirs), but older local clones of this repository still hold them, so neither a fresh
 clone nor a remote tag listing will warn you of a collision.
 
 `2.0.0` is the current stable release. `3.0.0` exists only as pre-releases (`3.0.0-beta.N`, each
