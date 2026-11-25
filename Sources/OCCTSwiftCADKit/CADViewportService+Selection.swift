@@ -624,14 +624,15 @@ extension CADViewportService {
         var vertexPoints: [SIMD3<Float>] = []
 
         for entity in entities {
+            // A highlight lights only what is drawn, so nothing of a hidden body.
+            guard let body = modelBodies.first(where: { $0.id == entity.bodyID }), body.isVisible
+            else { continue }
+            let placement = HighlightPlacement(body.transform)
             switch entity {
             case .face(let info):
-                guard let body = modelBodies.first(where: { $0.id == info.bodyID }),
-                    let meta = metadata[info.bodyID]
-                else { continue }
+                guard let meta = metadata[info.bodyID] else { continue }
                 let faceIndex = Int32(info.faceIndex)
                 let triCount = body.indices.count / 3
-                let placement = HighlightPlacement(body.transform)
                 // `tri` walks the live body as drawn; the face table is the unwiped body's.
                 let unwiped = unwipedTriangle(ofBody: info.bodyID)
                 for tri in 0..<triCount {
@@ -652,11 +653,7 @@ extension CADViewportService {
                 }
 
             case .edge(let info):
-                guard let body = modelBodies.first(where: { $0.id == info.bodyID }) else {
-                    continue
-                }
                 let edgeIndex = Int32(info.edgeIndex)
-                let placement = HighlightPlacement(body.transform)
                 var segmentCursor = 0
                 for polyline in body.edges {
                     let segmentCount = max(polyline.count - 1, 0)
@@ -673,11 +670,9 @@ extension CADViewportService {
 
             case .vertex(let info):
                 // `position` is the vertex's own, in the frame its body was tessellated in.
-                let transform = modelBodies.first { $0.id == info.bodyID }?.transform
                 let position = SIMD3<Float>(
                     Float(info.position.x), Float(info.position.y), Float(info.position.z))
-                vertexPoints.append(
-                    HighlightPlacement(transform ?? matrix_identity_float4x4).point(position))
+                vertexPoints.append(placement.point(position))
             }
         }
 

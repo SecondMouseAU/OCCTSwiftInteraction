@@ -391,6 +391,7 @@ extension CADViewportService {
         entity.isVisible = isVisible
         entities[id] = entity
         for i in modelBodies.indices where entity.bodyIDs.contains(modelBodies[i].id) {
+            if modelBodies[i].isVisible != isVisible { selectionBodiesAreStale = true }
             modelBodies[i].isVisible = isVisible
             recordCallerVisibility(isVisible, forBody: modelBodies[i].id)
         }

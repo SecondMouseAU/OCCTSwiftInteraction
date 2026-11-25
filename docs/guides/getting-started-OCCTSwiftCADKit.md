@@ -317,7 +317,8 @@ left to preserve.
 
 Every selected entity is highlighted, a translucent yellow triangle patch aggregating
 every selected face, a bright cyan polyline aggregating every selected edge's segments, a
-bright magenta point sprite per selected vertex.
+bright magenta point sprite per selected vertex. A highlight lights only what is drawn: hiding an
+entity keeps its selection but unlights it until you show the entity again.
 
 ```swift
 if let summary = viewport.selectionMeasurements {

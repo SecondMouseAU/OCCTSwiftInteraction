@@ -20,7 +20,8 @@ timestamp: 2026-11-25
   `interactiveContext.selectionMode`. A real pick replaces the selection wholesale; build a
   multi-selection with `select(_:scheme:)` (`SelectionScheme`: `.replace`/`.add`/`.remove`/`.xor`,
   `OCCTSwiftAIS`'s own type, which gained the scheme parameter from this service).
-  `selectionMeasurements` reports aggregate count/area/length/bounds. The deprecated
+  `selectionMeasurements` reports aggregate count/area/length/bounds. The selection highlight
+  lights only what is drawn, so a hidden body keeps its selection unlit (#78). The deprecated
   `selectedFace`, `selected` and `selectionSummary` were removed in 2.0.0.
   `load(_:id:transform:)` / `loadFile(from:id:progress:)` / `loadFromData(_:filename:id:progress:)`
   display several parts or assembly occurrences as distinct, addressable **entities**

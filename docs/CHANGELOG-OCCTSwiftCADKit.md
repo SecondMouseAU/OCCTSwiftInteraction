@@ -12,6 +12,17 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: a hidden entity's selection highlight was still drawn
+
+Closes [OCCTSwiftInteraction#78](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/78).
+Hiding an entity with `visibility[id] = false` hid its bodies but not their selection highlight,
+which is drawn as separate bodies, so a selected face, edge or vertex stayed lit where the hidden
+entity had been. The same happened to a body that a cap plane clipped away entirely. A highlight now
+lights only what is drawn: a hidden body keeps its selection, and `selection` still lists it, but
+none of it is lit until the body is shown again, by `visibility`, by an escalation preview naming
+the body, or by the plane no longer clipping it, when it is lit again. Selecting a sub-shape of a
+hidden body works the same way. No API change.
+
 ### Fixed: a highlight on a side-by-side candidate was drawn where the candidate was not
 
 Closes [OCCTSwiftInteraction#73](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/73).

@@ -77,7 +77,7 @@ let custom = CADViewportService(configuration: .init(
 | `selectionModes` | `Set<SelectionMode>` | Which sub-shape kinds picking resolves. The same state as `interactiveContext.selectionMode`, initialised to `[.face]`. |
 | `shapeBounds` | `ShapeBounds?` | Axis-aligned bounds of the loaded entities, or `nil` (see the [void-bounds note](#void-bounding-boxes)). |
 | `overlayIDs` | `[String]` | Sorted ids of overlay layers currently staged. |
-| `visibility` | `[String: Bool]` | Per-entity visibility, keyed by entity id. |
+| `visibility` | `[String: Bool]` | Per-entity visibility, keyed by entity id. A hidden entity keeps its selection, unhighlighted. |
 | `scalarFieldLegend` | `ScalarFieldLegend?` | Legend for the most recently set scalar field (see [Scalar fields](#scalar-fields)). `nil` if none is set. |
 
 ### Multi-body / assembly
@@ -216,7 +216,10 @@ selected edge's segments, a bright magenta point sprite per selected vertex. A b
 never produces an edge/vertex pick on that body, face picking on the same body is
 unaffected. A face or edge highlight is copied from the body as drawn, and a vertex highlight is
 drawn at the vertex's own position; all of them are rebuilt when the selection changes and
-whenever a [comparison](#comparison) changes the bodies.
+whenever a [comparison](#comparison) changes the bodies. A highlight lights nothing of a hidden
+body: an entity hidden through `visibility`, or a body a [cap plane](#clipping) clips away
+entirely, keeps its selection but none of it is lit, and it is lit again when the body is shown,
+including by an escalation preview naming it.
 
 `selectionModes` **is** `interactiveContext.selectionMode`, not a copy of it: reading or
 writing either reads or writes the other. It is initialised to `[.face]` at `init`,
