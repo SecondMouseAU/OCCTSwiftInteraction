@@ -296,8 +296,11 @@
             // Absent target is the agent's own marker, not the human's selection. A request that
             // carries a question is the "show me the one I mean and let me confirm" flow, which
             // is about the human's selection by construction (the escalation card reads it), so
-            // it keeps landing there whatever `target` says.
-            let isEscalation = !(request.question ?? "").isEmpty
+            // it keeps landing there whatever `target` says. A question that draws nothing is no
+            // question, so its request lands where a request without one would.
+            let question = request.escalationQuestion
+            let isEscalation = question != nil
+            let questionReason = Self.questionReason(sent: request.question, held: question)
             let target = request.target ?? "attention"
             guard target == "attention" || target == "selection" else {
                 return HandledOutcome(
@@ -344,13 +347,15 @@
                             sent: request.label, held: agentAttentionLabel)
                     }
                 }
-                return HandledOutcome(outcome: "applied", reason: labelReason, target: "attention")
+                return HandledOutcome(
+                    outcome: "applied", reason: Self.joined(questionReason, labelReason),
+                    target: "attention")
 
             case .wholeBody(let subShape):
                 // `PickedEntity` has no `.body` case (OCCTSwiftInteraction#3's settled design,
                 // see `PickedEntity.swift`), so a whole-body request can't build the
                 // `EscalationRequest` a question needs.
-                if let question = request.question, !question.isEmpty {
+                if isEscalation {
                     return HandledOutcome(
                         outcome: "rejected",
                         reason:
@@ -360,7 +365,8 @@
                 withSelectionSource(.agentHighlight(requestID: request.id)) {
                     interactiveContext.select(subShape, scheme: scheme)
                 }
-                return HandledOutcome(outcome: "applied", reason: nil, target: "selection")
+                return HandledOutcome(
+                    outcome: "applied", reason: questionReason, target: "selection")
 
             case .entity(let entity):
                 // Tagged before selecting/presenting, not after: both `select(_:scheme:)` and
@@ -369,7 +375,7 @@
                 // Tagging first means a `.remove`/`.xor` request that drops this entity also
                 // drops the tag in the same step, rather than leaving it stale.
                 agentHighlightedEntities.append(entity)
-                if let question = request.question, !question.isEmpty {
+                if let question {
                     let escalation = EscalationRequest(
                         id: request.id, entities: [entity], question: question)
                     // `beginPresenting` is synchronous: pendingEscalation is set and the
@@ -389,7 +395,8 @@
                         select(entity, scheme: scheme)
                     }
                 }
-                return HandledOutcome(outcome: "applied", reason: nil, target: "selection")
+                return HandledOutcome(
+                    outcome: "applied", reason: questionReason, target: "selection")
             }
         }
 
@@ -522,6 +529,19 @@
             }
             return "label cut from \(sent.count) to \(held.count) "
                 + (held.count == 1 ? "character" : "characters")
+        }
+
+        /// The `reason` an applied request carries when its question was dropped as blank, or nil
+        /// when it was kept (or absent or empty).
+        private static func questionReason(sent: String?, held: String?) -> String? {
+            guard let sent, !sent.isEmpty, held == nil else { return nil }
+            return "question dropped: it has no visible character"
+        }
+
+        /// `reasons` joined with `"; "`, or nil when none is present.
+        private static func joined(_ reasons: String?...) -> String? {
+            let present = reasons.compactMap { $0 }
+            return present.isEmpty ? nil : present.joined(separator: "; ")
         }
 
         private static func isoNow() -> String {

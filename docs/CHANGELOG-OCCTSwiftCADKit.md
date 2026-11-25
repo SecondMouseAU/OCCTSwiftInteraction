@@ -12,6 +12,25 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: a blank question opened an escalation card with nothing to read
+
+Closes [OCCTSwiftInteraction#62](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/62).
+The sidecar treated a `highlight_requests` request as an escalation whenever its `question` was not
+the empty string, so a question of only spaces, or only characters that draw nothing (a zero-width
+space, U+3164 HANGUL FILLER, U+2800 BRAILLE PATTERN BLANK), opened an escalation card with a blank
+question, and selected the entity whatever `target` said. A question is now no question when it is
+absent, empty, or draws nothing by the rule a label is judged by (#54). A request carrying one opens
+no escalation and lands exactly where a request without a question lands: in the attention marker
+by default, with its `label` held, or in the selection under `target: "selection"`, where a whole
+body is selected rather than rejected. On `applied`, a non-empty question dropped this way is
+reported in the handled file's `reason` (`question dropped: it has no visible character`), joined
+with `; ` ahead of any label reason; an empty one is dropped without a reason, as before. A
+question with a visible character still escalates, shown exactly as sent. No API change. OCCTMCP's
+`highlight_selection` still treats an empty or blank question as a question, so it skips its
+attention-side checks for one, writes no `label` and lets `kind: "body"` through to the host;
+filed as [OCCTMCP#293](https://github.com/SecondMouseAU/OCCTMCP/issues/293).
+Contract: `okf/decisions/agent-viewport-selection-bridge.md`.
+
 ### Fixed: an attention label was held at any length, and a blank-drawing one was kept
 
 Closes [OCCTSwiftInteraction#54](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/54).

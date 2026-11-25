@@ -4,7 +4,7 @@ title: Agent-viewport selection bridge file formats
 resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction/blob/main/okf/decisions/agent-viewport-selection-bridge.md
 tags: [decision, adr, selection, viewport, agent, mcp, bridge, json, sidecar, atomicity, drawing, schema-versioning]
 description: The wire format for a human's live viewport selection (a model sub-shape or a drawing entity) and an agent's highlight requests, exchanged as plain files in the shared scene directory.
-timestamp: 2026-11-23
+timestamp: 2026-11-25
 ---
 
 # Agent-viewport selection bridge file formats
@@ -225,8 +225,9 @@ A pending highlight (or escalation) request, one file per request, named by its 
   Absent means `"attention"`, a deliberate change of default: the old behaviour silently destroyed
   the human's pick and nothing recorded or restored it. Attention marks a face, edge or vertex; a
   `kind` of `"body"` with attention is `rejected`, since there is no whole-body marker. A request
-  carrying a `question` is the "show me the one I mean and let me confirm" flow and always lands in
-  the selection, whatever `target` says. An unknown `target` is `rejected`.
+  carrying a `question` (one with a visible character; see `question`) is the "show me the one I
+  mean and let me confirm" flow and always lands in the selection, whatever `target` says. An
+  unknown `target` is `rejected`.
 - **`label`**: `String?`, optional
   ([OCCTSwiftInteraction#35](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/35)).
   Free-text caption for the attention marker ("this fillet"), at most 80 characters (Swift
@@ -240,12 +241,24 @@ A pending highlight (or escalation) request, one file per request, named by its 
   A cut or dropped label is reported in the handled file's `reason` on `applied`; an empty one is
   ignored without a `reason`. Lands in `agentAttentionLabel` together with `agentAttention`, and
   is cleared whenever the marker is cleared or replaced. Ignored on a request that does not land in
-  attention (`target: "selection"`, or one carrying a `question`).
+  attention (`target: "selection"`, or one carrying a `question` with a visible character).
 - **`question`**: `String?`. Present only when this request is escalation-shaped: the host renders
   it exactly as it would render one of its own `EscalationRequest.question` values, and the request
   maps onto a single-entity `EscalationRequest` (`entities: [the one targeted PickedEntity]`,
   `candidates: []`, `context: nil`) rather than this doc inventing a parallel escalation shape.
   `nil` (or the key omitted) for a plain "highlight this" request with no question attached.
+  The host reads three spellings as no question: `nil` or the key omitted, the empty string, and a
+  string that draws nothing by the rule `label` uses (only whitespace, control or default-ignorable
+  characters, or the named blanks such as U+2800)
+  ([OCCTSwiftInteraction#62](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/62)).
+  A request carrying no question opens no escalation, lands where `target` puts it, and gets the
+  `kind: "body"` check and the `label` handling that a request without the key gets. A dropped
+  non-empty question is reported in the handled file's `reason` on `applied`
+  (`question dropped: it has no visible character`); an empty one is dropped without a `reason`,
+  as an empty `label` is. A question with a visible character is shown exactly as sent, untrimmed.
+  A writer omits the key to send no question. OCCTMCP's `highlight_selection` still counts any
+  non-nil `question` as a question, so it skips its attention-side checks for an empty or blank one
+  ([OCCTMCP#293](https://github.com/SecondMouseAU/OCCTMCP/issues/293)).
 - **`ifRevision`**: `Int?`. The `selection.json` revision this request was composed against, when
   the requester wants the apply to be conditional on it. Compare-and-swap.
 
@@ -288,7 +301,10 @@ Written once the host has processed a request, same `<id>` as the request it ans
   the host did not hold as sent carries one (`label cut from N to M characters`,
   `label cut from N to M bytes`, `label dropped: it has no visible character`, or
   `label dropped: no visible character fits within 80 characters and 4096 bytes`), so a client
-  learns what happened to its label.
+  learns what happened to its label. An `applied` request whose `question` the host dropped as
+  blank carries `question dropped: it has no visible character`, so a client that meant to
+  escalate learns why no card appeared. When both apply, they are joined with `; `, the question's
+  first.
 
 - **`target`**: `String?`. On `applied`, where the request landed (`"attention"` or
   `"selection"`), so a client that omitted `target` can tell which default it got. Absent on
