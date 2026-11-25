@@ -44,6 +44,7 @@ extension CADViewportService {
         wipeKeptTriangles.removeAll()
         clippingSourceShapes.removeAll()
         clippingCapBackup.removeAll()
+        capOrigins.removeAll()
         if pendingEscalation != nil {
             respond(.rejected(reason: "referenced geometry was removed"))
         }
@@ -292,6 +293,7 @@ extension CADViewportService {
             dropLastScalarFieldBodyID(ifCurrently: bodyID)
             clippingSourceShapes.removeValue(forKey: bodyID)
             clippingCapBackup.removeValue(forKey: bodyID)
+            capOrigins.removeValue(forKey: bodyID)
         }
     }
 

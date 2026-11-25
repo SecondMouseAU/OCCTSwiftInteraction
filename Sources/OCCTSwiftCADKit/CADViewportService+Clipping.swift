@@ -127,7 +127,8 @@ extension CADViewportService {
         /// durable `GraphUID` this body's pristine geometry had ever minted) a body no
         /// enabled plane comes anywhere near.
         case unchanged
-        case capped(OCCTSwift.Shape)
+        /// The cut shape, and where each of its sub-shapes came from.
+        case capped(OCCTSwift.Shape, origins: CapOriginLookup)
         case fullyClipped
     }
 
@@ -152,7 +153,8 @@ extension CADViewportService {
     ///
     /// `OCCTSwiftViewport` has no shader-level capping (confirmed: no capping/stencil logic
     /// in its `Shaders.metal`, unlike the clip-plane discard it does have), so this is a
-    /// genuine B-Rep split (`OCCTSwift.Shape.split(atPlane:normal:)`) and retessellation per
+    /// genuine B-Rep split (`split(_:atPlane:normal:planeID:)`, the OCCT calls
+    /// `OCCTSwift.Shape.split(atPlane:normal:)` makes) and retessellation per
     /// affected body, not a cheap GPU trick. `showCapSurface: false` planes still clip (via
     /// `syncClippingPlanes`'s GPU path above) but stay hollow and don't hit this cost, and
     /// nor does a body no enabled cap plane actually touches, OR a body that's already
@@ -181,6 +183,10 @@ extension CADViewportService {
     /// `self.comparison` before calling this themselves specifically so this logic is a no-op
     /// when THEY are the ones driving the comparison change (avoiding a redundant
     /// undo/reapply of a comparison this method didn't initiate).
+    ///
+    /// A body it recuts or restores gets new identity tables, so the selection on it is remapped
+    /// onto them (`remapSelection(acrossRecutOf:)`, OCCTSwiftInteraction#77) once every body is
+    /// done and the comparison is back, and the highlight is then cut from the bodies as drawn.
     func updateCapSurfaces() {
         let activeComparison = comparison.flatMap { comparisonNeedsBodyPreservation($0) ? $0 : nil }
         if let activeComparison {
@@ -191,6 +197,22 @@ extension CADViewportService {
 
         var bodyIDsToConsider = Set(clippingCapBackup.keys)
         bodyIDsToConsider.formUnion(modelBodies.map(\.id))
+
+        // Each recut body's identity as the selection last saw it, taken before `replaceBody`
+        // installs the new one.
+        var recut: [String: CapRecutIdentity] = [:]
+        func replace(
+            _ bodyID: String, with shape: OCCTSwift.Shape, origins: CapOriginLookup?,
+            preserving original: _ViewportBody
+        ) -> Bool {
+            let before = capRecutIdentity(ofBody: bodyID)
+            guard
+                replaceBody(
+                    bodyID: bodyID, withCappedShape: shape, origins: origins, preserving: original)
+            else { return false }
+            if recut[bodyID] == nil { recut[bodyID] = before }
+            return true
+        }
 
         for bodyID in bodyIDsToConsider {
             guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
@@ -206,7 +228,7 @@ extension CADViewportService {
             switch outcome {
             case .unchanged:
                 guard wasCapped, let original = clippingCapBackup[bodyID] else { continue }
-                _ = replaceBody(bodyID: bodyID, withCappedShape: sourceShape, preserving: original)
+                _ = replace(bodyID, with: sourceShape, origins: nil, preserving: original)
                 clippingCapBackup.removeValue(forKey: bodyID)
 
             case .fullyClipped:
@@ -216,7 +238,7 @@ extension CADViewportService {
                 }
                 modelBodies[index].isVisible = false
 
-            case .capped(let capped):
+            case .capped(let capped, let origins):
                 // Skip the retessellation entirely when this body is already showing exactly
                 // this outcome, visibly (not left hidden by a since-reverted full clip,
                 // which always needs a real transition back to visible regardless of bounds).
@@ -230,7 +252,7 @@ extension CADViewportService {
                     wasCapped
                     ? (clippingCapBackup[bodyID] ?? modelBodies[index]) : modelBodies[index]
                 clippingCapBackup[bodyID] = original
-                if !replaceBody(bodyID: bodyID, withCappedShape: capped, preserving: original) {
+                if !replace(bodyID, with: capped, origins: origins, preserving: original) {
                     // Retessellation failed: leave the original in place rather than show nothing.
                     modelBodies[index] = original
                     clippingCapBackup.removeValue(forKey: bodyID)
@@ -242,15 +264,16 @@ extension CADViewportService {
             backUpComparisonBodies(activeComparison)
             applyComparison(activeComparison)
         }
+        remapSelection(acrossRecutOf: recut)
         rebuildBodies()
     }
 
     /// Sequentially splits `shape` at each plane in `planes`, keeping only the piece(s) on
     /// the side the plane's normal points toward each time.
     ///
-    /// Which returned `split(atPlane:normal:)` piece is "kept" is determined by testing each
-    /// piece's OWN bounds-center against the plane equation: `Shape.split` documents no
-    /// return-order guarantee. This is a bounds-center heuristic, not an exact interior-point
+    /// Which returned piece is "kept" is determined by testing each piece's OWN bounds-center
+    /// against the plane equation: `Shape.split(atPlane:normal:)`, whose OCCT calls
+    /// `split(_:atPlane:normal:planeID:)` repeats, documents no return-order guarantee. This is a bounds-center heuristic, not an exact interior-point
     /// test: a piece whose true bulk sits on the kept side but whose bounding-box center
     /// happens to fall just past the plane (an unusual, non-convex shape) could be
     /// misclassified. Adequate for a review affordance; not a substitute for a real
@@ -259,7 +282,7 @@ extension CADViewportService {
     /// Returns `.unchanged` (rather than `.capped(shape)`) when the result's bounds are
     /// practically identical to `shape`'s own, i.e. no plane in `planes` actually removed
     /// anything. Determined by comparing bounds rather than by whether `split` returned
-    /// `nil`: empirically, `split(atPlane:normal:)` does NOT reliably return `nil` for a
+    /// `nil`: empirically, the split does NOT reliably return `nil` for a
     /// plane that doesn't intersect the shape; it can come back with a single-element
     /// array containing the shape geometrically unchanged, which a naive "any non-nil result
     /// means a real cut happened" check would misread as a cut. This inherits the same
@@ -267,9 +290,15 @@ extension CADViewportService {
     /// without changing the axis-aligned bounding box, e.g. a chunk that isn't at the
     /// shape's extremal point along any axis, would be missed and reported `.unchanged`);
     /// accepted for the same reason.
+    ///
+    /// Each cut keeps the splitter's history (`split(_:atPlane:normal:planeID:)`), and a
+    /// `.capped` outcome traces every sub-shape of the result back to `shape` through it
+    /// (`CapOriginLookup`). The tracing waits for that outcome, so a body no plane cuts pays only
+    /// for the split it always paid for.
     private func cappedShape(_ shape: OCCTSwift.Shape, cutBy planes: [ClippingPlane]) -> CapOutcome
     {
         var current = shape
+        var steps: [CapCutStep] = []
         for plane in planes {
             let unitNormal = safeUnitNormal(plane.normal)
             func isKept(_ candidate: OCCTSwift.Shape) -> Bool {
@@ -281,15 +310,52 @@ extension CADViewportService {
                     (b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2)
                 return simd_dot(unitNormal, center - plane.origin) >= 0
             }
-            guard let pieces = current.split(atPlane: plane.origin, normal: unitNormal) else {
+            guard
+                let (pieces, step) = split(
+                    current, atPlane: plane.origin, normal: unitNormal, planeID: plane.id)
+            else {
                 guard isKept(current) else { return .fullyClipped }
                 continue
             }
+            steps.append(step)
             let kept = pieces.filter(isKept)
             guard !kept.isEmpty else { return .fullyClipped }
             current = kept.count == 1 ? kept[0] : (OCCTSwift.Shape.fuseAll(kept) ?? kept[0])
         }
-        return boundsPracticallyEqual(shape, current) ? .unchanged : .capped(current)
+        guard !boundsPracticallyEqual(shape, current) else { return .unchanged }
+        return .capped(current, origins: CapOriginLookup(tracing: shape, through: steps))
+    }
+
+    /// Splits `shape` at a plane exactly as `Shape.split(atPlane:normal:)` does, keeping the
+    /// splitter's history.
+    ///
+    /// The same OCCT calls in the same order (`OCCTShapeSplitByPlane` in OCCTSwift 4.0.0-beta.6):
+    /// a planar face through `origin` reaching twice the shape's bounding-box diagonal each way,
+    /// `BRepAlgoAPI_Splitter` with the shape as argument and that face as tool, then the solids
+    /// of the result, else its shells, else the result itself. `split(atPlane:normal:)` throws
+    /// the splitter, and with it the history, away, and OCCTSwift has no variant that returns it;
+    /// `splitWithFullHistory(by:)` keeps it but returns the result's top-level children, which
+    /// is why the solids are gathered here.
+    ///
+    /// `nil` where `split(atPlane:normal:)` returns `nil`: the shape has no bounding box, or the
+    /// face or the split fails.
+    private func split(
+        _ shape: OCCTSwift.Shape, atPlane origin: SIMD3<Double>, normal: SIMD3<Double>,
+        planeID: String
+    ) -> (pieces: [OCCTSwift.Shape], step: CapCutStep)? {
+        guard let bounds = shape.bounds else { return nil }
+        let reach = simd_length(bounds.max - bounds.min) * 2
+        guard
+            let tool = OCCTSwift.Shape.faceFromPlane(
+                origin: origin, normal: normal, uRange: -reach...reach, vRange: -reach...reach),
+            let (children, history) = shape.splitWithFullHistory(by: tool)
+        else { return nil }
+        let step = CapCutStep(input: shape, tool: tool, history: history, planeID: planeID)
+        let solids = children.flatMap { $0.subShapes(ofType: .solid) }
+        if !solids.isEmpty { return (solids, step) }
+        let shells = children.flatMap { $0.subShapes(ofType: .shell) }
+        if !shells.isEmpty { return (shells, step) }
+        return (OCCTSwift.Shape.compound(children).map { [$0] } ?? [], step)
     }
 
     /// Two shapes with no bounding box at all are equal (nothing to tell apart); one of each
@@ -323,8 +389,13 @@ extension CADViewportService {
     /// `scalarValue(forBody:faceIndex:triangleIndex:)`) values against geometry they were
     /// never computed for: the same failure mode `removeBodies`/`resetAllModelState` already
     /// guard against for a removed body.
+    ///
+    /// `origins` is where each of a cut shape's sub-shapes came from, recorded in `capOrigins`
+    /// for the selection remap; `nil` for the restore, which needs none. The new mesh also marks
+    /// the selection highlight stale, since it was cut from the old one.
     private func replaceBody(
-        bodyID: String, withCappedShape shape: OCCTSwift.Shape, preserving original: _ViewportBody
+        bodyID: String, withCappedShape shape: OCCTSwift.Shape, origins: CapOriginLookup?,
+        preserving original: _ViewportBody
     ) -> Bool {
         guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { return false }
         let (freshBody, meta) = CADFileLoader.shapeToBodyAndMetadata(
@@ -348,8 +419,14 @@ extension CADViewportService {
         // failed to build for the NEW shape, the OLD one must go rather than linger naming
         // pre-cap topology. The tables above are unconditional, so only the graph needs this.
         if identity.graph == nil { bodyGraphs.removeValue(forKey: bodyID) }
+        if let origins {
+            capOrigins[bodyID] = CapOrigins(identity: identity, lookup: origins)
+        } else {
+            capOrigins.removeValue(forKey: bodyID)
+        }
         scalarFields.removeValue(forKey: bodyID)
         dropLastScalarFieldBodyID(ifCurrently: bodyID)
+        selectionBodiesAreStale = true
         return true
     }
 

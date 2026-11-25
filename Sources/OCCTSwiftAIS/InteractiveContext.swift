@@ -278,6 +278,18 @@ public final class InteractiveContext: ObservableObject {
         applySelection([subshape], scheme: scheme)
     }
 
+    /// Combine a whole set of sub-shapes with the current selection per `scheme`, as one change.
+    ///
+    /// The same rules as `select(_:scheme:)`, applied to every member of `subshapes` at once, so
+    /// `selection` publishes once rather than once per member. That matters to a subscriber that
+    /// acts on every value, such as a sidecar that writes each one out: building a replacement
+    /// from `deselect` and `select` calls publishes every intermediate selection too.
+    /// `OCCTSwiftCADKit` uses it with `.replace` to remap a body's selection onto the topology a
+    /// cap recut gave it (OCCTSwiftInteraction#77). An empty set with `.replace` clears.
+    public func select(_ subshapes: Set<OCCTSwiftTools.SubShape>, scheme: SelectionScheme) {
+        applySelection(subshapes, scheme: scheme)
+    }
+
     public func deselect(_ subshape: OCCTSwiftTools.SubShape) {
         select(subshape, scheme: .remove)
     }
@@ -289,9 +301,9 @@ public final class InteractiveContext: ObservableObject {
     /// Combine a whole candidate set with the current selection per `scheme`.
     ///
     /// The one place the scheme rules are written down: `select(_:scheme:)` passes a
-    /// single-element set, `AreaSelection.swift` passes a rectangle/lasso match set.
-    /// Internal, since `select`/`deselect`/`clearSelection` are the intended public
-    /// mutation surface.
+    /// single-element set, its set overload passes its caller's set, and `AreaSelection.swift`
+    /// passes a rectangle/lasso match set. Internal, since the `select` overloads, `deselect`
+    /// and `clearSelection` are the intended public mutation surface.
     func applySelection(_ incoming: Set<OCCTSwiftTools.SubShape>, scheme: SelectionScheme) {
         let current = selection.subshapes
         switch scheme {

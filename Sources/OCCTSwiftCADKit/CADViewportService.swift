@@ -358,6 +358,14 @@ public final class CADViewportService {
     /// current by `recordCallerVisibility(_:forBody:)`.
     var clippingCapBackup: [String: _ViewportBody] = [:]
 
+    /// Where each sub-shape of a capped body came from, keyed by body id and aligned with that
+    /// body's identity tables.
+    ///
+    /// Written by `replaceBody` with every cut and removed with every restore, so a body absent
+    /// here is uncut and each of its sub-shapes is its own `CapOrigin.source`. Read by
+    /// `remapSelection(acrossRecutOf:)`, which carries the selection from one cut to the next.
+    var capOrigins: [String: CapOrigins] = [:]
+
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
 
     /// A distinct, addressable entity loaded via the multi-entity API: the model-body

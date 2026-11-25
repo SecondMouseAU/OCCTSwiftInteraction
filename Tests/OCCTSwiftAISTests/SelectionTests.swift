@@ -1,3 +1,4 @@
+import Combine
 import OCCTSwift
 import OCCTSwiftTools
 import OCCTSwiftViewport
@@ -113,6 +114,29 @@ struct InteractiveContextSchemeTests {
 
         ctx.select(a, scheme: .replace)
         #expect(ctx.selection.subshapes == [a], "replace discards the rest")
+    }
+
+    /// The set overload, added so `OCCTSwiftCADKit` can remap a body's selection after a cap
+    /// recut without a subscriber seeing each intermediate selection (OCCTSwiftInteraction#77).
+    @Test("select(_:scheme:) with a set applies the scheme to every member, in one change")
+    func t_selectSetScheme_appliesToEveryMemberInOneChange() throws {
+        let (ctx, a, b) = try makeFixture()
+        let c = OCCTSwiftTools.SubShape.face(a.object, ref: try faceRef(a.object, 2))
+        var published: [Selection] = []
+        let subscription = ctx.$selection.dropFirst().sink { published.append($0) }
+        defer { subscription.cancel() }
+
+        ctx.select([a, b], scheme: .replace)
+        #expect(ctx.selection.subshapes == [a, b])
+        ctx.select([b, c], scheme: .xor)
+        #expect(ctx.selection.subshapes == [a, c])
+        ctx.select([a, b], scheme: .add)
+        #expect(ctx.selection.subshapes == [a, b, c])
+        ctx.select([a, c], scheme: .remove)
+        #expect(ctx.selection.subshapes == [b])
+        ctx.select([], scheme: .replace)
+        #expect(ctx.selection.isEmpty, "an empty replace clears")
+        #expect(published.count == 5, "one change per call, not one per member")
     }
 
     /// The reason `select(_:scheme:)` has no default value for `scheme`: giving the existing
