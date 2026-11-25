@@ -33,7 +33,10 @@ only on the part the wipe had left, after the wipe moved, was cleared, switched 
 ended because the other entity was removed. The highlight is now rebuilt from the bodies as drawn
 whenever a comparison is applied or undone, which includes the undo and reapply that a
 clipping-plane change or a scalar field write runs during a comparison. It is rebuilt once per
-viewport update, not once per step. No API change.
+viewport update, not once per step. An edge highlight is rebuilt the same way, so an edge selected
+before a wipe is not lit while the wipe lasts, since a wiped body draws no edges, and is lit again
+when the wipe ends; before, it stayed lit across the whole edge. A vertex highlight is drawn at the
+vertex's own position, as before, so a wipe does not hide it. No API change.
 
 ## 3.0.0-beta.8 (2026-11-25)
 

@@ -56,6 +56,32 @@ enum HighlightGeometry {
         }
     }
 
+    /// The world position of each end of each segment `body` draws for `edgeIndex`.
+    static func worldEndpoints(ofEdge edgeIndex: Int, in body: _ViewportBody) -> [SIMD3<Double>] {
+        var points: [SIMD3<Double>] = []
+        var segment = 0
+        for polyline in body.edges {
+            for start in polyline.indices.dropLast() {
+                defer { segment += 1 }
+                guard segment < body.edgeIndices.count,
+                    body.edgeIndices[segment] == Int32(edgeIndex)
+                else { continue }
+                points.append(world(polyline[start], under: body.transform))
+                points.append(world(polyline[start + 1], under: body.transform))
+            }
+        }
+        return points
+    }
+
+    /// The world position of each point a highlight body draws, empty for `nil`.
+    ///
+    /// The points are its polylines' points, or its point sprites.
+    static func worldPoints(of highlight: _ViewportBody?) -> [SIMD3<Double>] {
+        guard let highlight else { return [] }
+        let local = highlight.edges.flatMap { $0 } + highlight.vertices
+        return local.map { world($0, under: highlight.transform) }
+    }
+
     /// The points of `expected` with no partner in `actual`, and the points of `actual` left
     /// over, pairing each point at most once and within `tolerance`.
     static func unpaired(

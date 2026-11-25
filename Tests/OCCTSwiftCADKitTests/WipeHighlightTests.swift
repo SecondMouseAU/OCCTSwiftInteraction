@@ -15,7 +15,8 @@ import simd
 /// Every check is by geometry: the face highlight must light exactly the triangles the body draws
 /// on the selected face, compared by world-space centroid. The face is a box's +Y face, which a
 /// wipe at X = 0 cuts in two (one triangle each side), a wipe at X = 1 leaves wholly with the
-/// reference and a wipe at X = -1 wholly with the candidate.
+/// reference and a wipe at X = -1 wholly with the candidate. Edges are checked the same way, by the
+/// world position of each segment end.
 ///
 /// Every test fails without the fix except the one marked "guard".
 @Suite("Selection highlights while a wipe moves or ends")
@@ -215,5 +216,42 @@ struct WipeHighlightTests {
             faces.map { drawnCount(service, $0.bodyID, $0.face) } == before,
             "sanity check: the wipe draws the same triangles on each face afterwards")
         expectFaceHighlight(service, lights: faces, change.testDescription)
+    }
+
+    // MARK: - Edges
+
+    /// A wiped body draws no edges (`wipeFiltered` drops them), so an edge highlight cut from it
+    /// lights nothing until the wipe ends.
+    @MainActor
+    @Test(
+        "An edge selected before a wipe is unlit while the wipe draws no edges, and lit after",
+        arguments: Target.allCases)
+    func edgeHighlightFollowsTheWipe(_ target: Target) throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
+        let id = target.id
+        service.selectionModes = [.face, .edge]
+        let info = try #require(service.resolveEdgePick(bodyID: id, segmentIndex: 0))
+        service.select(.edge(info), scheme: .replace)
+
+        func expectEdgeLitWhereDrawn(_ step: String) {
+            let drawn = service.modelBody(id).map {
+                Geometry.worldEndpoints(ofEdge: info.edgeIndex, in: $0)
+            }
+            let lit = Geometry.worldPoints(of: service.selectionHighlight("edge"))
+            let (missing, extra) = Geometry.unpaired(drawn ?? [], lit)
+            #expect(
+                drawn?.isEmpty == false && missing.isEmpty && extra.isEmpty,
+                "\(step): the edge is lit exactly where the body draws it")
+        }
+        expectEdgeLitWhereDrawn("before the wipe")
+
+        service.setComparison(Self.wipe(at: 0))
+        #expect(service.modelBody(id)?.edges.isEmpty == true, "sanity check: no edge is drawn")
+        #expect(
+            service.selectionHighlight("edge") == nil,
+            "the wiped body draws no edges, so the edge highlight lights nothing")
+
+        service.setComparison(nil)
+        expectEdgeLitWhereDrawn("wipe cleared")
     }
 }

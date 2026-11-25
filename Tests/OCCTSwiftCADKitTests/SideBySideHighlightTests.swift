@@ -91,31 +91,6 @@ struct SideBySideHighlightTests {
         service.modelBody("cand")?.transform.columns.3.x
     }
 
-    /// The world position of each end of each segment the body draws for `edgeIndex`.
-    private func drawnEndpoints(ofEdge edgeIndex: Int, in body: _ViewportBody) -> [SIMD3<Double>] {
-        var points: [SIMD3<Double>] = []
-        var segment = 0
-        for polyline in body.edges {
-            for start in polyline.indices.dropLast() {
-                defer { segment += 1 }
-                guard segment < body.edgeIndices.count,
-                    body.edgeIndices[segment] == Int32(edgeIndex)
-                else { continue }
-                points.append(Geometry.world(polyline[start], under: body.transform))
-                points.append(Geometry.world(polyline[start + 1], under: body.transform))
-            }
-        }
-        return points
-    }
-
-    /// The world position of each point a highlight body draws: its polylines' points, or its
-    /// point sprites.
-    private func drawnPoints(of highlight: _ViewportBody?) -> [SIMD3<Double>] {
-        guard let highlight else { return [] }
-        let local = highlight.edges.flatMap { $0 } + highlight.vertices
-        return local.map { Geometry.world($0, under: highlight.transform) }
-    }
-
     /// Selects the candidate's first edge or vertex through the pick resolver, and returns it.
     @MainActor
     private func selectCandidate(_ kind: Kind, in service: CADViewportService) -> PickedEntity? {
@@ -143,7 +118,7 @@ struct SideBySideHighlightTests {
         guard let body = service.modelBody("cand") else { return [] }
         switch entity {
         case .edge(let info):
-            return drawnEndpoints(ofEdge: info.edgeIndex, in: body)
+            return Geometry.worldEndpoints(ofEdge: info.edgeIndex, in: body)
         case .vertex:
             return body.vertices.prefix(1).map { Geometry.world($0, under: body.transform) }
         case .face:
@@ -159,7 +134,7 @@ struct SideBySideHighlightTests {
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
         let drawn = drawnPoints(of: entity, in: service)
-        let lit = drawnPoints(of: service.selectionHighlight(kind.testDescription))
+        let lit = Geometry.worldPoints(of: service.selectionHighlight(kind.testDescription))
         let (missing, extra) = Geometry.unpaired(drawn, lit)
         #expect(
             !drawn.isEmpty && missing.isEmpty && extra.isEmpty,
