@@ -370,6 +370,23 @@ public final class CADViewportService {
     /// `remapSelection(acrossRecutOf:)`, which carries the selection from one cut to the next.
     var capOrigins: [String: CapOrigins] = [:]
 
+    // MARK: - Meshing
+
+    /// Linear deflection `load(_:id:graph:transform:)` meshes with.
+    ///
+    /// `nil` (default) keeps the loader's own default. Larger is coarser and much faster to mesh,
+    /// which suits tests and previews of heavy assemblies. Applies to shapes loaded after it is
+    /// set, and a body keeps the deflection it was loaded at when a cap cuts it or is removed. File
+    /// loads ignore it.
+    public var meshDeflection: Double?
+
+    /// The settings each model body was meshed with at its load, keyed by body id, so a cap recut
+    /// and the restore when the cap goes mesh it the same way (OCCTSwiftInteraction#82).
+    ///
+    /// A body with no entry (one a test seeded into `modelBodies` directly) is meshed with
+    /// `BodyMeshing.loaderDefault`.
+    var bodyMeshing: [String: BodyMeshing] = [:]
+
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
 
     /// A distinct, addressable entity loaded via the multi-entity API: the model-body
@@ -379,11 +396,6 @@ public final class CADViewportService {
     /// Internal rather than private, like `modelBodies`/`metadata`, so tests can seed a
     /// synthetic multi-body entity directly: this package's tests don't ship a multi-body
     /// file on disk, and `load(_:id:transform:)` only ever produces a single-body entity.
-    /// Linear deflection `load(_:id:graph:transform:)` meshes with. `nil` (default) keeps
-    /// `CADFileLoader`'s own default. Larger is coarser and much faster to mesh, which suits tests
-    /// and previews of heavy assemblies. Applies to shapes loaded after it is set.
-    public var meshDeflection: Double?
-
     struct Entity {
         var bodyIDs: [String]
         var isVisible: Bool = true

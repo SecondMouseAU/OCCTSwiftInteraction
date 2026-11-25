@@ -427,6 +427,10 @@ extension CADViewportService {
     /// Re-tessellates `bodyID` from `shape` (a capped shape from `cappedShape`, or the
     /// pristine `clippingSourceShapes` entry when `updateCapSurfaces` is restoring).
     ///
+    /// Meshes with the settings the body was loaded with (`bodyMeshing`), so a cut and the restore
+    /// are as dense as the load (OCCTSwiftInteraction#82). Both used to take `CADFileLoader`'s
+    /// default, whatever `meshDeflection` the body was loaded at.
+    ///
     /// Preserves the caller-configurable state of `original` (visibility, pickability,
     /// material, transform) that `CADFileLoader.shapeToBodyAndMetadata` would
     /// otherwise reset to its own defaults, and updates identity tables to match the new
@@ -450,9 +454,8 @@ extension CADViewportService {
         preserving original: _ViewportBody
     ) -> Bool {
         guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { return false }
-        let (freshBody, meta) = CADFileLoader.shapeToBodyAndMetadata(
-            shape, id: bodyID, color: original.color
-        )
+        let (freshBody, meta) = (bodyMeshing[bodyID] ?? .loaderDefault).mesh(
+            shape, id: bodyID, color: original.color)
         guard var body = freshBody else { return false }
         body.isVisible = original.isVisible
         body.isPickable = original.isPickable
