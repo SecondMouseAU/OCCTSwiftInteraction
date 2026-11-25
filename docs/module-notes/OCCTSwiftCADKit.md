@@ -78,12 +78,29 @@ URL-based deps are the preferred form. If you hit a version-resolution problem y
 
 ## Files
 
-- `Sources/OCCTSwiftCADKit/CADViewportService.swift`: the service
+*Source list refreshed 2026-11-25 against `Sources/OCCTSwiftCADKit/` (OCCTSwiftInteraction#64).
+The target has 24 files, not the 11 the opening paragraph counts: OCCTSwiftInteraction#13 split
+`CADViewportService` into one extension per surface, and the selection bridge (#16),
+selection-change publishing (#31) and drawing picks (#45) added their own.*
+
+- `Sources/OCCTSwiftCADKit/CADViewportService.swift`: the service's stored state, `init` and `rebuildBodies()`; each surface of the type is a `+` extension below
+- `Sources/OCCTSwiftCADKit/CADViewportService+Loading.swift`: file import and multi-entity loading
+- `Sources/OCCTSwiftCADKit/CADViewportService+Selection.swift`: pick handling, the per-kind resolvers and enrichment, `select`/`clearSelection`, the selection highlights
+- `Sources/OCCTSwiftCADKit/CADViewportService+Overlays.swift`: overlay layers
+- `Sources/OCCTSwiftCADKit/CADViewportService+ScalarFields.swift`: scalar fields
+- `Sources/OCCTSwiftCADKit/CADViewportService+Comparison.swift`: reference/candidate comparison
+- `Sources/OCCTSwiftCADKit/CADViewportService+Clipping.swift`: clipping, capping and clip-aware picking
+- `Sources/OCCTSwiftCADKit/CADViewportService+Escalation.swift`: `present(_:)`/`respond(_:)` and the rest of the escalation surface
+- `Sources/OCCTSwiftCADKit/CADViewportService+AgentBridge.swift`: the agent-viewport selection bridge's behaviour (macOS only)
+- `Sources/OCCTSwiftCADKit/CADViewportService+DrawingSelection.swift`: `setDrawingSelection(_:)`, publishing drawing-entity picks through the bridge (macOS only)
+- `Sources/OCCTSwiftCADKit/SelectionSidecar.swift`: the bridge's wire-format types, all internal (macOS only)
+- `Sources/OCCTSwiftCADKit/DrawingEntityPick.swift`: `DrawingEntityPick` (macOS only)
+- `Sources/OCCTSwiftCADKit/SelectionChange.swift`: `SelectionChange`, `SelectionChangeSource`
 - `Sources/OCCTSwiftCADKit/CADViewportView.swift`: SwiftUI wrapper
 - `Sources/OCCTSwiftCADKit/ViewportControlsLayout.swift`: where the wrapper's controls sit relative to the view cube (pure, unit-tested)
 - `Sources/OCCTSwiftCADKit/PickedFaceInfo.swift`: `PickedFaceInfo`, `FaceBounds` (the local face-bounds type that replaced PadCAM's `DetectedSurface.SurfaceBounds`: keep it here), and `isSamePick`, the one identity rule the three info types share
 - `Sources/OCCTSwiftCADKit/PickedEntity.swift`: `PickedEntity` (the face/edge/vertex pick union, no whole-body case), `PickedEdgeInfo`, `PickedVertexInfo`, each storing a `SubShapeRef` and forwarding identity to it
-- `Sources/OCCTSwiftCADKit/SelectionMeasurements.swift`: aggregate measures (count/area/length/bounds) over a multi-selection, plus the deprecated `SelectionSummary` alias
+- `Sources/OCCTSwiftCADKit/SelectionMeasurements.swift`: aggregate measures (count/area/length/bounds) over a multi-selection (the deprecated `SelectionSummary` alias was removed in 2.0.0)
 - `Sources/OCCTSwiftCADKit/ScalarField.swift`: `ScalarField`, `ColorMap` (and its color-sampling math), `ScalarFieldLegend`, `LegendStop`
 - `Sources/OCCTSwiftCADKit/ComparisonView.swift`: `ComparisonView`, `ComparisonMode`, `Axis` (mesh/solid comparison display)
 - `Sources/OCCTSwiftCADKit/ClippingPlane.swift`: `ClippingPlane` (clipping/section planes, hollow or solid-capped)
