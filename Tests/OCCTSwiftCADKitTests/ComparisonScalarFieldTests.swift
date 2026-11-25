@@ -17,7 +17,9 @@ import simd
 /// before the comparison. A triangle carrying another triangle's value fails, not only a missing
 /// paint.
 ///
-/// Every test but the two marked "guard" fails without the fix.
+/// Every test but the two marked "guard" fails without the fix. The last test covers
+/// OCCTSwiftInteraction#59, a `.deviation` that ends on a multi-body candidate, and fails without
+/// that fix instead.
 @Suite("Scalar field set during a comparison")
 struct ComparisonScalarFieldTests {
     // MARK: - Dimensions
@@ -109,6 +111,23 @@ struct ComparisonScalarFieldTests {
                 Domain.allCases.map { CapCase(mode: mode, setup: setup, domain: $0) }
             }
         }
+    }
+
+    /// How a `.deviation` comparison ends: each runs `undoComparison` on it.
+    enum DeviationEnd: Sendable, CustomTestStringConvertible {
+        case clear
+        case switchTo(Mode)
+        case removeReference
+
+        var testDescription: String {
+            switch self {
+            case .clear: "cleared"
+            case .switchTo(let mode): "switched to \(mode.testDescription)"
+            case .removeReference: "ended by removing the reference"
+            }
+        }
+
+        static let all: [DeviationEnd] = [.clear] + Mode.allCases.map(switchTo) + [.removeReference]
     }
 
     // MARK: - Painting a key and reading it back
@@ -250,6 +269,23 @@ struct ComparisonScalarFieldTests {
     @MainActor
     private func rendered(_ service: CADViewportService, _ id: String) -> _ViewportBody? {
         service.interactiveContext.bodies.first { $0.id == id }
+    }
+
+    /// Loads the three-solid fixture as the entity `id` and returns its body ids, none of which
+    /// is `id` itself.
+    @MainActor
+    private func loadThreeSolids(_ service: CADViewportService, id: String) async throws
+        -> [String]
+    {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "multibody-three-solids", withExtension: "brep",
+                subdirectory: "Fixtures"))
+        _ = try await service.loadFile(from: url, id: id)
+        let bodyIDs = try #require(service.entities[id]?.bodyIDs)
+        try #require(bodyIDs.count == 3, "sanity check: the fixture has three bodies")
+        try #require(!bodyIDs.contains(id), "sanity check: no body shares the entity's id")
+        return bodyIDs
     }
 
     // MARK: - Clearing or switching the comparison
@@ -442,13 +478,7 @@ struct ComparisonScalarFieldTests {
         arguments: Mode.allCases)
     func fieldsOnMultiBodyEntitySurvive(mode: Mode) async throws {
         guard let service = CADViewportService.withBoxes(ids: ["ref"]) else { return }
-        let url = try #require(
-            Bundle.module.url(
-                forResource: "multibody-three-solids", withExtension: "brep",
-                subdirectory: "Fixtures"))
-        _ = try await service.loadFile(from: url, id: "asm")
-        let bodyIDs = try #require(service.entities["asm"]?.bodyIDs)
-        try #require(bodyIDs.count == 3, "sanity check: the fixture has three bodies")
+        let bodyIDs = try await loadThreeSolids(service, id: "asm")
         let baselines = try bodyIDs.map { try #require(body(service, $0)) }
 
         service.setComparison(
@@ -507,5 +537,47 @@ struct ComparisonScalarFieldTests {
         service.setComparison(nil)
         #expect(service.scalarField(forBody: "cand") == nil)
         expectUnpainted(service, "cand", "clearing a deviation comparison clears its field")
+    }
+
+    // MARK: - Ending a deviation on a multi-body candidate
+
+    /// A field is keyed by body id while a comparison names entities (OCCTSwiftInteraction#59).
+    ///
+    /// Clearing the field under the candidate's entity id cleared nothing on a candidate whose
+    /// bodies have ids of their own.
+    @MainActor
+    @Test(
+        "Ending a deviation comparison clears the field on every body of a multi-body candidate",
+        arguments: DeviationEnd.all)
+    func deviationEndClearsEveryCandidateBody(_ end: DeviationEnd) async throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref"]) else { return }
+        let bodyIDs = try await loadThreeSolids(service, id: "asm")
+        let baselines = try bodyIDs.map { try #require(body(service, $0)) }
+
+        service.setComparison(
+            ComparisonView(referenceID: "ref", candidateID: "asm", mode: .deviation))
+        for id in bodyIDs {
+            service.setScalarField(keyField(.perFace), forBody: id)
+        }
+        for (id, baseline) in zip(bodyIDs, baselines) {
+            expectKeyed(service, id, .perFace, baseline: baseline, "sanity check: \(id) is painted")
+        }
+
+        switch end {
+        case .clear:
+            service.setComparison(nil)
+        case .switchTo(let mode):
+            service.setComparison(
+                ComparisonView(referenceID: "ref", candidateID: "asm", mode: mode.comparisonMode))
+        case .removeReference:
+            service.remove(id: "ref")
+            #expect(service.comparison == nil, "sanity check: the removal ended the comparison")
+        }
+
+        for id in bodyIDs {
+            #expect(service.scalarField(forBody: id) == nil, "\(id) has no field left")
+            expectUnpainted(service, id, "and no paint")
+        }
+        #expect(service.scalarFieldLegend == nil, "so no field is left to show a legend for")
     }
 }

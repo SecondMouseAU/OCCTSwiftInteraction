@@ -69,7 +69,11 @@ extension CADViewportService {
     func undoComparison(_ previous: ComparisonView) {
         switch previous.mode {
         case .deviation:
-            setScalarField(nil, forBody: previous.candidateID)  // rebuilds bodies itself
+            // Fields are keyed by body id and `candidateID` names an entity. Each clear
+            // rebuilds bodies itself.
+            for bodyID in entityBodyIDs(previous.candidateID) where scalarFields[bodyID] != nil {
+                setScalarField(nil, forBody: bodyID)
+            }
         case .overlay, .sideBySide, .wipe:
             for (bodyID, original) in comparisonBackup {
                 if let index = modelBodies.firstIndex(where: { $0.id == bodyID }) {

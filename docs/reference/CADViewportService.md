@@ -369,7 +369,8 @@ viewport.setComparison(nil)   // restores both entities' plain display
   distance itself. Call `setScalarField(_:forBody:)` on the candidate with the
   precomputed values first; this mode just records that deviation display is active, so
   clearing it (`setComparison(nil)`, or switching to a different mode) also clears the
-  candidate's scalar field.
+  scalar field on each of the candidate's bodies. A candidate loaded with `loadFile(from:id:)`
+  has bodies named `<id>-0`, `<id>-1` and so on, so set its field on those body ids.
 - **`.sideBySide`** offsets the candidate's bodies along X so it sits beside the reference
   rather than overlapping it, via `_ViewportBody.transform` (also read live per frame, so
   no re-tessellation). Since there's only ever one camera/viewport, "linked cameras" is
