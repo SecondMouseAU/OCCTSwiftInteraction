@@ -21,7 +21,11 @@ writing the request file itself, or a host calling `setAgentAttention` directly,
 that. `setAgentAttention` now applies the bound for both, and the sidecar passes the label straight
 through to it. A label over 80 characters (counted as OCCTMCP counts them, `String.count`) keeps
 its first 79, less any blank ones at the cut and a Prepend character the `…` would join, plus `…`,
-never splitting a grapheme cluster. A label made only of characters that draw nothing (whitespace,
+never splitting a grapheme cluster. A label is also held to 4096 UTF-8 bytes, `…` included, since
+one character can carry any number of combining marks and OCCTMCP's count takes it as one; no
+label of ordinary characters within 80 comes near that bound. A cut that leaves nothing visible in
+front of the `…` drops the label rather than holding an ellipsis alone, so a host falls back to
+its own caption. A label made only of characters that draw nothing (whitespace,
 control characters, default-ignorable code points such as a zero-width joiner or the Hangul
 fillers, and a few named ones such as U+2800 BRAILLE PATTERN BLANK) is now no label, where before
 anything but the empty string was kept and drew as a blank caption. The marker itself still lands

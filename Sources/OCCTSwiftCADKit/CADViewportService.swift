@@ -166,7 +166,8 @@ public final class CADViewportService {
     ///
     /// Set together with `agentAttention` and cleared whenever it is cleared or replaced by a
     /// request that carries no label. Never non-nil while `agentAttention` is nil, never more
-    /// than 80 characters, and never made only of characters that draw nothing.
+    /// than 80 characters or 4096 UTF-8 bytes, and never made only of characters that draw
+    /// nothing.
     public internal(set) var agentAttentionLabel: String?
 
     /// Sets or clears the agent's attention marker.
@@ -176,8 +177,9 @@ public final class CADViewportService {
     ///
     /// `label` is the optional free-text caption shown beside the marker, and replaces any
     /// previous label. It is dropped when `entity` is nil or the label draws nothing (empty,
-    /// whitespace, or invisible characters only), and one over 80 characters is cut to at most
-    /// 79 plus an ellipsis (blank ones at the cut go too), without splitting a character.
+    /// whitespace, or invisible characters only). One over 80 characters or 4096 UTF-8 bytes is
+    /// cut to the whole characters that fit, plus an ellipsis (blank ones at the cut go too),
+    /// without splitting a character; a cut that leaves nothing visible drops the label.
     public func setAgentAttention(_ entity: PickedEntity?, label: String? = nil) {
         agentAttention = entity
         agentAttentionLabel = entity == nil ? nil : AgentAttentionLabel.normalized(label)

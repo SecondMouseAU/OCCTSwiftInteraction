@@ -230,11 +230,13 @@ A pending highlight (or escalation) request, one file per request, named by its 
 - **`label`**: `String?`, optional
   ([OCCTSwiftInteraction#35](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/35)).
   Free-text caption for the attention marker ("this fillet"), at most 80 characters (Swift
-  `Character`s, as OCCTMCP counts them). The host cuts a longer one to its first 79 characters,
-  less any blank ones at the cut and a Prepend character the `…` would join (U+0600 before a
-  tab), plus `…`, rather than rejecting the request, and treats a label that draws nothing (only
-  whitespace, control or default-ignorable characters, or a few named blanks such as U+2800) as no
-  label ([OCCTSwiftInteraction#54](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/54)).
+  `Character`s, as OCCTMCP counts them) and at most 4096 UTF-8 bytes, the second a host-side bound
+  OCCTMCP does not apply. The host cuts a longer one to the whole characters that fit both bounds
+  with `…` after them, less any blank ones at the cut and a Prepend character the `…` would join
+  (U+0600 before a tab), plus `…`, rather than rejecting the request. It treats a label that draws
+  nothing (only whitespace, control or default-ignorable characters, or a few named blanks such as
+  U+2800) as no label, and likewise one whose cut leaves nothing visible in front of the `…`
+  ([OCCTSwiftInteraction#54](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/54)).
   A cut or dropped label is reported in the handled file's `reason` on `applied`; an empty one is
   ignored without a `reason`. Lands in `agentAttentionLabel` together with `agentAttention`, and
   is cleared whenever the marker is cleared or replaced. Ignored on a request that does not land in
@@ -283,8 +285,10 @@ Written once the host has processed a request, same `<id>` as the request it ans
     newer one instead and never actually processed this request's own content.
 - **`reason`**: `String?`. Free text, present when it adds something `outcome` alone doesn't
   already say; `nil` for the ordinary `applied` case. An `applied` attention request whose `label`
-  the host did not hold as sent carries one (`label cut from N to M characters`, or
-  `label dropped: it has no visible character`), so a client learns what happened to its label.
+  the host did not hold as sent carries one (`label cut from N to M characters`,
+  `label cut from N to M bytes`, `label dropped: it has no visible character`, or
+  `label dropped: no visible character fits within 80 characters and 4096 bytes`), so a client
+  learns what happened to its label.
 
 - **`target`**: `String?`. On `applied`, where the request landed (`"attention"` or
   `"selection"`), so a client that omitted `target` can tell which default it got. Absent on

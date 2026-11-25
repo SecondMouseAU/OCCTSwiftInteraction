@@ -509,7 +509,17 @@
         /// hold its label as sent, or nil when it did (or the label was absent or empty).
         private static func labelReason(sent: String?, held: String?) -> String? {
             guard let sent, !sent.isEmpty, held != sent else { return nil }
-            guard let held else { return "label dropped: it has no visible character" }
+            guard let held else {
+                return AgentAttentionLabel.isBlank(sent)
+                    ? "label dropped: it has no visible character"
+                    : "label dropped: no visible character fits within "
+                        + "\(AgentAttentionLabel.maxLength) characters and "
+                        + "\(AgentAttentionLabel.maxUTF8Length) bytes"
+            }
+            // Within the character bound, only the byte bound can have cut it, so say it in bytes.
+            if sent.count <= AgentAttentionLabel.maxLength {
+                return "label cut from \(sent.utf8.count) to \(held.utf8.count) bytes"
+            }
             return "label cut from \(sent.count) to \(held.count) "
                 + (held.count == 1 ? "character" : "characters")
         }

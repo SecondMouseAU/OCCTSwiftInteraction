@@ -1,9 +1,10 @@
 // AgentAttentionLabelTests.swift
 // OCCTSwiftCADKitTests
 //
-// Coverage for OCCTSwiftInteraction#54: an attention label is held at most 80 characters, and a
-// label that draws nothing is no label, whether it arrives through `setAgentAttention(_:label:)`
-// or a `highlight_requests/<id>.json` payload. Every test runs once per entry point.
+// Coverage for OCCTSwiftInteraction#54: an attention label is held at most 80 characters and 4096
+// UTF-8 bytes, and a label that draws nothing is no label, whether it arrives through
+// `setAgentAttention(_:label:)` or a `highlight_requests/<id>.json` payload. Every test runs once
+// per entry point.
 
 import Foundation
 import OCCTSwift
@@ -116,6 +117,15 @@ private func letters(_ count: Int, _ letter: Character = "a") -> String {
     String(repeating: letter, count: count)
 }
 
+/// One `Character` of `1 + 2 * marks` UTF-8 bytes: an "a" carrying `marks` combining acutes.
+private func heavyCharacter(marks: Int) -> String {
+    "a" + String(repeating: "\u{0301}", count: marks)
+}
+
+/// The reason for a label that is not blank but has nothing visible in front of the cut.
+private let nothingVisibleFits =
+    "label dropped: no visible character fits within 80 characters and 4096 bytes"
+
 /// Labels that draw nothing, one per rule `AgentAttentionLabel.isBlank(_:)` names.
 private let blankLabels: [BlankAttentionLabel] = [
     BlankAttentionLabel(name: "empty", label: ""),
@@ -178,7 +188,8 @@ struct AgentAttentionLabelTests {
         #expect(invisibleAtCut.label == letters(78) + ellipsis)
 
         // Every blank character before the cut goes, not only the last: a label padded past the
-        // bound keeps its words, and one blank up to the cut keeps only the ellipsis.
+        // bound keeps its words, and one blank up to the cut is no label, not an ellipsis alone,
+        // so a host falls back to its own caption.
         let padded = try sendLabel("the datum face" + letters(70, " "), via: entry)
         #expect(padded.label == "the datum face" + ellipsis)
         if entry != .direct {
@@ -186,9 +197,10 @@ struct AgentAttentionLabelTests {
         }
         let blankUpToCut = try sendLabel(
             letters(40, " ") + letters(39, "\u{3164}") + "xy", via: entry)
-        #expect(blankUpToCut.label == ellipsis)
+        #expect(blankUpToCut.label == nil)
+        #expect(blankUpToCut.markerLanded)
         if entry != .direct {
-            #expect(blankUpToCut.reason == "label cut from 81 to 1 character")
+            #expect(blankUpToCut.reason == nothingVisibleFits)
         }
 
         // U+0600 is a Prepend character, a character of its own here only because the tab after
@@ -257,6 +269,57 @@ struct AgentAttentionLabelTests {
         #expect(thumbCut.label == letters(79) + ellipsis)
         if let label = thumbCut.label {
             #expect(!label.unicodeScalars.contains("\u{1F3FD}"))
+        }
+    }
+
+    @MainActor
+    @Test(
+        "A label over 4096 UTF-8 bytes is cut to the whole characters that fit",
+        arguments: AttentionLabelEntryPoint.allCases)
+    func heavyLabelIsCutByBytes(entry: AttentionLabelEntryPoint) throws {
+        // Exactly at the bound: 1 + 4095 bytes in two characters. Held as sent.
+        let atBound = "b" + heavyCharacter(marks: 2047)
+        #expect(atBound.utf8.count == 4096)
+        let atBoundHeld = try sendLabel(atBound, via: entry)
+        #expect(atBoundHeld.label?.unicodeScalars.elementsEqual(atBound.unicodeScalars) == true)
+        if entry != .direct { #expect(atBoundHeld.reason == nil) }
+
+        // One byte over: the heavy character no longer fits in front of the ellipsis, and is
+        // dropped whole rather than split between its scalars.
+        let overBound = try sendLabel("bc" + heavyCharacter(marks: 2047), via: entry)
+        #expect(overBound.label == "bc" + ellipsis)
+        if entry != .direct {
+            #expect(overBound.reason == "label cut from 4097 to 5 bytes")
+        }
+
+        // 40 characters of 119 bytes each: within OCCTMCP's 80, but 4,760 bytes. 34 fit with the
+        // ellipsis (34 * 119 + 3 = 4,049; 35 would be 4,168).
+        let heavy = String(repeating: heavyCharacter(marks: 59), count: 40)
+        let heavyHeld = try sendLabel(heavy, via: entry)
+        let heavyKept = String(repeating: heavyCharacter(marks: 59), count: 34) + ellipsis
+        #expect(heavyHeld.label?.unicodeScalars.elementsEqual(heavyKept.unicodeScalars) == true)
+        #expect(heavyHeld.label?.count == 35)
+        if entry != .direct {
+            #expect(heavyHeld.reason == "label cut from 4760 to 4049 bytes")
+        }
+
+        // One character of 200,001 bytes, which OCCTMCP's count takes as one: nothing visible
+        // fits, so no label, and the marker still lands.
+        let single = try sendLabel(heavyCharacter(marks: 100_000), via: entry)
+        #expect(single.label == nil)
+        #expect(single.markerLanded)
+        if entry != .direct { #expect(single.reason == nothingVisibleFits) }
+
+        // Visible text after it does not help, since the cut keeps a prefix.
+        let leading = try sendLabel(heavyCharacter(marks: 100_000) + "the datum face", via: entry)
+        #expect(leading.label == nil)
+        if entry != .direct { #expect(leading.reason == nothingVisibleFits) }
+
+        // Visible text in front of it is kept.
+        let trailing = try sendLabel("the datum face" + heavyCharacter(marks: 100_000), via: entry)
+        #expect(trailing.label == "the datum face" + ellipsis)
+        if entry != .direct {
+            #expect(trailing.reason == "label cut from 200015 to 17 bytes")
         }
     }
 
