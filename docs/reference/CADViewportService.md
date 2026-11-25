@@ -553,7 +553,7 @@ format: `okf/decisions/agent-viewport-selection-bridge.md`.
 ```swift
 try viewport.startSelectionSidecar(directory: sceneDirectory, hostName: "ACADStudio", hostVersion: "1.4.2")
 // ... an MCP-side agent drops highlight_requests/<id>.json, this service applies it,
-// and moves it to highlight_requests/handled/<id>.json with an outcome ...
+// writes the outcome to highlight_requests/handled/<id>.json, then deletes the request ...
 viewport.stopSelectionSidecar()
 ```
 
@@ -569,8 +569,12 @@ viewport.stopSelectionSidecar()
   per the ADR's single-host-per-directory liveness contract. Throws
   `CADViewportError.sidecarHostAlreadyRunning` if another process already holds it. A start that
   throws partway stops the sidecar again, so nothing is left held.
+- Each request gets one `handled/<id>.json` outcome, and the request file is deleted once that
+  outcome is written, never before (#63), so a client reads the outcome back, not the request. A
+  request file that does not decode, or whose `id` is not its filename stem, gets no outcome and is
+  left in place.
 - A highlight request naming a `bodyId` that isn't loaded, or a `kind`/`index` that doesn't
-  resolve, is moved to `handled/` with `outcome: "rejected"` and a reason, never silently
+  resolve, is answered in `handled/` with `outcome: "rejected"` and a reason, never silently
   dropped. A request carrying a `question` is presented via `present(_:)` instead of a plain
   `select(_:scheme:)`, mapping onto a single-entity `EscalationRequest`, with the question shown
   exactly as sent.

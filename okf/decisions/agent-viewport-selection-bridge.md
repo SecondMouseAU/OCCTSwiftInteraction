@@ -311,9 +311,12 @@ Written once the host has processed a request, same `<id>` as the request it ans
   `rejected` and `superseded`.
 
 The handled file does not repeat `id`, `bodyId`, `kind`, or `index`: the filename is the join key
-back to the request it answers, and the original request file stays in `highlight_requests/` (it
-is not moved or deleted), so a client that wants the full picture reads both files by the same
-`<id>`.
+back to the request it answers. The host deletes the request file once the handled file is
+written, never before, so a client that wants the full picture keeps its own copy of what it sent
+and does not read `highlight_requests/<id>.json` back
+([OCCTSwiftInteraction#63](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/63)). A
+file the host cannot use (one that does not decode, or whose `id` is not its filename stem) gets no
+handled file and is left in place.
 
 ### `host.json`
 
@@ -379,9 +382,11 @@ host's sidecar, which writes `selection.json`; the pane never writes the file, s
 
 Nothing here is ever written by both sides. A request file and its handled file are the one
 two-writer conversation this contract has, and it stays race-free because each side only ever
-writes the path the other side only ever reads: the client creates `<id>.json` and never touches
-`handled/<id>.json`; the host reads `<id>.json`, may delete it once handled (implementation detail,
-not part of this contract) and writes `handled/<id>.json` exactly once.
+writes the path the other side only ever reads: the client creates `<id>.json`, never writes it
+again, and never touches `handled/<id>.json`; the host reads `<id>.json`, writes
+`handled/<id>.json` exactly once, and then deletes `<id>.json`. That deletion is the host's only
+touch of a path the client writes, and it races nothing: it writes no content a reader could see
+half-done, and it comes after the client's one write (see the handled file above).
 
 ## Design notes
 

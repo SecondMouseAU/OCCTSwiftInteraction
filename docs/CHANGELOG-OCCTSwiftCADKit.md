@@ -12,6 +12,17 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Docs: the bridge ADR now says a handled request file is deleted
+
+Closes [OCCTSwiftInteraction#63](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/63).
+The selection bridge ADR said in one place that a request file stays in `highlight_requests/`
+after it is handled, "not moved or deleted", so a client could read it back beside its outcome,
+and in another that the host may delete it as an implementation detail. The sidecar has always
+deleted it once `handled/<id>.json` is written. Both passages now say that, as part of the
+contract: the outcome is written first, the request file is deleted after, and a client keeps its
+own copy of what it sent. Neither OCCTMCP nor ACADStudio reads a request back. No behaviour
+change.
+
 ### Fixed: a blank question opened an escalation card with nothing to read
 
 Closes [OCCTSwiftInteraction#62](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/62).
