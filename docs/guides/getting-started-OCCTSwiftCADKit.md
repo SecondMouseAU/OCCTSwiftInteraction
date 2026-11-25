@@ -315,6 +315,26 @@ ephemeral ordinal.
 was selected: the underlying store is a `Set<SubShape>`, so there is no insertion order
 left to preserve.
 
+To select several at once, pass a list: it is one change, so `selectionChanges` publishes once
+and the selection sidecar writes `selection.json` once. When you know a sub-shape from your own
+model rather than from a pick, name it with a `SubShapeAddress`: body id, kind and its ordinal in
+the body's tables as loaded (`viewport.loadedIdentity(ofBody:)`).
+
+```swift
+viewport.select([faceA, edgeB], scheme: .replace)    // [PickedEntity], one change
+
+let missing = viewport.select(
+    [SubShapeAddress(bodyID: "part", kind: .face, ordinal: 3),
+     SubShapeAddress(bodyID: "part", kind: .edge, ordinal: 7)],
+    scheme: .replace)                                 // returns the addresses that name nothing
+```
+
+A cap does not renumber an address: while a cap-enabled clipping plane cuts the body, an address
+selects what the cap left of its sub-shape (the pieces of a face it divides), and one the cap
+removed comes back in `missing`. The ordinals `selection` reports while a cap is active are the
+cut body's, so do not store them as addresses. `viewport.pickedEntities(at:)` gives the entities
+an address names without selecting them.
+
 Every selected entity is highlighted, a translucent yellow triangle patch aggregating
 every selected face, a bright cyan polyline aggregating every selected edge's segments, a
 bright magenta point sprite per selected vertex. A highlight lights only what is drawn: hiding an

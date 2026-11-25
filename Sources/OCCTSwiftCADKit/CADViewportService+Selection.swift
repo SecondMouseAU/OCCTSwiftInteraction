@@ -84,7 +84,10 @@ extension CADViewportService {
 
     /// The interactive context's name for `entity`: its `SubShapeRef` plus the
     /// `InteractiveObject` standing for the body it was picked on.
-    private func subShape(for entity: PickedEntity) -> OCCTSwiftTools.SubShape {
+    ///
+    /// Internal rather than private so `select(_:scheme:)`'s list overloads
+    /// (`CADViewportService+SubShapeAddress.swift`) name an entity the same way.
+    func subShape(for entity: PickedEntity) -> OCCTSwiftTools.SubShape {
         let object = object(forBody: entity.bodyID, fallbackShape: entity.ref.shape)
         switch entity {
         case .face(let info): return .face(object, ref: info.ref)

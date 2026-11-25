@@ -287,6 +287,15 @@ public final class CADViewportService {
     /// Maps each vertex ordinal to (`Shape`, `GraphUID`?), keyed by body id.
     var vertexIdentity: [String: VertexIdentityTable] = [:]
 
+    /// Each body's identity as it was loaded, keyed by body id: what `loadedIdentity(ofBody:)`
+    /// returns, and the ordinal space a `SubShapeAddress` names.
+    ///
+    /// `bodyShapes`, `bodyGraphs` and the three tables above follow the body as drawn, so a cap
+    /// recut replaces them; this is written only by a load and cleared only with the body. Absent
+    /// for a body whose identity was installed some other way (a test seeding `installIdentity`
+    /// directly).
+    var loadedIdentities: [String: ShapeIdentity] = [:]
+
     // MARK: - Scalar fields
 
     /// The scalar field currently painted on each body, keyed by body id.

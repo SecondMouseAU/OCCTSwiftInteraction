@@ -12,6 +12,38 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Added: selecting sub-shapes a host knows by body, kind and ordinal, several at once
+
+Closes [OCCTSwiftInteraction#81](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/81).
+A host that knows a face, edge or vertex from its own model rather than from a pick had no public
+way to select it as a pick is selected: it copied the internal enrichment to build the
+`PickedEntity`, then selected one entity at a time, which published every partial selection and
+let the sidecar write a `selection.json` holding only part of the set. Additive; nothing existing
+changes.
+
+- **`SubShapeAddress(bodyID:kind:ordinal:)`** names a sub-shape by body id, kind (`.face`,
+  `.edge`, `.vertex`) and ordinal. **The ordinal is the body's as loaded**: its index in the
+  tables of `ShapeIdentity(shape:)` of the shape the body was loaded from, which a cap does not
+  renumber. It is not the ordinal `selection` reports while a cap is active, which is the cut
+  body's.
+- **`select(_ addresses: [SubShapeAddress], scheme:) -> [SubShapeAddress]`** maps each address
+  onto the body as drawn (the sub-shape itself, or the pieces a cap left of it), enriches each
+  exactly as a viewport pick, and applies them as one change. An address that names nothing (an
+  unknown body, an ordinal outside the table, a sub-shape a cap removed) is skipped and returned;
+  the rest are applied.
+- **`select(_ entities: [PickedEntity], scheme:)`** is `select(_:scheme:)` for a list, as one
+  change: one `selectionChanges` publication, one highlight rebuild, one `selection.json` write.
+- **`pickedEntities(at:) -> [PickedEntity]`** gives the enriched entities for an address without
+  selecting them, for `setAgentAttention(_:label:)`, an `EscalationRequest`, or a description
+  shown before selecting.
+- **`loadedIdentity(ofBody:) -> ShapeIdentity?`** returns the body's tables and graph as loaded,
+  so a host that finds a sub-shape by its own test (a geometric fingerprint, say) reads the
+  ordinal from the service rather than building a second `ShapeIdentity`. A cap never changes it,
+  so what a host reads stays valid until the body is reloaded or removed.
+
+In every list form an entry listed twice counts once, an empty result with `.replace` clears the
+selection, and an empty result with any other scheme changes nothing and writes nothing.
+
 ### Breaking: `SelectionChangeSource` has a new case, `bodyRecut(bodyID:)`
 
 Part of [OCCTSwiftInteraction#77](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/77),

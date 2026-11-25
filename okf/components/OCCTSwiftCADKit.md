@@ -19,7 +19,12 @@ timestamp: 2026-11-25
   and ordinal, since the store is a `Set`), and `selectionModes` **is**
   `interactiveContext.selectionMode`. A real pick replaces the selection wholesale; build a
   multi-selection with `select(_:scheme:)` (`SelectionScheme`: `.replace`/`.add`/`.remove`/`.xor`,
-  `OCCTSwiftAIS`'s own type, which gained the scheme parameter from this service).
+  `OCCTSwiftAIS`'s own type, which gained the scheme parameter from this service), or a whole list
+  as one change with `select(_ entities:scheme:)`. A host that knows a sub-shape from its own
+  model selects it by `SubShapeAddress` (body id, kind, ordinal) with
+  `select(_ addresses:scheme:)`, or gets its enriched entities with `pickedEntities(at:)`; the
+  ordinal is the body's as loaded (`loadedIdentity(ofBody:)`), which a cap does not renumber, and
+  each address is mapped onto the body as drawn when it is used (#81).
   `selectionMeasurements` reports aggregate count/area/length/bounds. The selection highlight
   lights only what is drawn, so a hidden body keeps its selection unlit (#78). The deprecated
   `selectedFace`, `selected` and `selectionSummary` were removed in 2.0.0.

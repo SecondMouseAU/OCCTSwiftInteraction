@@ -6,7 +6,7 @@ back to your app, and paint scalar fields (deviation heatmaps and similar) over 
 The public surface is `CADViewportService` (the controller/state owner), `CADViewportView`
 (the SwiftUI view), the `PickedEntity`/`PickedFaceInfo`/`PickedEdgeInfo`/`PickedVertexInfo`/
 `SelectionMeasurements`/`ScalarField`/`ColorMap`/`ScalarFieldLegend`/`LegendStop`/`FaceBounds`
-result types, and `CADViewportError`.
+result types, `SubShapeAddress`, and `CADViewportError`.
 
 ```swift
 import OCCTSwiftCADKit
@@ -269,6 +269,91 @@ The selection survives operations unrelated to it: `remove(id:)`/`removeAll()` d
 the selection entries that referenced the removed entity's bodies, leaving the rest
 selected: the selection reports what's gone by no longer containing it, rather than either
 lingering on stale picks or being wiped wholesale for an unrelated change.
+
+#### Several at once, and sub-shapes known by address
+
+```swift
+public func select(_ entities: [PickedEntity], scheme: SelectionScheme = .replace)
+
+@discardableResult
+public func select(_ addresses: [SubShapeAddress], scheme: SelectionScheme = .replace)
+    -> [SubShapeAddress]
+
+public func pickedEntities(at address: SubShapeAddress) -> [PickedEntity]
+
+public func loadedIdentity(ofBody bodyID: String) -> ShapeIdentity?
+```
+
+For a host that knows what to select from its own model rather than from a pick
+(OCCTSwiftInteraction#81), such as a drawing ledger selecting the faces a dimension was measured
+on.
+
+- **`select(_ entities:scheme:)`** applies `select(_:scheme:)`'s rules to a whole list as **one
+  change**, through the interactive context's set overload: `selectionChanges` publishes once
+  (`.programmatic`), the highlight is cut once, and the selection sidecar writes `selection.json`
+  once. A run of single calls does each of those once per entity, and the sidecar writes every
+  partial selection on the way.
+- **`select(_ addresses:scheme:)`** selects the sub-shapes [`SubShapeAddress`](#subshapeaddress)
+  values name, as one change, and returns the addresses that name nothing, in the order given.
+  With two list forms, an untyped empty literal (`select([])`) is ambiguous: write
+  `[PickedEntity]()`, or call `clearSelection()`.
+- **`pickedEntities(at:)`** gives the entities an address names without selecting them, enriched
+  exactly as a viewport pick of each (`description`, bounds, area, curve type, length, position).
+  Use it for `setAgentAttention(_:label:)`, an `EscalationRequest`, or a description shown before
+  selecting.
+- **`loadedIdentity(ofBody:)`** is the body's `ShapeIdentity` as loaded: the shape, its graph (the
+  one `load(_:id:graph:transform:)` was given, or the one the service minted), and the tables an
+  address's ordinal indexes. `nil` for a body this service has not loaded.
+
+**An address's ordinal is the body's as loaded, and a cap does not change it.** It indexes
+`loadedIdentity(ofBody:)`'s tables, which number the sub-shapes of the shape the body was loaded
+from (as placed, when it was loaded with a `transform`), as a host's own `ShapeIdentity(shape:)`
+of that shape does. A cap-enabled clipping plane
+recuts the body and renumbers it as drawn, but each entry point maps the address onto the body as
+drawn when it is called, through the same split history the selection follows across a recut:
+
+| The cap... | the address selects |
+|---|---|
+| is off, or leaves the sub-shape alone | the sub-shape |
+| divides it | each piece the cap keeps |
+| removes it | nothing: the address is returned |
+
+So a host can store addresses, or a `loadedIdentity(ofBody:)` read, across any number of
+recuts. What it cannot do is mix the two numberings: while a cap is active, `selection`'s
+`faceIndex`/`edgeIndex`/`vertexIndex`, its uids and `selection.json`'s `index` name the cut body,
+and are not addresses. (Once a cap has cut the body, `selection`'s uids are those of a graph the
+service minted for the body as drawn, even after the cap is removed, so they do not resolve in
+`loadedIdentity(ofBody:)`'s graph.) The cap face, and an edge or vertex the cut made, have no address, since
+the body as loaded has no such sub-shape. The tables of the body as drawn stay internal: every
+recut renumbers them, and nothing a host is given indexes them except a pick.
+
+**Invalid input is skipped, not fatal.** An address on a body this service has not loaded, with
+an ordinal outside the body's table (negative included), or naming a sub-shape a cap removed,
+selects nothing and comes back from `select(_ addresses:scheme:)`; the rest are applied. The scheme
+applies to what was found:
+
+- An entry listed twice counts once, so `.xor` toggles it once.
+- `.replace` with nothing found clears the selection.
+- Any other scheme with nothing found changes nothing, publishes nothing and writes nothing.
+
+A hollow clipping plane removes nothing from the body, so a sub-shape behind one still selects, as
+does one on a hidden body, whose highlight lights nothing. Like `select(_:scheme:)`, neither list
+form is gated by `selectionModes`. A face selected by address has no `scalarValue` under a
+`.perTriangle` field, as for area selection, since there is no picked triangle to sample.
+
+```swift
+// The faces a ledger row names, by the ordinals the host found in the loaded tables:
+if let faces = viewport.loadedIdentity(ofBody: "part")?.faces.shapes {
+    let ordinals = faces.indices.filter { faces[$0].map(matchesFingerprint) == true }
+    let missing = viewport.select(
+        ordinals.map { SubShapeAddress(bodyID: "part", kind: .face, ordinal: $0) },
+        scheme: .replace)
+    // `missing` lists any a cap has removed.
+}
+
+// A list of entities, as one change (restoring a stored selection, say):
+viewport.select(storedEntities, scheme: .replace)
+```
 
 ```swift
 public var selectionMeasurements: SelectionMeasurements? { get }
@@ -921,6 +1006,27 @@ is `[PickedEntity]`. Every case's payload shares the same durable-identity shape
 plus an ephemeral render-path ordinal). `bodyID` reads whichever case's `bodyID` field,
 regardless of kind, pass it to `entityID(forBodyID:)` to find which multi-entity load (if
 any) owns the picked body.
+
+## `SubShapeAddress`
+
+```swift
+public struct SubShapeAddress: Sendable, Hashable {
+    public enum Kind: String, Sendable, Hashable, CaseIterable { case face, edge, vertex }
+
+    public var bodyID: String
+    public var kind: Kind
+    public var ordinal: Int
+
+    public init(bodyID: String, kind: Kind, ordinal: Int)
+}
+```
+
+A face, edge or vertex of a loaded body, named by the body's id (as `PickedEntity.bodyID` reports
+it), its kind, and its ordinal in the body's table **as loaded**: `loadedIdentity(ofBody:)`'s
+tables, which a cap does not renumber. Taken by `select(_ addresses:scheme:)` and
+`pickedEntities(at:)`, which map it onto the body as drawn when they are called; see
+[Several at once, and sub-shapes known by address](#several-at-once-and-sub-shapes-known-by-address).
+`Kind`'s raw values are the `kind` strings `selection.json` uses. OCCTSwiftInteraction#81.
 
 ## `PickedFaceInfo`
 
