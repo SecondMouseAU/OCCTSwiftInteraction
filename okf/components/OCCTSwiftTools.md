@@ -1,7 +1,7 @@
 ---
 type: component
 title: Components index
-resource: https://github.com/SecondMouseAU/OCCTSwiftTools
+resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction/tree/main/Sources/OCCTSwiftTools
 tags: [index]
 description: Public modules / API surfaces exposed by OCCTSwiftTools.
 timestamp: 2026-11-23

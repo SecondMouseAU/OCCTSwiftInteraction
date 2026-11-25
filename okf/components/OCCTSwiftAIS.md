@@ -1,7 +1,7 @@
 ---
 type: component
 title: Components index
-resource: https://github.com/SecondMouseAU/OCCTSwiftAIS
+resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction/tree/main/Sources/OCCTSwiftAIS
 tags: [index, api]
 description: OCCTSwiftAIS public API: one library target covering selection, manipulators, dimensions, and scene objects.
 timestamp: 2026-11-23
