@@ -83,7 +83,8 @@ timestamp: 2026-11-25
   body of the candidate (#59). A face pick on a wiped body names the face under the cursor and
   reports the value painted there (#58). The selection highlight is rebuilt from the bodies as
   drawn whenever a comparison is set, moved, switched or cleared (#72), and lights a `.sideBySide`
-  candidate's selection where the candidate is drawn (#73).
+  candidate's selection where the candidate is drawn (#73). A wiped body draws no edges or vertex
+  points, so an edge or vertex highlight on it is unlit until the wipe ends (#79).
 - **`ClippingPlane`**: clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:
   normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides
   geometry on one side (a fast, global GPU clip); `showCapSurface: true` (default) additionally

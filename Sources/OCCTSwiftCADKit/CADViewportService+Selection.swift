@@ -602,7 +602,7 @@ extension CADViewportService {
     /// copies: up to three bodies (`<idPrefix>_face`/`_edge`/_vertex`), a translucent triangle
     /// patch aggregating every selected face's own triangles, a polyline aggregating every
     /// selected edge's own segments, and a point sprite body for every selected vertex's own
-    /// position, one omitted for a kind not present in `entities`.
+    /// point, one omitted for a kind with nothing drawn to light.
     ///
     /// Each piece is copied in world space, placed by the `transform` of the body it came from
     /// (`HighlightPlacement`), so one aggregate body can hold pieces of bodies placed
@@ -669,10 +669,15 @@ extension CADViewportService {
                 }
 
             case .vertex(let info):
-                // `position` is the vertex's own, in the frame its body was tessellated in.
-                let position = SIMD3<Float>(
-                    Float(info.position.x), Float(info.position.y), Float(info.position.z))
-                vertexPoints.append(placement.point(position))
+                // Cut from the points the body draws, as an edge is from its segments, so a body
+                // that draws none (a wiped one) lights none. A point's ordinal is the one
+                // `SubShapePickResolver.resolveVertex` reads: identity past `vertexIndices`.
+                for (point, drawn) in body.vertices.enumerated() {
+                    let ordinal =
+                        point < body.vertexIndices.count ? Int(body.vertexIndices[point]) : point
+                    guard ordinal == info.vertexIndex else { continue }
+                    vertexPoints.append(placement.point(drawn))
+                }
             }
         }
 

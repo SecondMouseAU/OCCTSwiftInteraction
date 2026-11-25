@@ -214,9 +214,9 @@ aggregating every selected face's own triangles, a bright cyan polyline aggregat
 selected edge's segments, a bright magenta point sprite per selected vertex. A body whose
 `ViewportBody` has no `edgeIndices`/`vertices` populated (not edge/vertex pickable) simply
 never produces an edge/vertex pick on that body, face picking on the same body is
-unaffected. A face or edge highlight is copied from the body as drawn, and a vertex highlight is
-drawn at the vertex's own position; all of them are rebuilt when the selection changes and
-whenever a [comparison](#comparison) changes the bodies. A highlight lights nothing of a hidden
+unaffected. Every highlight is copied from the body as drawn (a face's triangles, an edge's
+segments, a vertex's point), and is rebuilt when the selection changes and whenever a
+[comparison](#comparison) changes the bodies. A highlight lights nothing of a hidden
 body: an entity hidden through `visibility`, or a body a [cap plane](#clipping) clips away
 entirely, keeps its selection but none of it is lit, and it is lit again when the body is shown,
 including by an escalation preview naming it.
@@ -391,9 +391,9 @@ viewport.setComparison(nil)   // restores both entities' plain display
   wiped body names the face under the cursor, and its `scalarValue` is the value painted on
   the picked triangle. A selected face's highlight lights only the triangles the wipe leaves
   drawn, whether the face was selected before the wipe or during it, and follows the wipe as it
-  moves, switches mode or is cleared. A wiped body draws no edges, so an edge selected on it is
-  not lit while the wipe lasts and is lit again when it ends; a vertex highlight stays at the
-  vertex's position whatever the wipe.
+  moves, switches mode or is cleared. A wiped body draws no edges or vertex points, so an edge or
+  vertex selected on it, before the wipe or during it, is not lit while the wipe lasts and is lit
+  again when it ends.
 
 `comparison` reports the currently active `ComparisonView`, or `nil`. Removing (or
 reloading, which removes then re-adds) either the reference or candidate entity clears the

@@ -115,7 +115,7 @@ public final class CADViewportService {
     /// a real multi-body file on disk.
     var metadata: [String: CADBodyMetadata] = [:]
     var overlays: [String: [_ViewportBody]] = [:]
-    /// Up to three highlight bodies, one per kind present in `selection`, since each
+    /// Up to three highlight bodies, one per kind `selection` lights, since each
     /// kind renders with a different primitive (translucent triangle patch / polyline /
     /// point sprite) that can't share one `_ViewportBody`.
     var selectionBodies: [_ViewportBody] = []

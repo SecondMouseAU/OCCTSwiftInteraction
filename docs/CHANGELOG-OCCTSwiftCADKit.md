@@ -12,6 +12,16 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: a vertex highlight stayed lit where a wipe draws nothing
+
+Closes [OCCTSwiftInteraction#79](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/79).
+A `.wipe` draws no vertex points on either side, but a vertex highlight was drawn at the vertex's
+own position rather than copied from the body, so a selected vertex stayed lit through any wipe,
+including on the half the wipe cut away. It is now copied from the points the body draws, as an
+edge highlight is copied from its segments, so a vertex selected before or during a wipe is not lit
+while the wipe lasts and is lit again when it ends, which is what an edge already did. All three
+kinds of highlight now light only what the body draws. No API change.
+
 ### Fixed: a hidden entity's selection highlight was still drawn
 
 Closes [OCCTSwiftInteraction#78](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/78).
@@ -46,8 +56,8 @@ whenever a comparison is applied or undone, which includes the undo and reapply 
 clipping-plane change or a scalar field write runs during a comparison. It is rebuilt once per
 viewport update, not once per step. An edge highlight is rebuilt the same way, so an edge selected
 before a wipe is not lit while the wipe lasts, since a wiped body draws no edges, and is lit again
-when the wipe ends; before, it stayed lit across the whole edge. A vertex highlight is drawn at the
-vertex's own position, as before, so a wipe does not hide it. No API change.
+when the wipe ends; before, it stayed lit across the whole edge. A vertex highlight does the same
+since the fix for #79 above. No API change.
 
 ## 3.0.0-beta.8 (2026-11-25)
 
