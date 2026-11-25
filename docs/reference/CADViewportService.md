@@ -454,6 +454,18 @@ viewport.removeClippingPlane(id: planeID)
   settles. A body with an active `ScalarField` (`setScalarField(_:forBody:)`) loses it the
   moment that body is genuinely cut, the field's ordinals don't correspond to the new
   tessellation, so it's cleared rather than silently mispainted; re-`setScalarField` after.
+- **A cap cuts a body wherever it lies** (OCCTSwiftInteraction#84). Each cut is made at the point
+  of the plane nearest the body, not at the plane's `origin`, so a `sectionSweep` plane (whose
+  origin is always on an axis through the world origin) caps a body placed far from that axis.
+- **A cut and the restore mesh a body as its load did** (OCCTSwiftInteraction#82): at the
+  `meshDeflection` it was loaded at, not the current one, for a shape loaded with
+  `load(_:id:...)`, and with the loader's own settings for a file load. A coarse preview stays
+  coarse through a cap and its removal.
+- **A re-mesh that fails puts the uncut body back whole** (OCCTSwiftInteraction#86). If meshing a
+  new cut, or the restore after the cap goes, fails, the body is shown uncut (hollow where the
+  plane clips it) with its own mesh, metadata, identity tables and graph together, so picks and the
+  selection name what is drawn, and the selection is remapped onto it as when the cap is removed.
+  The next recompute tries the cut again. A body a plane had hidden entirely is only shown again.
 - **The selection follows a cut** (OCCTSwiftInteraction#77). Cutting a body again, or
   restoring it when the cap goes, renumbers its faces, edges and vertices and mints its durable
   uids afresh, so the selection on it is remapped onto the new body: a selected sub-shape the
@@ -750,7 +762,9 @@ public var selectionChanges: AnyPublisher<SelectionChange, Never> { get }
 (OCCTSwiftInteraction#27). `graph` is ignored when `transform` is non-nil, and `nil` mints one.
 
 `meshDeflection: Double?` (default `nil`) sets the linear deflection `load(_:id:...)` meshes with (file loads are unaffected); larger is
-coarser and faster, and it applies to shapes loaded after it is set (OCCTSwiftInteraction#42).
+coarser and faster, and it applies to shapes loaded after it is set (OCCTSwiftInteraction#42). A
+body keeps the deflection it was loaded at when a cap cuts it or is removed
+(OCCTSwiftInteraction#82).
 
 `selectionChanges` emits a `SelectionChange` (`previous`, `current`, `source`) on every change to
 `selection`: `source` is `.viewportPick`, `.emptySpaceClick`, `.programmatic`,

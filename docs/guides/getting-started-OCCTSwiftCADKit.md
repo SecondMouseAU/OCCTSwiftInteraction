@@ -531,6 +531,11 @@ the piece (or pieces) left showing, and removing the plane selects the whole fac
 cap removes entirely leaves the selection and does not come back. `selectionChanges` reports each
 such remap with source `.bodyRecut(bodyID:)`.
 
+**Mesh density:** a cut, and the body again once the plane is removed, are meshed at the
+deflection the body was loaded at (`meshDeflection` as it stood when you loaded it, whatever it is
+now), so a coarse preview stays coarse through a cap. A cap plane cuts a body wherever the body
+lies on it, however far from the plane's `origin`.
+
 **Reload behavior:** capping DOES automatically re-apply when you reload an entity (even
 under an id already in use), every loader ends by syncing clipping state, so the new
 geometry is clipped/capped immediately, with no further clipping-plane call needed. A

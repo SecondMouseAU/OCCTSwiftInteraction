@@ -282,7 +282,7 @@ struct CapRecutSelectionTests {
     /// Expects the selection of `kind` on body `id` to name exactly the sub-shapes at `expected`, each
     /// through the ordinal and uid the body's current identity table gives it.
     @MainActor
-    private static func expectSelection(
+    static func expectSelection(
         _ service: CADViewportService, _ kind: Kind, ofBody id: String, names expected: [Box],
         _ step: String, sourceLocation: SourceLocation = #_sourceLocation
     ) {
@@ -319,7 +319,7 @@ struct CapRecutSelectionTests {
     /// Expects the highlight of `kind` on body `id` to light exactly the sub-shapes at `expected`,
     /// as the body draws them now.
     @MainActor
-    private static func expectHighlight(
+    static func expectHighlight(
         _ service: CADViewportService, _ kind: Kind, ofBody id: String, lights expected: [Box],
         _ step: String, sourceLocation: SourceLocation = #_sourceLocation
     ) {
@@ -511,6 +511,7 @@ struct CapRecutSelectionTests {
         case boxMissed
         case boxCutAtAnAngle
         case boxPlaneOnAFace
+        case boxFarFromThePlaneOrigin
         case solidsInACompound
         case shell
         case loneFace
@@ -521,6 +522,7 @@ struct CapRecutSelectionTests {
             case .boxMissed: "a box, a plane that misses it"
             case .boxCutAtAnAngle: "a box, a plane at an angle"
             case .boxPlaneOnAFace: "a box, a plane on one of its faces"
+            case .boxFarFromThePlaneOrigin: "a box at X = 100, a plane whose origin is the world's"
             case .solidsInACompound: "three solids in a compound, cut across two of them"
             case .shell: "a shell, cut through"
             case .loneFace: "a lone face, cut through"
@@ -533,6 +535,7 @@ struct CapRecutSelectionTests {
             case .boxMissed: (SIMD3(10, 0, 0), SIMD3(1, 0, 0))
             case .boxCutAtAnAngle: (.zero, simd_normalize(SIMD3(1, 1, 0)))
             case .boxPlaneOnAFace: (SIMD3(0, 0, 2), SIMD3(0, 0, 1))
+            case .boxFarFromThePlaneOrigin: (.zero, SIMD3(0, 0, 1))
             case .solidsInACompound: (SIMD3(0, 2, 0), SIMD3(0, 1, 0))
             }
         }
@@ -542,6 +545,8 @@ struct CapRecutSelectionTests {
             switch self {
             case .boxCutThrough, .boxMissed, .boxCutAtAnAngle, .boxPlaneOnAFace:
                 return box
+            case .boxFarFromThePlaneOrigin:
+                return box.translated(by: SIMD3(100, 0, 0))
             case .solidsInACompound:
                 // `fuseAll` (a general fuse) of touching boxes leaves three solids in a compound.
                 guard let base = Shape.box(width: 6, height: 2, depth: 2),
@@ -560,6 +565,11 @@ struct CapRecutSelectionTests {
 
     /// The cap repeats the OCCT calls of `Shape.split(atPlane:normal:)` to keep the history, so
     /// after an OCCTSwift bump this is what notices the two diverging.
+    ///
+    /// Both splits are given the point the cap gives its own (`splitPoint`, #84): the point of the
+    /// plane nearest the shape, which is the plane's own origin in every case but the box at
+    /// X = 100. There the upstream split given the world origin returns the box whole, and the case
+    /// checks that both cut it.
     @MainActor
     @Test(
         "The cap's split gives the pieces Shape.split(atPlane:normal:) gives, in order",
@@ -567,10 +577,14 @@ struct CapRecutSelectionTests {
     func capSplitMatchesUpstreamSplit(_ testCase: SplitCase) throws {
         let shape = try #require(testCase.shape())
         let (origin, normal) = testCase.plane
-        let upstream = try #require(shape.split(atPlane: origin, normal: normal))
+        let point = CADViewportService.splitPoint(of: shape, onPlaneThrough: origin, normal: normal)
+        let upstream = try #require(shape.split(atPlane: point, normal: normal))
         let ours = try #require(
-            CADViewportService().split(shape, atPlane: origin, normal: normal, planeID: "p")
+            CADViewportService().split(shape, atPlane: point, normal: normal, planeID: "p")
         ).pieces
+        if testCase == .boxFarFromThePlaneOrigin {
+            #expect(upstream.count == 2, "the box far from the plane's origin is cut in two")
+        }
 
         // Rounded, since the first split can raise the tolerances of the input both splits share.
         func summary(_ piece: Shape) -> String {
@@ -614,10 +628,12 @@ struct CapRecutSelectionTests {
     }
 }
 
+// Internal rather than fileprivate: the other cap path suites (OCCTSwiftInteraction#84, #86) name
+// sub-shapes the same way.
 @MainActor
 extension CADViewportService {
     /// The identity table for `kind` of body `id`, as shapes and uids.
-    fileprivate func identityTable(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
+    func identityTable(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
         -> (shapes: [Shape?], uids: [BRepGraph.GraphUID?]?)?
     {
         switch kind {
@@ -629,7 +645,7 @@ extension CADViewportService {
 
     /// The sub-shape of `kind` on body `id` whose bounding box is `box`, as the current table
     /// names it.
-    fileprivate func ref(
+    func ref(
         _ kind: CapRecutSelectionTests.Kind, ofBody id: String, at box: CapRecutSelectionTests.Box
     ) -> SubShapeRef? {
         guard let table = identityTable(kind, ofBody: id) else { return nil }
@@ -641,7 +657,7 @@ extension CADViewportService {
     }
 
     /// The refs of `kind` selected on body `id`, read from the interactive context.
-    fileprivate func selected(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
+    func selected(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
         -> [SubShapeRef]
     {
         guard let objectID = bodyObjectIDs[id] else { return [] }
@@ -658,7 +674,7 @@ extension CADViewportService {
     }
 
     /// Selects `ref`, a sub-shape of `kind` on body `id`, as a selection made without a pick.
-    fileprivate func selectSub(
+    func selectSub(
         _ kind: CapRecutSelectionTests.Kind, _ ref: SubShapeRef, ofBody id: String
     ) {
         let entity: PickedEntity?

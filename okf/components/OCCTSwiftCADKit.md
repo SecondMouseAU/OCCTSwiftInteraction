@@ -4,7 +4,7 @@ title: Components index
 resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction/tree/main/Sources/OCCTSwiftCADKit
 tags: [index, api]
 description: OCCTSwiftCADKit public API: one library target wrapping the CAD viewport service and view.
-timestamp: 2026-11-25
+timestamp: 2026-11-26
 ---
 
 # Components
@@ -94,7 +94,9 @@ timestamp: 2026-11-25
   doesn't. A visibility set on a capped entity survives every cap recompute and is what removing
   the plane restores (#46). A cut, a moved cap or a removed one remaps the selection on the body
   onto its new topology through OCCT's split history, and a sub-shape the cap removes entirely
-  leaves the selection (#77).
+  leaves the selection (#77). A cap cuts a body wherever it lies on the plane (#84), a cut and the
+  restore mesh a body at the deflection it was loaded at (#82), and a re-mesh that fails shows the
+  uncut body with its own tables (#86).
 - **`EscalationRequest`, `EscalationCandidate`, `EscalationResponse`**: human-in-the-loop
   escalation: `pendingEscalation` / `present(_:) async -> EscalationResponse` asks a bounded
   question grounded in specific geometry (`EscalationRequest.entities`, highlighted automatically

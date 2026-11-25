@@ -87,7 +87,10 @@ extension CADViewportService {
     /// compositing nothing)) and returns `body` rebuilt with it. See this method's
     /// implementation comment below for why that's a full body reconstruction rather than
     /// an in-place `triangleStyles` mutation.
-    private func styledBody(_ body: _ViewportBody, with field: ScalarField?) -> _ViewportBody {
+    ///
+    /// Internal rather than private so a failed cap re-mesh can strip the paint the uncut mesh it
+    /// puts back still carries (`reinstall(_:asBody:at:shape:)`, OCCTSwiftInteraction#86).
+    func styledBody(_ body: _ViewportBody, with field: ScalarField?) -> _ViewportBody {
         let triCount = body.indices.count / 3
         var styles: [TriangleStyle] = []
 

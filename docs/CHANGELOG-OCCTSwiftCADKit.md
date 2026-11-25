@@ -24,6 +24,42 @@ renumbered its sub-shapes and minted its durable uids afresh.
 Handle it as you handle `bodyRemoved(bodyID:)` if you keep picks per body, as a selection history
 does.
 
+### Fixed: a cap plane did not cut a body far from the plane's origin
+
+Closes [OCCTSwiftInteraction#84](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/84).
+The cap is cut with a face that reaches twice the body's bounding-box diagonal each way from the
+point of the plane it is given, and that point was the plane's `origin`, which `sectionSweep` always
+puts on an axis through the world origin. A body farther from that point than its own size was
+never capped: a 4x4x4 box at X = 100 stayed whole under a Z sweep. Each cut is now given the point
+of the plane nearest the body (its bounding-box centre projected onto the plane), so a cap plane
+cuts a body wherever the body lies, and the selection on it follows the cut as on any other body.
+The plane is the same, so the side kept is too. No API change. OCCTSwift#3559 asks for
+`Shape.split(atPlane:normal:)` to centre its face itself.
+
+### Fixed: a cap recut and the restore meshed at the default deflection, ignoring `meshDeflection`
+
+Closes [OCCTSwiftInteraction#82](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/82).
+A body loaded with `meshDeflection` set was meshed at `CADFileLoader`'s default as soon as a cap
+cut it, and stayed that way after the cap was removed, so a coarse preview deflection turned fine
+(and slow to mesh) on the first cap. A cut and the restore now mesh a body with the settings its
+load used, recorded per body at the load: `meshDeflection` as it stood then for a shape loaded
+with `load(_:id:transform:)`, whatever it is now, and the loader's own settings for the format for a
+file load, which ignores `meshDeflection`. File loads were not affected in practice (a STEP or BREP
+load and the old re-mesh both used the loader's default, and an STL's planar facets mesh the same
+either way), but they now keep their settings by construction. No API change.
+
+### Fixed: a failed re-mesh of a capped body left the previous cut's tables behind
+
+Closes [OCCTSwiftInteraction#86](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/86).
+When a cap moved and the re-mesh of the new cut failed, the uncut mesh was put back but the
+previous cut's shape, metadata, identity tables and cap origins stayed installed, so picks, the
+selection remap and `selection` described a cut that was not drawn. A failed re-mesh now puts the
+uncut body back whole, mesh and tables together, with the uncut graph's uids, and the selection on
+it is remapped as when the cap is removed: a piece of a face becomes the whole face, and the cap
+face leaves the selection. The same holds when the re-mesh that restores a body after its cap is
+removed fails, which used to leave the cut drawn with no plane to explain it. A body a plane had
+hidden entirely is only shown again, with any scalar field set on it. No API change.
+
 ### Fixed: a cap recut left the selection naming the uncut body's sub-shapes
 
 Closes [OCCTSwiftInteraction#77](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/77).

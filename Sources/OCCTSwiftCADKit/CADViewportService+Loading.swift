@@ -45,6 +45,7 @@ extension CADViewportService {
         clippingSourceShapes.removeAll()
         clippingCapBackup.removeAll()
         capOrigins.removeAll()
+        bodyMeshing.removeAll()
         if pendingEscalation != nil {
             respond(.rejected(reason: "referenced geometry was removed"))
         }
@@ -166,6 +167,7 @@ extension CADViewportService {
             var body = originalBody
             body.id = bodyID
             modelBodies.append(body)
+            bodyMeshing[bodyID] = .fileLoad(format)
             bodyIDs.append(bodyID)
         }
         installIdentity(identity)
@@ -219,12 +221,9 @@ extension CADViewportService {
 
         remove(id: id)
 
-        let (body, meta) = CADFileLoader.shapeToBodyAndMetadata(
-            placedShape,
-            id: id,
-            color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0),
-            deflection: meshDeflection
-        )
+        let meshing = BodyMeshing(deflection: meshDeflection)
+        let (body, meta) = meshing.mesh(
+            placedShape, id: id, color: SIMD4<Float>(0.7, 0.7, 0.75, 1.0))
 
         guard let body else {
             entities[id] = Entity(bodyIDs: [])
@@ -234,6 +233,7 @@ extension CADViewportService {
         }
 
         modelBodies.append(body)
+        bodyMeshing[id] = meshing
         if let meta {
             metadata[id] = meta
         }
@@ -294,6 +294,7 @@ extension CADViewportService {
             clippingSourceShapes.removeValue(forKey: bodyID)
             clippingCapBackup.removeValue(forKey: bodyID)
             capOrigins.removeValue(forKey: bodyID)
+            bodyMeshing.removeValue(forKey: bodyID)
         }
     }
 
