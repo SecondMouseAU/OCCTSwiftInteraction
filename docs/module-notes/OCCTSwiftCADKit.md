@@ -85,7 +85,7 @@ URL-based deps are the preferred form. If you hit a version-resolution problem y
 - `Sources/OCCTSwiftCADKit/PickedEntity.swift`: `PickedEntity` (the face/edge/vertex pick union, no whole-body case), `PickedEdgeInfo`, `PickedVertexInfo`, each storing a `SubShapeRef` and forwarding identity to it
 - `Sources/OCCTSwiftCADKit/SelectionMeasurements.swift`: aggregate measures (count/area/length/bounds) over a multi-selection, plus the deprecated `SelectionSummary` alias
 - `Sources/OCCTSwiftCADKit/ScalarField.swift`: `ScalarField`, `ColorMap` (and its color-sampling math), `ScalarFieldLegend`, `LegendStop`
-- `Sources/OCCTSwiftCADKit/ComparisonView.swift`: `ComparisonView`, `ComparisonMode`, `Axis` (mesh/solid comparison display)
+- `Sources/OCCTSwiftCADKit/ComparisonView.swift`: `ComparisonView`, `ComparisonMode`, `ComparisonAxis` (mesh/solid comparison display)
 - `Sources/OCCTSwiftCADKit/ClippingPlane.swift`: `ClippingPlane` (clipping/section planes, hollow or solid-capped)
 - `Sources/OCCTSwiftCADKit/EscalationRequest.swift`: `EscalationRequest`, `EscalationCandidate`, `EscalationResponse` (human-in-the-loop escalation)
 - `Sources/OCCTSwiftCADKit/EscalationCardView.swift`: SwiftUI presentation for an `EscalationRequest`
