@@ -34,6 +34,7 @@ extension CADViewportService {
         faceIdentity.removeAll()
         edgeIdentity.removeAll()
         vertexIdentity.removeAll()
+        loadedIdentities.removeAll()
         bodyObjectIDs.removeAll()
         objectBodyIDs.removeAll()
         entities.removeAll()
@@ -169,6 +170,7 @@ extension CADViewportService {
             bodyIDs.append(bodyID)
         }
         installIdentity(identity)
+        loadedIdentities.merge(identity) { _, loaded in loaded }
 
         entities[id] = Entity(bodyIDs: bodyIDs)
         updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
@@ -243,6 +245,7 @@ extension CADViewportService {
             graph.flatMap { transform == nil ? ShapeIdentity(shape: placedShape, graph: $0) : nil }
             ?? ShapeIdentity(shape: placedShape)
         installIdentity([id: identity])
+        loadedIdentities[id] = identity
 
         entities[id] = Entity(bodyIDs: [id])
         updateCapSurfaces()  // picks up whatever clipping/capping is already active, also rebuilds
@@ -289,6 +292,7 @@ extension CADViewportService {
             faceIdentity.removeValue(forKey: bodyID)
             edgeIdentity.removeValue(forKey: bodyID)
             vertexIdentity.removeValue(forKey: bodyID)
+            loadedIdentities.removeValue(forKey: bodyID)
             scalarFields.removeValue(forKey: bodyID)
             dropLastScalarFieldBodyID(ifCurrently: bodyID)
             clippingSourceShapes.removeValue(forKey: bodyID)
