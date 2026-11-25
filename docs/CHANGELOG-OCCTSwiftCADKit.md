@@ -267,7 +267,9 @@ auto-focus, so call `focus(on:)`.
 | `CADViewportView.init(bodies:controller:selected:...)`, `init(...selectedFace:...)` | `init(...selection:...)` |
 
 Adds the two fixes that landed after 2.0.0-rc3 (`CADViewportView` frozen bodies, face highlight
-z-fighting). Everything else below was in the release candidates.
+z-fighting). Everything else here shipped earlier: the removal above and the platform narrowing in
+2.0.0-rc1, the sidecar in 2.0.0-rc3, #7 in 0.2.0 and #3 in 0.1.0. This changelog's first release
+heading is 2.0.0, so they are filed here rather than under those releases.
 
 ### Fixed: `CADViewportView` froze its bodies at first render
 
