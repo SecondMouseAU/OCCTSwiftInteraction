@@ -9,6 +9,8 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
+## 3.0.0-beta.8 (2026-11-25)
+
 ### Breaking: the `InteractiveObject`, `SubShapeRef` and `SubShape` aliases are removed
 
 Closes [OCCTSwiftInteraction#61](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/61).
