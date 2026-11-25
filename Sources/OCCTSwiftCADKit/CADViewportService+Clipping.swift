@@ -301,6 +301,9 @@ extension CADViewportService {
     /// shape's extremal point along any axis, would be missed and reported `.unchanged`);
     /// accepted for the same reason.
     ///
+    /// Each cut is given the point of its plane nearest the shape being cut (`splitPoint`), since
+    /// the cutting face reaches only so far around that point.
+    ///
     /// Each cut keeps the splitter's history (`split(_:atPlane:normal:planeID:)`), and a
     /// `.capped` outcome traces every sub-shape of the result back to `shape` through it
     /// (`CapOriginLookup`). The tracing waits for that outcome, so a body no plane cuts pays only
@@ -320,9 +323,13 @@ extension CADViewportService {
                     (b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2)
                 return simd_dot(unitNormal, center - plane.origin) >= 0
             }
+            // The cutting face reaches only so far around the point it is given, so it is given the
+            // point of the plane nearest the piece, not the plane's own origin (#84).
+            let point = Self.splitPoint(
+                of: current, onPlaneThrough: plane.origin, normal: unitNormal)
             guard
                 let (pieces, step) = split(
-                    current, atPlane: plane.origin, normal: unitNormal, planeID: plane.id)
+                    current, atPlane: point, normal: unitNormal, planeID: plane.id)
             else {
                 guard isKept(current) else { return .fullyClipped }
                 continue
@@ -334,6 +341,30 @@ extension CADViewportService {
         }
         guard !boundsPracticallyEqual(shape, current) else { return .unchanged }
         return .capped(current, origins: CapOriginLookup(tracing: shape, through: steps))
+    }
+
+    /// Where `cappedShape` has `split(_:atPlane:normal:planeID:)` cut `shape`.
+    ///
+    /// The point of the plane through `origin` with unit normal `normal` nearest the centre of the
+    /// shape's bounding box, or `origin` itself for a shape with no bounding box.
+    ///
+    /// The split, like `Shape.split(atPlane:normal:)`, cuts with a face reaching twice the shape's
+    /// bounding-box diagonal each way from the point it is given, so a point of the plane far from
+    /// the shape gives a face that misses it: `sectionSweep` puts every plane's origin on an axis
+    /// through the world origin, and a body far from that axis was never capped (#84). From this
+    /// point the face covers the shape, since every point of the box lies within half the diagonal
+    /// of its centre and so projects within half the diagonal of this point. The plane is the same,
+    /// so the side kept is too.
+    ///
+    /// Internal rather than private so `CapRecutSelectionTests` can give both splits it compares
+    /// the same point. OCCTSwift#3559 asks for the split to centre its face on the shape itself;
+    /// once a pin brings that, this projection is redundant but harmless.
+    nonisolated static func splitPoint(
+        of shape: OCCTSwift.Shape, onPlaneThrough origin: SIMD3<Double>, normal: SIMD3<Double>
+    ) -> SIMD3<Double> {
+        guard let bounds = shape.bounds else { return origin }
+        let centre = (bounds.min + bounds.max) / 2
+        return centre - simd_dot(normal, centre - origin) * normal
     }
 
     /// Splits `shape` at a plane exactly as `Shape.split(atPlane:normal:)` does, keeping the
