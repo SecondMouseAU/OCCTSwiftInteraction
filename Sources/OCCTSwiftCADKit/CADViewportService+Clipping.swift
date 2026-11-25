@@ -385,6 +385,9 @@ extension CADViewportService {
     /// World-space centroid of a picked triangle (interleaved or direct-mesh body), for
     /// `isPointClipped`. `nil` on any out-of-bounds index rather than guessing; callers
     /// treat that as "couldn't determine, don't filter" rather than "clipped".
+    ///
+    /// `triangleIndex` is the triangle as drawn, read off the live body, which is the drawn one,
+    /// so a `.wipe` needs no translation here.
     func triangleWorldCentroid(bodyID: String, triangleIndex: Int) -> SIMD3<Float>? {
         guard let body = modelBodies.first(where: { $0.id == bodyID }),
             triangleIndex >= 0, triangleIndex * 3 + 2 < body.indices.count

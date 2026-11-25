@@ -44,6 +44,3 @@ public struct SelectionMeasurements: Sendable, Equatable {
         self.bounds = bounds
     }
 }
-
-/// Renamed to `SelectionMeasurements` in OCCTSwiftInteraction#3, to stop colliding by name with
-/// the unrelated `OCCTSwiftUXKit.SelectionSummary`.

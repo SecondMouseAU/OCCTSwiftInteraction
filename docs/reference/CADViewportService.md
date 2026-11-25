@@ -369,7 +369,8 @@ viewport.setComparison(nil)   // restores both entities' plain display
   distance itself. Call `setScalarField(_:forBody:)` on the candidate with the
   precomputed values first; this mode just records that deviation display is active, so
   clearing it (`setComparison(nil)`, or switching to a different mode) also clears the
-  candidate's scalar field.
+  scalar field on each of the candidate's bodies. A candidate loaded with `loadFile(from:id:)`
+  has bodies named `<id>-0`, `<id>-1` and so on, so set its field on those body ids.
 - **`.sideBySide`** offsets the candidate's bodies along X so it sits beside the reference
   rather than overlapping it, via `_ViewportBody.transform` (also read live per frame, so
   no re-tessellation). Since there's only ever one camera/viewport, "linked cameras" is
@@ -380,7 +381,9 @@ viewport.setComparison(nil)   // restores both entities' plain display
   equal. Implemented by filtering each body's own triangles (not
   `ViewportController.clipPlanes`, which clips the whole scene uniformly and can't show
   the two sides differently), see `CLAUDE.md`'s "Things to be careful about" for why, and
-  what a wiped body loses (wireframe edges, vertex-picking) as a result.
+  what a wiped body loses (wireframe edges, vertex-picking) as a result. A face pick on a
+  wiped body names the face under the cursor, and its `scalarValue` is the value painted on
+  the picked triangle.
 
 `comparison` reports the currently active `ComparisonView`, or `nil`. Removing (or
 reloading, which removes then re-adds) either the reference or candidate entity clears the

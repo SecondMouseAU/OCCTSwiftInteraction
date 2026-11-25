@@ -9,19 +9,19 @@ A walkthrough that builds up a SwiftUI CAD viewer from a blank `MetalViewportVie
 selection, a translate gizmo, and a linear dimension. Everything in this guide uses the real
 `OCCTSwiftAIS` public API.
 
-If you just want one snippet, the [Home page hero example](../index.md) is enough. This guide is for
+If you just want one snippet, the [OCCTSwiftAIS home page example](../index-OCCTSwiftAIS.md) is enough. This guide is for
 "I want to understand each moving piece".
 
 ## 1. Add the package
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftAIS.git", from: "1.0.3"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
 ```
 
-Then add `.product(name: "OCCTSwiftAIS", package: "OCCTSwiftAIS")` to your target. AIS pulls
-`OCCTSwiftTools`, `OCCTSwiftViewport`, and `OCCTSwift` transitively — no need to declare them
-separately.
+Then add `.product(name: "OCCTSwiftAIS", package: "OCCTSwiftInteraction")` to your target. AIS
+pulls `OCCTSwiftTools`, `OCCTSwiftViewport`, and `OCCTSwift` transitively, so there is no need to
+declare them separately.
 
 ## 2. The two top-level objects
 
@@ -425,7 +425,7 @@ nothing durable to resolve it by.
 
 ## Where to next
 
-- The [Cookbook](cookbook/) — focused recipes per task.
-- The [API Reference](../reference/) — every public symbol with real signatures.
-- [SPEC.md](https://github.com/SecondMouseAU/OCCTSwiftAIS/blob/main/SPEC.md) — the original design brief.
-- [CHANGELOG.md](../CHANGELOG.md) — what shipped per release.
+- The [Cookbook](cookbook/): focused recipes per task.
+- The [API Reference](../reference/): every public symbol with real signatures.
+- The [OCCTSwiftAIS spec](../spec/OCCTSwiftAIS.md): the original design brief.
+- The [OCCTSwiftAIS changelog](../CHANGELOG-OCCTSwiftAIS.md): what shipped per release.

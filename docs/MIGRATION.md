@@ -1,6 +1,9 @@
 # Migrating from OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit
 
-This package replaces three repositories. The migration is a manifest change and nothing else.
+This package replaces three repositories. Moving to it is a manifest change, and for code that uses
+the API the merged package changed after the last pre-merge releases (2.0.0 removed deprecated
+`OCCTSwiftCADKit` API, for one), a source change too. See
+[Source changes since the old packages](#source-changes-since-the-old-packages).
 
 ## Your `import` lines do not change
 
@@ -40,7 +43,7 @@ occtDep("OCCTSwiftAIS",   from: "1.3.2"),
 occtDep("OCCTSwiftCADKit", from: "1.1.2"),
 
 // after
-occtDep("OCCTSwiftInteraction", from: "0.2.0"),
+occtDep("OCCTSwiftInteraction", from: "2.0.0"),
 ```
 
 Then update the `package:` label on each product you use. The product names are unchanged; only the
@@ -59,6 +62,29 @@ package they come from moved:
 The shared `occtDep` helper now resolves every package from its published URL, never from a
 `../<name>` sibling checkout (ecosystem#51), so a local checkout at `../OCCTSwiftInteraction` is
 not picked up.
+
+## Source changes since the old packages
+
+The old version lines ended at `OCCTSwiftTools` 1.6.4, `OCCTSwiftAIS` 1.3.2 and `OCCTSwiftCADKit`
+1.1.2. Moving from those to 2.0.0 crosses these changes, each recorded in its target's changelog:
+
+- **`OCCTSwiftCADKit`: deprecated API removed in 2.0.0.** `loadedShape`, `selected`,
+  `selectedFace`, `selectionSummary`, the `SelectionSummary` type name (now
+  `SelectionMeasurements`), the single-shape loaders `loadShape(_:id:)`,
+  `loadFile(from:progress:)` and `loadFromData(_:filename:progress:)`, and the `CADViewportView`
+  initialisers taking `selected:` or `selectedFace:`. The 2.0.0 "Removed" table in the
+  [CADKit changelog](CHANGELOG-OCCTSwiftCADKit.md) names each replacement. The `id`-taking loaders
+  that replace the single-shape ones do not auto-focus, so call `focus(on:)`.
+- **`OCCTSwiftCADKit`: one shared selection**
+  ([#3](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/3)). `selection` is ordered
+  by (body id, kind, ordinal) rather than by pick order, `selectionModes` is the interactive
+  context's own mode set (initialised to `[.face]`), and assigning it clears the selection. The
+  same changelog's "What breaks" list under 2.0.0 has the rest.
+- **`OCCTSwiftTools`: `FaceIdentityTable.shapes` and `EdgeIdentityTable.shapes` are `[Shape?]`**
+  ([#9](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/9)), so reading an element
+  needs unwrapping. See 2.0.0-rc1 in the [Tools changelog](CHANGELOG-OCCTSwiftTools.md).
+- **Platforms are iOS and macOS only** (2.0.0-rc1). A consumer that also declares visionOS or tvOS
+  is told so at resolution time; before, the build failed at link time.
 
 ## You still only compile what you name
 

@@ -57,23 +57,24 @@ Per-type API reference for every public symbol:
 
 ## Project
 
-Add OCCTSwiftTools to your `Package.swift`:
+OCCTSwiftTools is a product of the OCCTSwiftInteraction package. Add the package to your
+`Package.swift`:
 
 ```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftTools.git", from: "1.6.1"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
 ```
 
-Then declare it as a dependency of your target:
+Then declare the product as a dependency of your target:
 
 ```swift
 .target(
     name: "MyApp",
     dependencies: [
-        .product(name: "OCCTSwiftTools", package: "OCCTSwiftTools")
+        .product(name: "OCCTSwiftTools", package: "OCCTSwiftInteraction")
     ]
 )
 ```
 
-- Source: [github.com/SecondMouseAU/OCCTSwiftTools](https://github.com/SecondMouseAU/OCCTSwiftTools)
+- Source: [`Sources/OCCTSwiftTools` in OCCTSwiftInteraction](https://github.com/SecondMouseAU/OCCTSwiftInteraction/tree/main/Sources/OCCTSwiftTools)
 - License: LGPL 2.1 (matching OCCT)
 - Platforms: macOS 15+ and iOS 18+ (arm64), and only those two. `OCCT.xcframework` carries `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, so nothing links on visionOS or tvOS ([OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978)).
