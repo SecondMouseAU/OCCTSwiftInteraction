@@ -12,13 +12,16 @@ import simd
 /// bodies as drawn, so it has to be cut again whenever a comparison changes them, not only when
 /// the selection changes.
 ///
+/// Also #79: a vertex highlight is cut from the body the same way, so it follows the wipe too.
+///
 /// Every check is by geometry: the face highlight must light exactly the triangles the body draws
 /// on the selected face, compared by world-space centroid. The face is a box's +Y face, which a
 /// wipe at X = 0 cuts in two (one triangle each side), a wipe at X = 1 leaves wholly with the
 /// reference and a wipe at X = -1 wholly with the candidate. Edges are checked the same way, by the
-/// world position of each segment end.
+/// world position of each segment end, and vertices by the world position of each point.
 ///
-/// Every test fails without the fix except the one marked "guard".
+/// Every test fails without the fix except the one marked "guard"; the vertex test fails without
+/// #79's.
 @Suite("Selection highlights while a wipe moves or ends")
 struct WipeHighlightTests {
     typealias Target = ComparisonVisibilityTests.Target
@@ -253,5 +256,66 @@ struct WipeHighlightTests {
 
         service.setComparison(nil)
         expectEdgeLitWhereDrawn("wipe cleared")
+    }
+
+    // MARK: - Vertices
+
+    /// A wiped body draws no vertex points either, so a vertex highlight lights nothing while the
+    /// wipe lasts, on whichever half of the wipe the vertex lies (OCCTSwiftInteraction#79).
+    ///
+    /// Two vertices are selected, one at X = -2 and one at X = 2, so at each wipe position one is
+    /// on the half the target keeps and one on the half it cuts away. A vertex selected during a
+    /// wipe cannot be picked, since the wiped body draws no points, so both timings select
+    /// without a pick.
+    @MainActor
+    @Test(
+        "A vertex selected before or during a wipe is unlit while the wipe lasts, and lit after",
+        arguments: MoveCase.all)
+    func vertexHighlightFollowsTheWipe(_ testCase: MoveCase) throws {
+        guard let service = CADViewportService.withBoxes(ids: ["ref", "cand"]) else { return }
+        let id = testCase.target.id
+        service.selectionModes = [.face, .edge, .vertex]
+        let vertices = try [-2.0, 2.0].map { x in
+            PickedEntity.vertex(try #require(service.vertex(ofBody: id, atX: x)))
+        }
+
+        func selectVertices() {
+            for (index, vertex) in vertices.enumerated() {
+                service.select(vertex, scheme: index == 0 ? .replace : .add)
+            }
+        }
+        func expectLitWhereDrawn(_ step: String) {
+            let drawn = vertices.flatMap { service.drawnPoints(of: $0) }
+            let lit = Geometry.worldPoints(of: service.selectionHighlight("vertex"))
+            let (missing, extra) = Geometry.unpaired(drawn, lit)
+            #expect(
+                drawn.count == vertices.count && missing.isEmpty && extra.isEmpty,
+                "\(step): each vertex is lit exactly where the body draws it")
+        }
+        func expectUnlit(_ step: String) {
+            #expect(
+                service.modelBody(id)?.vertices.isEmpty == true,
+                "sanity check, \(step): no vertex is drawn")
+            #expect(
+                service.selectionHighlight("vertex") == nil,
+                "\(step): the wiped body draws no vertices, so the vertex highlight lights nothing")
+        }
+
+        if testCase.timing == .beforeWipe {
+            selectVertices()
+            expectLitWhereDrawn("before the wipe")
+        }
+        service.setComparison(Self.wipe(at: 0))
+        if testCase.timing == .duringWipe { selectVertices() }
+        #expect(service.selection.count == vertices.count, "sanity check: both are selected")
+        expectUnlit("wipe at X = 0")
+
+        service.setComparison(Self.wipe(at: 1))
+        expectUnlit("wipe moved to X = 1")
+        service.setComparison(Self.wipe(at: -1))
+        expectUnlit("wipe moved to X = -1")
+
+        service.setComparison(nil)
+        expectLitWhereDrawn("wipe cleared")
     }
 }

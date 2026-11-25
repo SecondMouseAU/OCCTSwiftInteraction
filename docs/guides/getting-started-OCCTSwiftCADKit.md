@@ -317,7 +317,8 @@ left to preserve.
 
 Every selected entity is highlighted, a translucent yellow triangle patch aggregating
 every selected face, a bright cyan polyline aggregating every selected edge's segments, a
-bright magenta point sprite per selected vertex.
+bright magenta point sprite per selected vertex. A highlight lights only what is drawn: hiding an
+entity keeps its selection but unlights it until you show the entity again.
 
 ```swift
 if let summary = viewport.selectionMeasurements {
@@ -465,7 +466,9 @@ scene uniformly, so it can't show the reference and candidate differently. A sid
 a wiped body's wireframe edges and vertex-picking aren't preserved, only its shaded
 triangles, the split is a review affordance, not a full re-tessellation. Face picking is
 preserved: a pick on a wiped body names the face under the cursor, and a selected face's
-highlight lights only what the wipe leaves of it, following the wipe as you move or clear it.
+highlight lights only what the wipe leaves of it, following the wipe as you move or clear it. A
+selected edge or vertex is not lit while the wipe lasts, since a wiped body draws neither, and is
+lit again when the wipe ends.
 
 `.overlay`/`.sideBySide` mutate a body's color/transform in place, cheap, since the
 renderer reads both fresh every frame rather than caching them (unlike the scalar-field

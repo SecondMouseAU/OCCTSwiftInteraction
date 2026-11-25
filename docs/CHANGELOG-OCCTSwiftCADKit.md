@@ -42,6 +42,27 @@ moves away again. A body a plane hides entirely is not recut, so its selection i
 the agent highlighted keeps the agent's highlight through the remap. The cap itself is cut by the
 same OCCT calls as before, now run so as to keep the splitter's history.
 
+### Fixed: a vertex highlight stayed lit where a wipe draws nothing
+
+Closes [OCCTSwiftInteraction#79](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/79).
+A `.wipe` draws no vertex points on either side, but a vertex highlight was drawn at the vertex's
+own position rather than copied from the body, so a selected vertex stayed lit through any wipe,
+including on the half the wipe cut away. It is now copied from the points the body draws, as an
+edge highlight is copied from its segments, so a vertex selected before or during a wipe is not lit
+while the wipe lasts and is lit again when it ends, which is what an edge already did. All three
+kinds of highlight now light only what the body draws. No API change.
+
+### Fixed: a hidden entity's selection highlight was still drawn
+
+Closes [OCCTSwiftInteraction#78](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/78).
+Hiding an entity with `visibility[id] = false` hid its bodies but not their selection highlight,
+which is drawn as separate bodies, so a selected face, edge or vertex stayed lit where the hidden
+entity had been. The same happened to a body that a cap plane clipped away entirely. A highlight now
+lights only what is drawn: a hidden body keeps its selection, and `selection` still lists it, but
+none of it is lit until the body is shown again, by `visibility`, by an escalation preview naming
+the body, or by the plane no longer clipping it, when it is lit again. Selecting a sub-shape of a
+hidden body works the same way. No API change.
+
 ### Fixed: a highlight on a side-by-side candidate was drawn where the candidate was not
 
 Closes [OCCTSwiftInteraction#73](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/73).
@@ -65,8 +86,8 @@ whenever a comparison is applied or undone, which includes the undo and reapply 
 clipping-plane change or a scalar field write runs during a comparison. It is rebuilt once per
 viewport update, not once per step. An edge highlight is rebuilt the same way, so an edge selected
 before a wipe is not lit while the wipe lasts, since a wiped body draws no edges, and is lit again
-when the wipe ends; before, it stayed lit across the whole edge. A vertex highlight is drawn at the
-vertex's own position, as before, so a wipe does not hide it. No API change.
+when the wipe ends; before, it stayed lit across the whole edge. A vertex highlight does the same
+since the fix for #79 above. No API change.
 
 ## 3.0.0-beta.8 (2026-11-25)
 

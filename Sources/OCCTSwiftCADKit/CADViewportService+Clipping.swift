@@ -119,6 +119,11 @@ extension CADViewportService {
         comparisonBackup[bodyID]?.isVisible = isVisible
     }
 
+    /// The ids of the model bodies not drawn now.
+    private var hiddenModelBodyIDs: Set<String> {
+        Set(modelBodies.lazy.filter { !$0.isVisible }.map(\.id))
+    }
+
     /// What a single body's cap recomputation determined, from `cappedShape`.
     private enum CapOutcome {
         /// No cap-enabled plane actually intersects this body: leave `modelBodies`/
@@ -197,6 +202,9 @@ extension CADViewportService {
 
         var bodyIDsToConsider = Set(clippingCapBackup.keys)
         bodyIDsToConsider.formUnion(modelBodies.map(\.id))
+        // A full clip hides a body and its undoing shows it, and the highlight lights only what
+        // is drawn.
+        let hiddenBefore = hiddenModelBodyIDs
 
         // Each recut body's identity as the selection last saw it, taken before `replaceBody`
         // installs the new one.
@@ -259,6 +267,7 @@ extension CADViewportService {
                 }
             }
         }
+        if hiddenModelBodyIDs != hiddenBefore { selectionBodiesAreStale = true }
 
         if let activeComparison {
             backUpComparisonBodies(activeComparison)

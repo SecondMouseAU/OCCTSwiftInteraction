@@ -20,7 +20,8 @@ timestamp: 2026-11-25
   `interactiveContext.selectionMode`. A real pick replaces the selection wholesale; build a
   multi-selection with `select(_:scheme:)` (`SelectionScheme`: `.replace`/`.add`/`.remove`/`.xor`,
   `OCCTSwiftAIS`'s own type, which gained the scheme parameter from this service).
-  `selectionMeasurements` reports aggregate count/area/length/bounds. The deprecated
+  `selectionMeasurements` reports aggregate count/area/length/bounds. The selection highlight
+  lights only what is drawn, so a hidden body keeps its selection unlit (#78). The deprecated
   `selectedFace`, `selected` and `selectionSummary` were removed in 2.0.0.
   `load(_:id:transform:)` / `loadFile(from:id:progress:)` / `loadFromData(_:filename:id:progress:)`
   display several parts or assembly occurrences as distinct, addressable **entities**
@@ -82,7 +83,8 @@ timestamp: 2026-11-25
   body of the candidate (#59). A face pick on a wiped body names the face under the cursor and
   reports the value painted there (#58). The selection highlight is rebuilt from the bodies as
   drawn whenever a comparison is set, moved, switched or cleared (#72), and lights a `.sideBySide`
-  candidate's selection where the candidate is drawn (#73).
+  candidate's selection where the candidate is drawn (#73). A wiped body draws no edges or vertex
+  points, so an edge or vertex highlight on it is unlit until the wipe ends (#79).
 - **`ClippingPlane`**: clipping/section planes via `clippingPlanes`/`addClippingPlane(origin:
   normal:showCapSurface:)`/`removeClippingPlane(id:)`/`sectionSweep(axis:position:)`. Hides
   geometry on one side (a fast, global GPU clip); `showCapSurface: true` (default) additionally
