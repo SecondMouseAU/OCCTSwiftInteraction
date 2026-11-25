@@ -12,6 +12,21 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Fixed: a pick on a body cut by a wipe comparison named the wrong face
+
+Closes [OCCTSwiftInteraction#58](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/58).
+Under a `.wipe` comparison each compared body draws only the triangles on its side of the plane, so
+a GPU pick names a triangle of that subset, but the pick was looked up in the face table of the whole
+body. Every pick on a triangle after the first one the wipe dropped resolved to another face, with
+no error: a candidate wiped at X = 1 and picked on its first drawn triangle, on the +X face, resolved
+to the -X face. `PickedFaceInfo.scalarValue` for a `.perTriangle` field was read at the same wrong
+position, so it could disagree with the colour under the cursor, and selecting a face on a wiped
+body highlighted triangles of other faces. The wipe now records which of the body's own triangles
+each drawn triangle is, and the pick, its scalar value and the highlight all translate through
+that, so a pick names the face under the cursor and reports the value painted there. No API change.
+Edge and vertex picks were not affected, since a wiped body draws no edges or points, and nor was
+the clip-plane check on a pick, which already tested the triangle as drawn.
+
 ### Fixed: ending a deviation comparison left the heatmap on a candidate loaded from a file
 
 Closes [OCCTSwiftInteraction#59](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/59).
