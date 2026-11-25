@@ -125,7 +125,9 @@ public final class CADViewportService {
     /// Set by `undoComparison` and `applyComparison`, which change a comparison's bodies without
     /// changing the selection, and by `setVisible(_:forEntity:)`, `setBodyVisible(_:bodyID:)` and
     /// `updateCapSurfaces()` when they hide or show a model body, since the highlight lights
-    /// nothing of a hidden one.
+    /// nothing of a hidden one. `replaceBody` sets it too, when a cap recuts a body;
+    /// `updateCapSurfaces()` then remaps the selection onto the new body
+    /// (`remapSelection(acrossRecutOf:)`) before its `rebuildBodies()` cuts the highlight.
     var selectionBodiesAreStale = false
     private var ownedBodyIDs: Set<String> = []
     private var bodiesSubscription: AnyCancellable?
@@ -359,6 +361,14 @@ public final class CADViewportService {
     /// `comparisonBackup`'s pattern. Its `isVisible` is the caller's last visibility write, kept
     /// current by `recordCallerVisibility(_:forBody:)`.
     var clippingCapBackup: [String: _ViewportBody] = [:]
+
+    /// Where each sub-shape of a capped body came from, keyed by body id and aligned with that
+    /// body's identity tables.
+    ///
+    /// Written by `replaceBody` with every cut and removed with every restore, so a body absent
+    /// here is uncut and each of its sub-shapes is its own `CapOrigin.source`. Read by
+    /// `remapSelection(acrossRecutOf:)`, which carries the selection from one cut to the next.
+    var capOrigins: [String: CapOrigins] = [:]
 
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
 

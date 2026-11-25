@@ -79,6 +79,8 @@ public final class InteractiveContext: ObservableObject {
     /// Currently selected sub-shapes.
     public private(set) var selection: Selection
     public func select(_ subshape: SubShape)
+    public func select(_ subshape: SubShape, scheme: SelectionScheme)
+    public func select(_ subshapes: Set<SubShape>, scheme: SelectionScheme)  // one change
     public func deselect(_ subshape: SubShape)
     public func clearSelection()
 

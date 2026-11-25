@@ -23,6 +23,12 @@ public enum SelectionChangeSource: Sendable, Equatable {
     case agentHighlight(requestID: String)
     /// The selected entity's body was removed or reloaded.
     case bodyRemoved(bodyID: String)
+    /// A cap-enabled clipping plane cut the selected entity's body again, or stopped cutting it,
+    /// and the selection on that body was remapped onto its new topology (OCCTSwiftInteraction#77).
+    ///
+    /// The body's sub-shapes are renumbered and its durable uids minted afresh, so a pick stored
+    /// from before this change no longer names anything on it, exactly as after `bodyRemoved`.
+    case bodyRecut(bodyID: String)
 }
 
 /// One change to `CADViewportService.selection`, with the state on either side of it.

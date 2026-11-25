@@ -173,7 +173,10 @@ extension CADViewportService {
     ///
     /// `nil` for a `.body` sub-shape (no whole-body `PickedEntity` case), for a body this
     /// service does not have geometry for, and for anything whose enrichment fails.
-    private func pickedEntity(for subShape: OCCTSwiftTools.SubShape) -> PickedEntity? {
+    ///
+    /// Internal rather than private so `remapSelection(acrossRecutOf:)` can enrich the sub-shapes
+    /// it remaps through the same path a selection change takes.
+    func pickedEntity(for subShape: OCCTSwiftTools.SubShape) -> PickedEntity? {
         if let cached = selectionInfo[subShape] { return cached }
         guard let bodyID = objectBodyIDs[subShape.object.id] else { return nil }
         switch subShape {

@@ -525,6 +525,12 @@ viewport.removeClippingPlane(id: planeID)   // clears just that one; clippingPla
 later clipping changes, and removing the plane returns the entity to whatever visibility you
 last set.
 
+**Selection:** a cut renumbers the body's faces, edges and vertices, so the selection on it is
+remapped onto the cut body: a face the cut leaves alone stays selected, a face it divides becomes
+the piece (or pieces) left showing, and removing the plane selects the whole face again. A face the
+cap removes entirely leaves the selection and does not come back. `selectionChanges` reports each
+such remap with source `.bodyRecut(bodyID:)`.
+
 **Reload behavior:** capping DOES automatically re-apply when you reload an entity (even
 under an id already in use), every loader ends by syncing clipping state, so the new
 geometry is clipped/capped immediately, with no further clipping-plane call needed. A
