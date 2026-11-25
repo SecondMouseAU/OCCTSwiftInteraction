@@ -9,6 +9,15 @@ Most recent first. Breaking changes and deprecations documented here.
 
 ## Unreleased
 
+### Added: `InteractiveContext.select(_:scheme:)` over a set of sub-shapes
+
+Part of [OCCTSwiftInteraction#77](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/77).
+`select(_ subshapes: Set<SubShape>, scheme: SelectionScheme)` applies `scheme` to every member at
+once, so `selection` publishes one change rather than one per member, as area selection already
+did internally. A subscriber that acts on every value, such as `OCCTSwiftCADKit`'s selection
+sidecar, then never sees a half-built selection. `.replace` with an empty set clears. Additive: the
+single sub-shape `select(_:scheme:)` is unchanged.
+
 ## 3.0.0-beta.8 (2026-11-25)
 
 ### Breaking: the `InteractiveObject`, `SubShapeRef` and `SubShape` aliases are removed

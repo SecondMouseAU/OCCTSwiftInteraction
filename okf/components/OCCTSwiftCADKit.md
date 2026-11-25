@@ -90,7 +90,9 @@ timestamp: 2026-11-25
   Real geometry work, not a shader trick, since `OCCTSwiftViewport` has no shader-level capping.
   Multiple planes compose. Picking respects active planes even though the GPU pick pass itself
   doesn't. A visibility set on a capped entity survives every cap recompute and is what removing
-  the plane restores (#46).
+  the plane restores (#46). A cut, a moved cap or a removed one remaps the selection on the body
+  onto its new topology through OCCT's split history, and a sub-shape the cap removes entirely
+  leaves the selection (#77).
 - **`EscalationRequest`, `EscalationCandidate`, `EscalationResponse`**: human-in-the-loop
   escalation: `pendingEscalation` / `present(_:) async -> EscalationResponse` asks a bounded
   question grounded in specific geometry (`EscalationRequest.entities`, highlighted automatically

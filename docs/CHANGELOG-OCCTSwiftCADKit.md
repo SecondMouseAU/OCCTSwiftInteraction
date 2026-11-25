@@ -12,6 +12,36 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+### Breaking: `SelectionChangeSource` has a new case, `bodyRecut(bodyID:)`
+
+Part of [OCCTSwiftInteraction#77](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/77),
+below. When a cap recut remaps the selection on a body, `selectionChanges` publishes the change with
+this source, one change per body whose selection changed. Like `bodyRemoved(bodyID:)`, it says
+that a pick stored from before the change no longer names anything on that body: the recut
+renumbered its sub-shapes and minted its durable uids afresh.
+
+**Migration.** A `switch` over `SelectionChangeSource` with no `default` needs the new case.
+Handle it as you handle `bodyRemoved(bodyID:)` if you keep picks per body, as a selection history
+does.
+
+### Fixed: a cap recut left the selection naming the uncut body's sub-shapes
+
+Closes [OCCTSwiftInteraction#77](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/77).
+When a cap-enabled clipping plane cut a body, moved, or was removed, the body got a new mesh and
+new identity tables, but the selection kept the ordinals and uids of the old ones. Outside a
+comparison a selected face stayed lit over the part the cap removed; during one its highlight was
+cut by the old ordinal from the new mesh, lighting whichever face now held it; and `selection`,
+`PickedFaceInfo.uid` and `selection.json` reported the old graph's uid. The selection on a recut or
+restored body is now remapped onto the new tables before the highlight is cut again, using OCCT's
+own record of the split: a selected face, edge or vertex the cut leaves alone stays selected, one it
+divides becomes its pieces, a piece becomes the whole sub-shape again when the cap is removed, and
+the cap face, or an edge or vertex where the plane crossed the body, becomes what the plane makes
+from the same sub-shape when it moves. **A selected sub-shape the cap removes entirely leaves the
+selection**, as does the cap face once the cap is removed, and it does not come back if the cap
+moves away again. A body a plane hides entirely is not recut, so its selection is untouched. A face
+the agent highlighted keeps the agent's highlight through the remap. The cap itself is cut by the
+same OCCT calls as before, now run so as to keep the splitter's history.
+
 ### Fixed: a highlight on a side-by-side candidate was drawn where the candidate was not
 
 Closes [OCCTSwiftInteraction#73](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/73).

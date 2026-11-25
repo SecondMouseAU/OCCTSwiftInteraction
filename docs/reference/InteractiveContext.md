@@ -151,6 +151,7 @@ Add, remove, or clear sub-shapes. `select` / `deselect` use `Set` semantics (ide
 ```swift
 public func select(_ subshape: SubShape)                            // == scheme: .add
 public func select(_ subshape: SubShape, scheme: SelectionScheme)
+public func select(_ subshapes: Set<SubShape>, scheme: SelectionScheme)
 public func deselect(_ subshape: SubShape)                          // == scheme: .remove
 public func clearSelection()
 ```
@@ -161,6 +162,11 @@ public func clearSelection()
 - **No default value on `scheme`**, deliberately. Defaulting it to `.replace` would silently
   retune every existing `select(x)` call site from add to replace; `select(_:)` keeps its
   original meaning and forwards to `.add`.
+- **The set overload applies `scheme` to every member as one change**, so `selection` publishes
+  once. A subscriber that acts on every value (`OCCTSwiftCADKit`'s selection sidecar writes each
+  one to `selection.json`) never sees a half-built selection, which a run of `deselect` and
+  `select` calls would publish. `.replace` with an empty set clears. `OCCTSwiftCADKit` uses it to
+  remap a body's selection after a cap recut (OCCTSwiftInteraction#77).
 
 - **Example:**
 

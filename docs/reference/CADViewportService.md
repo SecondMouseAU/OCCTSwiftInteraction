@@ -215,8 +215,9 @@ selected edge's segments, a bright magenta point sprite per selected vertex. A b
 `ViewportBody` has no `edgeIndices`/`vertices` populated (not edge/vertex pickable) simply
 never produces an edge/vertex pick on that body, face picking on the same body is
 unaffected. A face or edge highlight is copied from the body as drawn, and a vertex highlight is
-drawn at the vertex's own position; all of them are rebuilt when the selection changes and
-whenever a [comparison](#comparison) changes the bodies.
+drawn at the vertex's own position; all of them are rebuilt when the selection changes, whenever
+a [comparison](#comparison) changes the bodies, and whenever a cap cuts a body again or is
+removed, after the selection has been remapped onto the new body (see [Clipping](#clipping)).
 
 `selectionModes` **is** `interactiveContext.selectionMode`, not a copy of it: reading or
 writing either reads or writes the other. It is initialised to `[.face]` at `init`,
@@ -438,7 +439,8 @@ viewport.removeClippingPlane(id: planeID)
   regardless of geometry complexity, and is what makes `sectionSweep` safe to call on every
   frame of a scrub when `showCapSurface: false`.
 - **Capping** (`showCapSurface: true`) is NOT a shader trick, `OCCTSwiftViewport` has no
-  shader-level capping, so it's a genuine `OCCTSwift.Shape.split(atPlane:normal:)` and
+  shader-level capping, so it's a genuine B-Rep split (the OCCT calls
+  `OCCTSwift.Shape.split(atPlane:normal:)` makes, run so as to keep the splitter's history) and
   retessellation, sequentially against every cap-enabled plane, for each body a cap-enabled
   plane actually intersects (bodies nowhere near any plane are left completely untouched,
   no retessellation, no durable-identity churn). This is real geometry work, not a cheap GPU
@@ -449,6 +451,22 @@ viewport.removeClippingPlane(id: planeID)
   settles. A body with an active `ScalarField` (`setScalarField(_:forBody:)`) loses it the
   moment that body is genuinely cut, the field's ordinals don't correspond to the new
   tessellation, so it's cleared rather than silently mispainted; re-`setScalarField` after.
+- **The selection follows a cut** (OCCTSwiftInteraction#77). Cutting a body again, or
+  restoring it when the cap goes, renumbers its faces, edges and vertices and mints its durable
+  uids afresh, so the selection on it is remapped onto the new body: a selected sub-shape the
+  cut leaves alone stays selected, one it divides becomes its pieces, a piece becomes the whole
+  sub-shape again when the cap is removed, and the cap face, or an edge or vertex where the plane
+  crossed the body, becomes what the plane makes from the same sub-shape when it moves. Each
+  entry then carries the new ordinal and the new graph's uid, in `selection`, in
+  `selection.json` and in the highlight. **A selected sub-shape the cap removes entirely leaves
+  the selection**, as does the cap face (or a section edge or vertex) once the cap is removed,
+  and it does not come back when the cap moves away again: the selection only names what the
+  body has. A body a plane hides entirely is not recut, so its selection is untouched. Each
+  remapped body publishes one `SelectionChange` with source `.bodyRecut(bodyID:)`. The mapping
+  is OCCT's own split history, not a geometric match, so it is exact; the one gap is the
+  `fuseAll` that joins several kept pieces when a plane leaves more than one, which has no
+  history and rebuilds what it merges where two kept pieces touch, so a sub-shape it rebuilt
+  leaves the selection.
 - **Multiple planes compose**, both for hollow clipping (native to
   `controller.clipPlanes`) and for capping (`clippingPlanes` filtered to `showCapSurface ==
   true` are applied as a sequential chain of splits, so the visible remainder is their
@@ -733,7 +751,9 @@ coarser and faster, and it applies to shapes loaded after it is set (OCCTSwiftIn
 
 `selectionChanges` emits a `SelectionChange` (`previous`, `current`, `source`) on every change to
 `selection`: `source` is `.viewportPick`, `.emptySpaceClick`, `.programmatic`,
-`.agentHighlight(requestID:)` or `.bodyRemoved(bodyID:)`. Unattributable changes (area selection, a
+`.agentHighlight(requestID:)`, `.bodyRemoved(bodyID:)` or `.bodyRecut(bodyID:)` (a cap recut
+remapped the selection on that body onto its new topology, so a pick stored from before names
+nothing on it, OCCTSwiftInteraction#77). Unattributable changes (area selection, a
 pick on an AIS-displayed body) report `.programmatic`; a whole-body change does not emit
 (OCCTSwiftInteraction#31).
 
