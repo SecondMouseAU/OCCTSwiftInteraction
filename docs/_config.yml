@@ -1,10 +1,10 @@
-title: OCCTSwiftTools
-description: The bridge layer between the OCCTSwift B-Rep kernel and the OCCTSwiftViewport Metal renderer — converts Shapes, curves, surfaces, wires, and point clouds into ViewportBody values.
+title: OCCTSwiftInteraction
+description: "The interaction layer of the OCCTSwift stack: the kernel-to-renderer bridge (OCCTSwiftTools), interactive selection services (OCCTSwiftAIS) and the assembled SwiftUI CAD viewport (OCCTSwiftCADKit)."
 remote_theme: just-the-docs/just-the-docs@v0.3.3
 search_enabled: true
 heading_anchors: true
 aux_links:
-  "GitHub": ["https://github.com/SecondMouseAU/OCCTSwiftTools"]
+  "GitHub": ["https://github.com/SecondMouseAU/OCCTSwiftInteraction"]
 aux_links_new_tab: true
 exclude:
   - "*.sh"

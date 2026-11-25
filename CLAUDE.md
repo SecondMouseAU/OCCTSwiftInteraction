@@ -250,6 +250,13 @@ Per-type reference for all three targets is in [docs/reference/](docs/reference/
 - **CODE_OF_CONDUCT.md**: a short pointer to Contributor Covenant 2.1 only. Never inline the full
   Covenant text.
 - **Release pattern**: commit, push, tag, and create a GitHub release with notes.
+- **A stable release also moves every file that names the current stable version**: the
+  Versioning paragraph above, `README.md`'s status line, `okf/index.md` (the stable floors under
+  "Depends on", and the Versions note), `docs/MIGRATION.md` (its snippet and its list of source
+  changes), the install snippets in `docs/guides/getting-started-*.md` and `docs/index-*.md` (and
+  the CADKit guide's note on what it uses beyond the stable line), and the stable-line remarks in
+  `Package.swift`'s dependency comments. Grep for the outgoing version, outside the changelogs, to
+  catch one this list misses.
 
 ## Platforms are iOS and macOS, and that is settled
 
@@ -264,10 +271,6 @@ planned as 1.0.0 at the time), inherited from the union of what the three pre-me
 declared. The claim was never true for any of the three.
 Root cause is filed upstream as
 [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
-
-## Still to finish after the merge
-
-- `okf/index.md` describes the OCCTSwiftTools half in more detail than the other two.
 
 ## Ecosystem context worth reading before non-trivial changes
 

@@ -64,12 +64,12 @@ let package = Package(
     // OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything
     // linking the kernel on visionOS or tvOS cannot link at all.
     //
-    // This manifest declared `.visionOS(.v1)` and `.tvOS(.v18)` until the 1.0.0 sweep, taking the
-    // union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared during the merge so
-    // as not to regress the two targets with the most dependents. That reasoning was wrong in a way
-    // invisible from the manifests: the wider claim was never true for any of the three, so there
-    // was nothing to regress. Root cause is filed upstream as
-    // https://github.com/SecondMouseAU/OCCTSwift/issues/978.
+    // This manifest declared `.visionOS(.v1)` and `.tvOS(.v18)` until 2.0.0-rc1 (the pre-stable
+    // sweep, planned as 1.0.0 at the time), taking the union of what OCCTSwiftTools, OCCTSwiftAIS
+    // and OCCTSwiftCADKit declared during the merge so as not to regress the two targets with the
+    // most dependents. That reasoning was wrong in a way invisible from the manifests: the wider
+    // claim was never true for any of the three, so there was nothing to regress. Root cause is
+    // filed upstream as https://github.com/SecondMouseAU/OCCTSwift/issues/978.
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
@@ -80,16 +80,25 @@ let package = Package(
         .library(name: "OCCTSwiftCADKit", targets: ["OCCTSwiftCADKit"]),
     ],
     dependencies: [
-        // >=3.0.0: `Selector.SubShapeType.compsolid` renamed `.compSolid`, and six bounding-box
-        // accessors became Optional (OCCTSwift docs/SEMVER.md#v300). Audited across all three
-        // targets during the v3.0.0 fanout (ecosystem#39): none needed a source change for it.
-        .package(url: "https://github.com/SecondMouseAU/OCCTSwift.git", exact: "4.0.0-beta.6"),  // EXACT, not `from:`: v4.0.0-kernel.N tags are pre-releases of the same package that sort ABOVE every beta, so `from: "4.0.0-beta.6"` silently resolves to the newest kernel tag (main's source). OCCTSwift 4.0.0 folds DimensionInfo/GeomToleranceInfo/DatumInfo into Document.Dimension/GeomTolerance/Datum (OCCTSwift#996), which CADFileLoader's public fields expose.
+        // Exactly 4.0.0-beta.6. EXACT, not `from:`: v4.0.0-kernel.N tags are pre-releases of the
+        // same package that sort ABOVE every beta, so `from: "4.0.0-beta.6"` silently resolves to
+        // the newest kernel tag (main's source). OCCTSwift 4.0.0 folds DimensionInfo/
+        // GeomToleranceInfo/DatumInfo into Document.Dimension/GeomTolerance/Datum (OCCTSwift#996),
+        // which CADFileLoader's public fields expose: the reason this package's 3.0.0 is a major.
+        // The stable 2.0.0 line takes `from: "3.0.0"` instead, where
+        // `Selector.SubShapeType.compsolid` became `.compSolid` and six bounding-box accessors
+        // became Optional (OCCTSwift docs/SEMVER.md#v300). Audited across all three targets during
+        // the v3.0.0 fanout (ecosystem#39): none needed a source change for it.
+        .package(url: "https://github.com/SecondMouseAU/OCCTSwift.git", exact: "4.0.0-beta.6"),
         // >=1.2.0: fixes a Swift 6 concurrency crash where unannotated MTLCommandBufferHandler
         // closures inherited @MainActor on Xcode 16.4, giving a SIGTRAP after every test reported
         // green. Real-GPU/Xcode-16.4 only, and masked locally by Xcode 26.x's NS_SWIFT_SENDABLE.
         occtDep("OCCTSwiftViewport", from: "1.2.0"),
-        // >=1.8.0: DirectoryWatcher (OCCTSwiftIO#43), which the agent bridge uses to notice a new
-        // highlight_requests/<id>.json without polling. This was a branch pin until that shipped.
+        // >=2.0.0-beta.4: the OCCTSwiftIO betas carry the same GD&T type change (from beta.1), and
+        // each pins one OCCTSwift beta exactly. beta.4 is the one pinned to 4.0.0-beta.6, so this
+        // floor moves with the OCCTSwift pin above. The stable 2.0.0 line takes `from: "1.8.0"`,
+        // the first release with DirectoryWatcher (OCCTSwiftIO#43), which the agent bridge uses
+        // to notice a new highlight_requests/<id>.json without polling.
         occtDep("OCCTSwiftIO", from: "2.0.0-beta.4"),
     ],
     targets: [

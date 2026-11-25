@@ -31,6 +31,33 @@ There is no deprecated `Axis` typealias. A top-level alias of that name keeps th
 the ambiguity the rename removes: tried, it fails the new `AxisNameCollisionTests` with the same
 "ambiguous for type lookup" error. No consumer in the fleet names the type today.
 
+### Fixed: a pick on a body cut by a wipe comparison named the wrong face
+
+Closes [OCCTSwiftInteraction#58](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/58).
+Under a `.wipe` comparison each compared body draws only the triangles on its side of the plane, so
+a GPU pick names a triangle of that subset, but the pick was looked up in the face table of the whole
+body. Every pick on a triangle after the first one the wipe dropped resolved to another face, with
+no error: a candidate wiped at X = 1 and picked on its first drawn triangle, on the +X face, resolved
+to the -X face. `PickedFaceInfo.scalarValue` for a `.perTriangle` field was read at the same wrong
+position, so it could disagree with the colour under the cursor, and selecting a face on a wiped
+body highlighted triangles of other faces. The wipe now records which of the body's own triangles
+each drawn triangle is, and the pick, its scalar value and the highlight all translate through
+that, so a pick names the face under the cursor and reports the value painted there. No API change.
+Edge and vertex picks were not affected, since a wiped body draws no edges or points, and nor was
+the clip-plane check on a pick, which already tested the triangle as drawn.
+
+### Fixed: ending a deviation comparison left the heatmap on a candidate loaded from a file
+
+Closes [OCCTSwiftInteraction#59](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/59).
+Ending a `.deviation` comparison (`setComparison(nil)`, switching to another mode, or removing the
+reference) is meant to clear the candidate's scalar field, but it cleared the field stored under the
+candidate's entity id, while `setScalarField(_:forBody:)` stores fields by body id. That only worked
+for an entity whose one body shares its id, which is what `load(_:id:)` makes. A candidate loaded
+with `loadFile(from:id:)` or `loadFromData(_:filename:id:)`, whose bodies are named `<id>-0`,
+`<id>-1` and so on even for a single solid, kept its heatmap, and `scalarField(forBody:)` and
+`scalarFieldLegend` went on reporting it. Ending the comparison now clears the field on each of the
+candidate's bodies. No API change.
+
 ### Fixed: an attention label was held at any length, and a blank-drawing one was kept
 
 Closes [OCCTSwiftInteraction#54](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/54).
@@ -301,6 +328,7 @@ auto-focus, so call `focus(on:)`.
 |---|---|
 | `loadedShape` | `shape(id:)` / `loadedShapes` |
 | `selected`, `selectedFace` | `selection` (`[PickedEntity]`) |
+| `SelectionSummary` | `SelectionMeasurements` |
 | `selectionSummary` | `selectionMeasurements` |
 | `loadShape(_:id:)` | `load(_:id:transform:)` |
 | `loadFile(from:progress:)` | `loadFile(from:id:progress:)` |
@@ -308,7 +336,9 @@ auto-focus, so call `focus(on:)`.
 | `CADViewportView.init(bodies:controller:selected:...)`, `init(...selectedFace:...)` | `init(...selection:...)` |
 
 Adds the two fixes that landed after 2.0.0-rc3 (`CADViewportView` frozen bodies, face highlight
-z-fighting). Everything else below was in the release candidates.
+z-fighting). Everything else here shipped earlier: the removal above and the platform narrowing in
+2.0.0-rc1, the sidecar in 2.0.0-rc3, #7 in 0.2.0 and #3 in 0.1.0. This changelog's first release
+heading is 2.0.0, so they are filed here rather than under those releases.
 
 ### Fixed: `CADViewportView` froze its bodies at first render
 
@@ -354,7 +384,7 @@ New: `CADViewportError.sidecarHostAlreadyRunning`.
 
 ### Platforms narrowed to iOS and macOS
 
-A 1.0.0 blocker. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
+A blocker for the stable line, planned as 1.0.0 at the time and shipped as 2.0.0. `Package.swift` declared `.visionOS(.v1)` and `.tvOS(.v18)`, and both were false. `OCCT.xcframework`'s `Info.plist` carries exactly three slices, `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, supporting two platforms, and OCCTSwift's own v3.0.0 release notes open with "macOS / iOS (device + simulator)". Anything linking the kernel on visionOS or tvOS cannot link at all, so the manifest promised a build that never existed.
 
 The merge took the union of what OCCTSwiftTools, OCCTSwiftAIS and OCCTSwiftCADKit declared, so as not to regress the two targets with the most dependents. That reasoning was wrong in a way invisible from the manifests: the wider claim was never true for any of the three, so there was nothing to regress. Root cause is filed upstream as [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 
@@ -411,7 +441,8 @@ warning rather than an error today. The reason is a name collision, not a merge:
 `OCCTSwiftUXKit.SelectionSummary` is an unrelated public type (a selection pill's caption and SF
 Symbol, built from `EntityRef` values) sharing no field, no input and no consumer with this one.
 The bakeoff on the issue found nothing to merge, so the collision is resolved by naming, the same
-way OCCTSwiftViewport's `SelectionFilter` was in phase 1.
+way OCCTSwiftViewport's `SelectionFilter` was in phase 1. *Correction (#64): 2.0.0 removed both
+aliases (see "Removed" under 2.0.0).*
 
 **2. `selection` is no longer in the order entries were selected.** It is ordered by (body id,
 kind, ordinal). The underlying store is now a `Set<SubShape>`, so there is no insertion order left

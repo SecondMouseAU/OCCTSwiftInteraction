@@ -164,7 +164,8 @@ extension CADViewportService {
     /// `triangleIndex` is `nil` when the face was not reached through a pick (an area
     /// selection, or a selection made through `interactiveContext` directly), in which case a
     /// `.perTriangle` field has nothing to sample and reports no value. A `.perFace` field is
-    /// unaffected: the face ordinal is enough.
+    /// unaffected: the face ordinal is enough. A non-`nil` `triangleIndex` indexes the unwiped
+    /// body, as the field does, not a `.wipe`'s drawn subset.
     func scalarValue(forBody bodyID: String, faceIndex: Int, triangleIndex: Int?)
         -> Double?
     {

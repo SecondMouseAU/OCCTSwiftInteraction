@@ -69,7 +69,11 @@ extension CADViewportService {
     func undoComparison(_ previous: ComparisonView) {
         switch previous.mode {
         case .deviation:
-            setScalarField(nil, forBody: previous.candidateID)  // rebuilds bodies itself
+            // Fields are keyed by body id and `candidateID` names an entity. Each clear
+            // rebuilds bodies itself.
+            for bodyID in entityBodyIDs(previous.candidateID) where scalarFields[bodyID] != nil {
+                setScalarField(nil, forBody: bodyID)
+            }
         case .overlay, .sideBySide, .wipe:
             for (bodyID, original) in comparisonBackup {
                 if let index = modelBodies.firstIndex(where: { $0.id == bodyID }) {
@@ -78,6 +82,19 @@ extension CADViewportService {
             }
         }
         comparisonBackup.removeAll()
+        wipeKeptTriangles.removeAll()
+    }
+
+    /// Maps a drawn triangle of `bodyID` to its index in the unwiped body.
+    ///
+    /// The unwiped order is the one `metadata[bodyID].faceIndices` and a `.perTriangle` scalar
+    /// field use. Returns the index unchanged unless a `.wipe` has filtered the body, and `nil`
+    /// past the last triangle a wiped body draws; callers still bound-check what they index
+    /// with it. A GPU pick names a drawn triangle, so a read by triangle from anything but the
+    /// live body goes through this first.
+    func unwipedTriangle(ofBody bodyID: String) -> (_ drawnTriangle: Int) -> Int? {
+        guard let kept = wipeKeptTriangles[bodyID] else { return { $0 } }
+        return { kept.indices.contains($0) ? kept[$0] : nil }
     }
 
     /// Runs `write` on a body as the active comparison's snapshot holds it, then applies the
@@ -182,23 +199,23 @@ extension CADViewportService {
     /// (confirmed via `ViewportRenderer`: there's no per-body clip-plane field on
     /// `ViewportBody`), so it can't show reference and candidate on opposite sides of the same
     /// plane; this filters each body's own triangles instead. See `wipeFiltered` for what that
-    /// drops.
+    /// drops. Records which triangles each body kept in `wipeKeptTriangles`.
     private func applyWipe(
         referenceID: String, candidateID: String, axis: ComparisonAxis, position: Double
     ) {
         let axisVector = axis.unitVector
         let planePosition = Float(position)
-        for bodyID in entityBodyIDs(referenceID) {
-            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
-            modelBodies[index] = wipeFiltered(
-                modelBodies[index], axisVector: axisVector, position: planePosition, keepBelow: true
-            )
-        }
-        for bodyID in entityBodyIDs(candidateID) {
-            guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else { continue }
-            modelBodies[index] = wipeFiltered(
-                modelBodies[index], axisVector: axisVector, position: planePosition,
-                keepBelow: false)
+        for (entityID, keepBelow) in [(referenceID, true), (candidateID, false)] {
+            for bodyID in entityBodyIDs(entityID) {
+                guard let index = modelBodies.firstIndex(where: { $0.id == bodyID }) else {
+                    continue
+                }
+                let (filtered, kept) = wipeFiltered(
+                    modelBodies[index], axisVector: axisVector, position: planePosition,
+                    keepBelow: keepBelow)
+                modelBodies[index] = filtered
+                wipeKeptTriangles[bodyID] = kept
+            }
         }
     }
 
@@ -214,14 +231,17 @@ extension CADViewportService {
     /// only the shaded triangle mesh; filtering polylines/points against the same cut is
     /// unneeded complexity for a review affordance whose point is the shaded-surface split.
     /// A body with no triangles (e.g. `.point` primitive) passes through unchanged.
+    ///
+    /// - Returns: the filtered body, and the index in `body` of each triangle it kept, in
+    ///   order; `nil` for a body passed through unchanged.
     private func wipeFiltered(
         _ body: _ViewportBody, axisVector: SIMD3<Float>, position: Float, keepBelow: Bool
-    ) -> _ViewportBody {
+    ) -> (body: _ViewportBody, kept: [Int]?) {
         let triangleCount = body.indices.count / 3
-        guard triangleCount > 0 else { return body }
+        guard triangleCount > 0 else { return (body, nil) }
         let direct = body.usesDirectMesh
         guard direct ? body.meshPositions.count >= 3 : body.vertexData.count >= 6 else {
-            return body
+            return (body, nil)
         }
 
         func vertexPosition(_ vertexIndex: Int) -> SIMD3<Float> {
@@ -246,6 +266,7 @@ extension CADViewportService {
         newIndices.reserveCapacity(body.indices.count)
         var newFaceIndices: [Int32] = []
         var newStyles: [TriangleStyle] = []
+        var kept: [Int] = []
 
         for triangle in 0..<triangleCount {
             let i0 = Int(body.indices[triangle * 3])
@@ -259,9 +280,10 @@ extension CADViewportService {
             newIndices.append(body.indices[triangle * 3 + 2])
             if hasFaceIndices { newFaceIndices.append(body.faceIndices[triangle]) }
             if hasStyles { newStyles.append(body.triangleStyles[triangle]) }
+            kept.append(triangle)
         }
 
-        return _ViewportBody(
+        let filtered = _ViewportBody(
             id: body.id,
             vertexData: body.vertexData,
             indices: newIndices,
@@ -287,5 +309,6 @@ extension CADViewportService {
             meshPositions: body.meshPositions,
             meshNormals: body.meshNormals
         )
+        return (filtered, kept)
     }
 }

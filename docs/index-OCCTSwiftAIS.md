@@ -77,21 +77,22 @@ The **[API Reference](reference/)** documents every public type and member with 
 [Standard Objects](reference/StandardObjects.md) ·
 [Presentation](reference/Presentation.md).
 
-The **[Getting Started](guides/getting-started.md)** guide wires all of this into a SwiftUI app
-step by step.
+The **[Getting Started](guides/getting-started-OCCTSwiftAIS.md)** guide wires all of this into a
+SwiftUI app step by step.
 
 ## Project
 
-Add the package to your `Package.swift`:
+OCCTSwiftAIS is a product of the OCCTSwiftInteraction package. Add the package to your
+`Package.swift`:
 
 ```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftAIS.git", from: "1.0.3"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
 ```
 
-Then add `.product(name: "OCCTSwiftAIS", package: "OCCTSwiftAIS")` to your target. OCCTSwiftAIS
-transitively pulls `OCCTSwiftTools`, `OCCTSwiftViewport`, and `OCCTSwift` — no need to declare
-them separately.
+Then add `.product(name: "OCCTSwiftAIS", package: "OCCTSwiftInteraction")` to your target.
+OCCTSwiftAIS transitively pulls `OCCTSwiftTools`, `OCCTSwiftViewport`, and `OCCTSwift`, so there is
+no need to declare them separately.
 
 - **Platforms:** macOS 15+ and iOS 18+ (arm64), and only those two. Same floor as OCCTSwiftViewport, and the same set the kernel ships: `OCCT.xcframework` carries `ios-arm64`, `ios-arm64-simulator` and `macos-arm64`, so nothing links on visionOS or tvOS ([OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978)).
 - **License:** LGPL 2.1 (matching OCCT).
-- **Source:** [github.com/SecondMouseAU/OCCTSwiftAIS](https://github.com/SecondMouseAU/OCCTSwiftAIS)
+- **Source:** [`Sources/OCCTSwiftAIS` in OCCTSwiftInteraction](https://github.com/SecondMouseAU/OCCTSwiftInteraction/tree/main/Sources/OCCTSwiftAIS)
