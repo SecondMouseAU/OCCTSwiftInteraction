@@ -116,6 +116,37 @@ no pick points is still not vertex-pickable. 1 more in the CADKit target's `Smok
 imports both targets and so is where the typealiases would show up as an ambiguous name if they
 ever stopped denoting the same types.
 
+### The shared-face test asserts `IsSame` identity, and passes again
+
+Closes [OCCTSwiftInteraction#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1),
+phase 0 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43). Resolves the known
+failure recorded under v1.3.2 below.
+
+`t_sharedFaceBetweenShells_everyPickResolvesToCorrectSubShape` failed 5 expectations because it
+asserted the raw-versus-deduplicated `Shape.faces()` split (7 occurrences against 6 faces) that
+OCCTSwift 2.0.0 erased. #1 decided that face identity is OCCT's `IsSame`, with `faces()` as its
+enumeration (see the OCCTSwiftTools changelog under 0.1.0), so the production code was already
+correct and the test's premise was the stale half. No source change in this target.
+
+The test was rewritten to be stronger, not relaxed:
+
+- It asserts `orientedFaces().count == 7`, so the occurrence distinction the fixture exists for is
+  still pinned down.
+- It locates the shared face by `isSame(as:)` rather than by hardcoded ordinals 0 and 3: under
+  deduplication, ordinal 3 is simply a different face.
+- New: both shells' copies of the shared face must reach the mesh. The shared ordinal's triangles
+  must form exactly two vertex-disjoint groups covering the same geometry, read off the mesh rather
+  than the identity table. Nothing covered a dropped copy before.
+- Every triangle of the shared face, from both copies, is driven through `handlePick` and must
+  resolve to the one durable uid.
+
+Also audited this target against OCCTSwift 2.0.0's break table, which had never been done. Its only
+contact is `Shape.subShape(type:index:)` at three sites in `InteractiveContext.swift`, each a
+fallback behind an identity table, and OCCTSwift moved both sides of that fallback onto the same
+enumeration.
+
+**Tests:** package total unchanged at 314 in 27 suites, now with 0 failures (was 5).
+
 ## v1.3.2 (2026-08-19)
 
 ### Migrate to OCCTSwift 3.0.0

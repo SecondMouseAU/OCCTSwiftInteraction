@@ -85,6 +85,14 @@ New API:
 
 **Tests:** 13 new in a new `SubShapePickResolver` suite, covering both indirection paths, the bounds checks, the empty-array cases in both directions, the table-over-re-derivation rule, and every vertex case the AIS copy used to get wrong.
 
+### Face identity is `IsSame`, recorded where `FaceIdentityTable` is defined
+
+Closes [OCCTSwiftInteraction#1](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/1), phase 0 of [ecosystem#43](https://github.com/SecondMouseAU/ecosystem/issues/43).
+
+No API or behaviour change. OCCTSwift 2.0.0 had already moved `Shape.faces()` onto the deduplicated enumeration (see v1.6.3), which left open what face identity means when a face is shared between two shells. #1 decided it: identity keys on OCCT's `TopoDS_Shape::IsSame` (same `TShape`, same `Location`, orientation may differ). So `faces()`, deduplicated through `TopTools_IndexedMapOfShape`, is the enumeration `FaceIdentityTable` is built from, and `orientedFaces()`, which is occurrence-based (`IsEqual`), is not an identity. A face shared between two shells is one entry in `shapes`; a caller needing to know which use of it was picked reads orientation off the returned `Shape`.
+
+`FaceIdentityTable` was already built from `faces()`, so the code was correct under the decision. What changed is the type's documentation, which now states the decision and the consequence that is easy to miss: the mesher still walks face occurrences, so a shared face is tessellated once per owning shell and both triangulations carry the one deduplicated ordinal. The OCCTSwiftAIS target's `InteractiveContextMutationTests` holds that down; see the OCCTSwiftAIS changelog under 0.1.0.
+
 ## v1.6.4 (2026-08-19)
 
 **Repin OCCTSwift floor to 3.0.0**, part of the ecosystem-wide v3.0.0 fanout ([ecosystem#39](https://github.com/SecondMouseAU/ecosystem/issues/39)). The last release of the pre-merge repository. Its changelog was never given this heading, so it is written here from the [release notes](https://github.com/SecondMouseAU/OCCTSwiftTools/releases/tag/v1.6.4).
