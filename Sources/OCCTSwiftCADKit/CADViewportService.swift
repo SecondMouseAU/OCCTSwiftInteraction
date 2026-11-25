@@ -165,7 +165,9 @@ public final class CADViewportService {
     /// OCCTSwiftInteraction#35.
     ///
     /// Set together with `agentAttention` and cleared whenever it is cleared or replaced by a
-    /// request that carries no label. Never non-nil while `agentAttention` is nil.
+    /// request that carries no label. Never non-nil while `agentAttention` is nil, never more
+    /// than 80 characters or 4096 UTF-8 bytes, and never made only of characters that draw
+    /// nothing.
     public internal(set) var agentAttentionLabel: String?
 
     /// Sets or clears the agent's attention marker.
@@ -173,11 +175,14 @@ public final class CADViewportService {
     /// Public so a host can dismiss the marker
     /// from its own UI, and so a non-bridge integration can drive it.
     ///
-    /// `label` is the optional free-text caption shown beside the marker; it is dropped when
-    /// `entity` is nil or the label is empty, and replaces any previous label.
+    /// `label` is the optional free-text caption shown beside the marker, and replaces any
+    /// previous label. It is dropped when `entity` is nil or the label draws nothing (empty,
+    /// whitespace, or invisible characters only). One over 80 characters or 4096 UTF-8 bytes is
+    /// cut to the whole characters that fit, plus an ellipsis (blank ones at the cut go too),
+    /// without splitting a character; a cut that leaves nothing visible drops the label.
     public func setAgentAttention(_ entity: PickedEntity?, label: String? = nil) {
         agentAttention = entity
-        agentAttentionLabel = entity == nil || (label ?? "").isEmpty ? nil : label
+        agentAttentionLabel = entity == nil ? nil : AgentAttentionLabel.normalized(label)
     }
 
     #if os(macOS)
