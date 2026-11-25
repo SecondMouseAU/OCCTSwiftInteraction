@@ -1,7 +1,7 @@
 ---
 type: component
 title: Components index
-resource: https://github.com/SecondMouseAU/OCCTSwiftCADKit
+resource: https://github.com/SecondMouseAU/OCCTSwiftInteraction/tree/main/Sources/OCCTSwiftCADKit
 tags: [index, api]
 description: OCCTSwiftCADKit public API: one library target wrapping the CAD viewport service and view.
 timestamp: 2026-11-23
