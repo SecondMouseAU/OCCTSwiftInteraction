@@ -256,10 +256,6 @@ declared. The claim was never true for any of the three.
 Root cause is filed upstream as
 [OCCTSwift#978](https://github.com/SecondMouseAU/OCCTSwift/issues/978).
 
-## Still to finish after the merge
-
-- `okf/index.md` describes the OCCTSwiftTools half in more detail than the other two.
-
 ## Ecosystem context worth reading before non-trivial changes
 
 - `~/Projects/OCCTSwift/CLAUDE.md`, kernel project conventions that this repo follows
