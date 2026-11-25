@@ -21,6 +21,24 @@ this" at a glance. Applied by `OCCTSwiftCADKit.CADViewportService
 .startSelectionSidecar(directory:)` to a highlight request resolved with no `question`.
 Purely additive; every existing preset is unchanged.
 
+## 2.0.0-rc2 (2026-08-21)
+
+### Deprecated: the `InteractiveObject`, `SubShapeRef` and `SubShape` aliases
+
+Landed in [OCCTSwiftInteraction#15](https://github.com/SecondMouseAU/OCCTSwiftInteraction/pull/15).
+The three types moved to `OCCTSwiftTools` in 0.1.0 (#2, below), which left source-compatible
+typealiases here. They are now marked `@available(*, deprecated)`, with a message naming 3.0.0 as
+the removal point. The aliases themselves stay through 2.0.0.
+
+The 0.1.0 entry below explains why they were left un-deprecated then: a same-module typealias
+shadows the imported type it aliases, so deprecating them warned at every one of this target's own
+uses, not only at a consumer's. That is now fixed at the source. This target names the canonical
+`OCCTSwiftTools.*` types directly at all 72 sites, so the deprecation reaches only consumers.
+
+**Consumers that import `OCCTSwiftAIS` and name these three types unqualified now see warnings.**
+The fix is to `import OCCTSwiftTools` and name them there; the types are identical, so nothing else
+changes.
+
 ## 2.0.0-rc1 (2026-08-21)
 
 ### Platforms narrowed to iOS and macOS
