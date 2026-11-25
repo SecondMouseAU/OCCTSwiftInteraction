@@ -10,7 +10,9 @@ public struct EscalationRequest: Sendable, Identifiable, Equatable {
 
     /// What the question is about, highlighted in the viewport when presented.
     ///
-    /// Mirrors `CADViewportService.select(_:scheme:)`'s own multi-selection highlight.
+    /// Mirrors `CADViewportService.select(_:scheme:)`'s own multi-selection highlight. A cap recut
+    /// of an entity's body replaces `CADViewportService.pendingEscalation` with a request whose
+    /// entities on that body are their images (OCCTSwiftInteraction#85).
     public let entities: [PickedEntity]
 
     public let question: String

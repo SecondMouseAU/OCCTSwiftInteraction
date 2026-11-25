@@ -465,7 +465,14 @@ viewport.removeClippingPlane(id: planeID)
   the selection**, as does the cap face (or a section edge or vertex) once the cap is removed,
   and it does not come back when the cap moves away again: the selection only names what the
   body has. A body a plane hides entirely is not recut, so its selection is untouched. Each
-  remapped body publishes one `SelectionChange` with source `.bodyRecut(bodyID:)`. The mapping
+  remapped body publishes one `SelectionChange` with source `.bodyRecut(bodyID:)`, carrying
+  entities re-enriched from the new body even where they compare equal to the old ones (on a body
+  whose graph failed to build, refs compare by ordinal, OCCTSwiftInteraction#85). The agent's
+  attention marker and a pending escalation follow the cut the same way (#85): `agentAttention`
+  moves to its image, keeping its label, or to the piece with the lowest ordinal when the cut
+  divided its sub-shape, and **is cleared, label and all, when it has no image**;
+  `pendingEscalation` keeps its id, question, candidates and context, its `entities` become their
+  images, one with no image leaves them, and **it stays pending even with none left**. The mapping
   is OCCT's own split history, not a geometric match, so it is exact; the one gap is the
   `fuseAll` that joins several kept pieces when a plane leaves more than one, which has no
   history and rebuilds what it merges where two kept pieces touch, so a sub-shape it rebuilt
@@ -559,6 +566,13 @@ Removing (or reloading) an entity any of the pending escalation's `entities` bel
 or a full `removeAll()`: auto-resolves it `.rejected("referenced geometry was removed")`
 rather than leaving `present(_:)` suspended over geometry that no longer exists.
 
+A cap that cuts, moves off or stops cutting a body the escalation names does not resolve it.
+`pendingEscalation` becomes the same request (same id, so `present(_:)` still returns its
+answer) with each entity on that body replaced by its images on the recut body, as the selection
+is, and an entity with no image dropped. It stays pending even when no entity is left: the cap
+changes what is drawn, not the model (OCCTSwiftInteraction#85). Removing a body it was presented
+about still rejects it, even once it names nothing on that body.
+
 See [`EscalationRequest`](#escalationrequest) / [`EscalationCandidate`](#escalationcandidate) /
 [`EscalationResponse`](#escalationresponse) for the full type definitions, and
 [`EscalationCardView`](#escalationcardview) for the SwiftUI presentation.
@@ -627,7 +641,10 @@ viewport.stopSelectionSidecar()
   `setAgentAttention(_:label:)` sets or clears the marker directly.
   An optional `label` on the request lands in `agentAttentionLabel`, which is nil whenever
   `agentAttention` is nil and is replaced or cleared with it (#35).
-  See the ADR and OCCTSwiftInteraction#29.
+  See the ADR and OCCTSwiftInteraction#29. The marker names the body as it is drawn now: a cap
+  recut carries it to its image (the lowest ordinal, where the cut divided its sub-shape) and
+  clears it when it has none, so a later `remove` or `xor` resolves against the same tables as
+  the marker (#85).
 - `setAgentAttention(_:label:)` is the one place a label is bounded, so a host calling it
   directly and a request file get the same answer (#54). The rule:
   - **Blank is no label.** A label whose every Unicode scalar is whitespace (`White_Space`), a
@@ -756,9 +773,10 @@ coarser and faster, and it applies to shapes loaded after it is set (OCCTSwiftIn
 `selection`: `source` is `.viewportPick`, `.emptySpaceClick`, `.programmatic`,
 `.agentHighlight(requestID:)`, `.bodyRemoved(bodyID:)` or `.bodyRecut(bodyID:)` (a cap recut
 remapped the selection on that body onto its new topology, so a pick stored from before names
-nothing on it, OCCTSwiftInteraction#77). Unattributable changes (area selection, a
-pick on an AIS-displayed body) report `.programmatic`; a whole-body change does not emit
-(OCCTSwiftInteraction#31).
+nothing on it, OCCTSwiftInteraction#77; it is published for every recut body with a selected
+face, edge or vertex, even when `previous` and `current` compare equal, #85). Unattributable
+changes (area selection, a pick on an AIS-displayed body) report `.programmatic`; a whole-body
+change does not emit (OCCTSwiftInteraction#31).
 
 ### `CADViewportService.ShapeBounds`
 

@@ -140,7 +140,12 @@ extension CADViewportService {
         // agent-highlighted rather than linger as a stale tag on whatever unrelated entity a
         // future selection happens to reuse the same slot for.
         agentHighlightedEntities = agentHighlightedEntities.filter { projected.contains($0) }
-        guard projected != selection else { return }
+        // A cap recut re-enriches every entity on the body from its new tables, and one can
+        // compare equal to the entity it replaces while naming another shape with another area:
+        // on a body without a graph, refs compare by ordinal (OCCTSwiftInteraction#85). So a
+        // recut always takes the new entities, and publishes, even when they compare unchanged.
+        let isRecut = if case .bodyRecut = pendingSelectionSource { true } else { false }
+        guard projected != selection || isRecut else { return }
         let previous = selection
         selection = projected
         if !isBatchingSelectionChange {
@@ -174,8 +179,8 @@ extension CADViewportService {
     /// `nil` for a `.body` sub-shape (no whole-body `PickedEntity` case), for a body this
     /// service does not have geometry for, and for anything whose enrichment fails.
     ///
-    /// Internal rather than private so `remapSelection(acrossRecutOf:)` can enrich the sub-shapes
-    /// it remaps through the same path a selection change takes.
+    /// Internal rather than private so the cap recut remap (`CADViewportService+CapRemap.swift`)
+    /// can enrich the sub-shapes it remaps through the same path a selection change takes.
     func pickedEntity(for subShape: OCCTSwiftTools.SubShape) -> PickedEntity? {
         if let cached = selectionInfo[subShape] { return cached }
         guard let bodyID = objectBodyIDs[subShape.object.id] else { return nil }
@@ -383,7 +388,9 @@ extension CADViewportService {
     /// Internal rather than private so `CADViewportService+AgentBridge.swift` can build a
     /// `PickedEntity` from a highlight request's already-resolved `SubShapeRef` (an ordinal
     /// looked up directly against the identity table, not a render-path pick), through the
-    /// same enrichment a real pick gets, rather than a second copy of it.
+    /// same enrichment a real pick gets, rather than a second copy of it. The cap recut remap
+    /// (`CADViewportService+CapRemap.swift`) enriches the attention marker's and an escalation's
+    /// images through it for the same reason.
     func enrichFace(ref: OCCTSwiftTools.SubShapeRef, bodyID: String, triangleIndex: Int?)
         -> PickedFaceInfo?
     {

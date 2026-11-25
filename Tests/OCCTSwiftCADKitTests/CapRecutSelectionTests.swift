@@ -257,17 +257,21 @@ struct CapRecutSelectionTests {
         return service
     }
 
-    /// Selects `selected` with the cap where `transition` starts, then runs `transition`.
+    /// Puts the cap where `transition` starts, and returns its id.
+    ///
+    /// The cap starts at X = 0, unless the transition is the one that applies it, when there is
+    /// no cap yet and the id is `nil`.
     @MainActor
-    private static func run(
-        _ transition: Transition, on service: CADViewportService, selecting selected: Box,
-        _ kind: Kind, ofBody id: String
+    @discardableResult
+    static func start(_ transition: Transition, on service: CADViewportService) -> String? {
+        transition == .apply ? nil : service.addHalfCap()
+    }
+
+    /// Runs `transition` on the cap `planeID` that `start(_:on:)` put in place.
+    @MainActor
+    static func finish(
+        _ transition: Transition, on service: CADViewportService, planeID: String?
     ) throws {
-        let planeID: String? = transition == .apply ? nil : service.addHalfCap()
-        let ref = try #require(
-            service.ref(kind, ofBody: id, at: selected), "sanity check: \(selected) exists")
-        service.selectSub(kind, ref, ofBody: id)
-        try #require(service.interactiveContext.selection.count == 1, "sanity check: selected")
         switch transition {
         case .apply:
             service.addHalfCap()
@@ -279,6 +283,20 @@ struct CapRecutSelectionTests {
         }
     }
 
+    /// Selects `selected` with the cap where `transition` starts, then runs `transition`.
+    @MainActor
+    private static func run(
+        _ transition: Transition, on service: CADViewportService, selecting selected: Box,
+        _ kind: Kind, ofBody id: String
+    ) throws {
+        let planeID = start(transition, on: service)
+        let ref = try #require(
+            service.ref(kind, ofBody: id, at: selected), "sanity check: \(selected) exists")
+        service.selectSub(kind, ref, ofBody: id)
+        try #require(service.interactiveContext.selection.count == 1, "sanity check: selected")
+        try finish(transition, on: service, planeID: planeID)
+    }
+
     /// Expects the selection of `kind` on body `id` to name exactly the sub-shapes at `expected`, each
     /// through the ordinal and uid the body's current identity table gives it.
     @MainActor
@@ -286,12 +304,25 @@ struct CapRecutSelectionTests {
         _ service: CADViewportService, _ kind: Kind, ofBody id: String, names expected: [Box],
         _ step: String, sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        let refs = service.selected(kind, ofBody: id)
+        expectRefs(
+            service.selected(kind, ofBody: id), "the selection", in: service, kind, ofBody: id,
+            names: expected, step, sourceLocation: sourceLocation)
+    }
+
+    /// Expects `refs`, which `holder` holds, to name exactly the sub-shapes of `kind` at `expected`
+    /// on body `id`, each through the ordinal the body's current identity table gives it and the
+    /// uid that table gives the ordinal (none, for a body without a graph).
+    @MainActor
+    static func expectRefs(
+        _ refs: [SubShapeRef], _ holder: String, in service: CADViewportService, _ kind: Kind,
+        ofBody id: String, names expected: [Box], _ step: String,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
         let named = refs.map { ref in expected.firstIndex { $0.matches(ref.shape) } }
         #expect(
             refs.count == expected.count && Set(named.compactMap { $0 }).count == expected.count,
             """
-            \(step): the selection should name \(expected), but names \
+            \(step): \(holder) should name \(expected), but names \
             \(refs.map { $0.shape.bounds.map { "\($0.min)...\($0.max)" } ?? "nothing" })
             """,
             sourceLocation: sourceLocation)
@@ -304,13 +335,13 @@ struct CapRecutSelectionTests {
                 table.shapes.indices.contains(ref.ordinal) ? table.shapes[ref.ordinal] : nil
             #expect(
                 current?.isSame(as: ref.shape) == true,
-                "\(step): ordinal \(ref.ordinal) should name the selected \(kind) in the new table",
+                "\(step): ordinal \(ref.ordinal) should name the \(kind) \(holder) holds",
                 sourceLocation: sourceLocation)
             let uid = table.uids.flatMap {
                 $0.indices.contains(ref.ordinal) ? $0[ref.ordinal] : nil
             }
             #expect(
-                uid != nil && ref.uid == uid,
+                table.uids == nil ? ref.uid == nil : (uid != nil && ref.uid == uid),
                 "\(step): the uid should be the new graph's, the one the table gives the ordinal",
                 sourceLocation: sourceLocation)
         }
@@ -617,7 +648,7 @@ struct CapRecutSelectionTests {
 @MainActor
 extension CADViewportService {
     /// The identity table for `kind` of body `id`, as shapes and uids.
-    fileprivate func identityTable(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
+    func identityTable(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
         -> (shapes: [Shape?], uids: [BRepGraph.GraphUID?]?)?
     {
         switch kind {
@@ -629,7 +660,7 @@ extension CADViewportService {
 
     /// The sub-shape of `kind` on body `id` whose bounding box is `box`, as the current table
     /// names it.
-    fileprivate func ref(
+    func ref(
         _ kind: CapRecutSelectionTests.Kind, ofBody id: String, at box: CapRecutSelectionTests.Box
     ) -> SubShapeRef? {
         guard let table = identityTable(kind, ofBody: id) else { return nil }
@@ -641,7 +672,7 @@ extension CADViewportService {
     }
 
     /// The refs of `kind` selected on body `id`, read from the interactive context.
-    fileprivate func selected(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
+    func selected(_ kind: CapRecutSelectionTests.Kind, ofBody id: String)
         -> [SubShapeRef]
     {
         guard let objectID = bodyObjectIDs[id] else { return [] }
@@ -657,18 +688,31 @@ extension CADViewportService {
         }
     }
 
+    /// `ref`, a sub-shape of `kind` on body `id`, enriched as a selection made without a pick
+    /// enriches it, or `nil` if it does not enrich.
+    func entity(_ kind: CapRecutSelectionTests.Kind, _ ref: SubShapeRef, ofBody id: String)
+        -> PickedEntity?
+    {
+        switch kind {
+        case .face: enrichFace(ref: ref, bodyID: id, triangleIndex: nil).map { .face($0) }
+        case .edge: enrichEdge(ref: ref, bodyID: id).map { .edge($0) }
+        case .vertex: enrichVertex(ref: ref, bodyID: id, renderPosition: nil).map { .vertex($0) }
+        }
+    }
+
+    /// The sub-shape of `kind` on body `id` whose bounding box is `box`, enriched, or `nil` if
+    /// there is none.
+    func entity(
+        _ kind: CapRecutSelectionTests.Kind, ofBody id: String, at box: CapRecutSelectionTests.Box
+    ) -> PickedEntity? {
+        ref(kind, ofBody: id, at: box).flatMap { entity(kind, $0, ofBody: id) }
+    }
+
     /// Selects `ref`, a sub-shape of `kind` on body `id`, as a selection made without a pick.
-    fileprivate func selectSub(
+    func selectSub(
         _ kind: CapRecutSelectionTests.Kind, _ ref: SubShapeRef, ofBody id: String
     ) {
-        let entity: PickedEntity?
-        switch kind {
-        case .face: entity = enrichFace(ref: ref, bodyID: id, triangleIndex: nil).map { .face($0) }
-        case .edge: entity = enrichEdge(ref: ref, bodyID: id).map { .edge($0) }
-        case .vertex:
-            entity = enrichVertex(ref: ref, bodyID: id, renderPosition: nil).map { .vertex($0) }
-        }
-        guard let entity else {
+        guard let entity = entity(kind, ref, ofBody: id) else {
             Issue.record("\(kind) \(ref.ordinal) of \(id) did not enrich")
             return
         }

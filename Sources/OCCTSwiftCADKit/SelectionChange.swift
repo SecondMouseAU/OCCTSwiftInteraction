@@ -28,6 +28,11 @@ public enum SelectionChangeSource: Sendable, Equatable {
     ///
     /// The body's sub-shapes are renumbered and its durable uids minted afresh, so a pick stored
     /// from before this change no longer names anything on it, exactly as after `bodyRemoved`.
+    ///
+    /// Published for every recut body with a selected face, edge or vertex, even when `previous`
+    /// and `current` compare equal, which they can on a body whose graph failed to build (refs
+    /// then compare by ordinal): `current` holds the entities re-enriched from the new body, with
+    /// its shapes and measurements (OCCTSwiftInteraction#85).
     case bodyRecut(bodyID: String)
 }
 

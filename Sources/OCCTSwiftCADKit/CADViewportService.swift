@@ -149,7 +149,10 @@ public final class CADViewportService {
     ///
     /// Emits synchronously from `syncSelection(with:)`, after `selection` has been updated, and
     /// only when the projected `selection` actually changed. A whole-body change moves
-    /// `interactiveContext.selection` but not `selection`, so it does not emit.
+    /// `interactiveContext.selection` but not `selection`, so it does not emit. The one exception
+    /// is a cap recut (`.bodyRecut(bodyID:)`), which emits for every recut body with a selected
+    /// face, edge or vertex, even when `previous` and `current` compare equal: its entities are
+    /// re-enriched from the new body (OCCTSwiftInteraction#85).
     public var selectionChanges: AnyPublisher<SelectionChange, Never> {
         selectionChangeSubject.eraseToAnyPublisher()
     }
@@ -169,6 +172,10 @@ public final class CADViewportService {
     /// human pick, so an agent pointing at face 3 leaves the human's face 7 selected. One at a
     /// time: a new request replaces it. Hosts render it as their own marker (ACADStudio draws a
     /// hollow, dashed one); this service only holds the state. Cleared when its body is removed.
+    ///
+    /// Names the body as it is drawn now. A cap recut of its body (OCCTSwiftInteraction#85) moves
+    /// it to its image, with the new ordinal and uid: the piece with the lowest ordinal where the
+    /// cut divided its sub-shape. One with no image is cleared, with its label.
     public internal(set) var agentAttention: PickedEntity?
 
     /// The agent's optional caption for `agentAttention` ("this fillet", "the datum face"),
@@ -367,7 +374,8 @@ public final class CADViewportService {
     ///
     /// Written by `replaceBody` with every cut and removed with every restore, so a body absent
     /// here is uncut and each of its sub-shapes is its own `CapOrigin.source`. Read by
-    /// `remapSelection(acrossRecutOf:)`, which carries the selection from one cut to the next.
+    /// `remapSelection(acrossRecutOf:)`, which carries the selection, the agent's attention marker
+    /// and a pending escalation's entities from one cut to the next.
     var capOrigins: [String: CapOrigins] = [:]
 
     // MARK: - Multi-body / assembly (entities loaded via `load`/`loadFile(from:id:)`)
@@ -473,7 +481,19 @@ public final class CADViewportService {
     ///
     /// Set by `present(_:)`, cleared by `respond(_:)` (or auto-resolved via
     /// `pruneEscalation`/`resetAllModelState` if the geometry it's about disappears first).
+    ///
+    /// A cap recut of a body it names (OCCTSwiftInteraction#85) replaces it with the same request,
+    /// same id, whose `entities` on that body are their images on the recut body. One with no
+    /// image is dropped, and the escalation stays pending even with no entity left.
     public internal(set) var pendingEscalation: EscalationRequest?
+
+    /// The bodies `pendingEscalation` was presented about, which `pruneEscalation` rejects it for.
+    ///
+    /// Set by `beginPresenting(_:)` and cleared by `respond(_:)`. Held apart from
+    /// `pendingEscalation.entities` because a cap recut can leave the request naming nothing on a
+    /// body it is still about (OCCTSwiftInteraction#85), and removing that body must still reject
+    /// it rather than leave `present(_:)` suspended over geometry that no longer exists.
+    var pendingEscalationBodyIDs: Set<String> = []
 
     var escalationContinuation: CheckedContinuation<EscalationResponse, Never>?
 

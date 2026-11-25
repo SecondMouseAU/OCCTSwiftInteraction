@@ -94,7 +94,9 @@ timestamp: 2026-11-25
   doesn't. A visibility set on a capped entity survives every cap recompute and is what removing
   the plane restores (#46). A cut, a moved cap or a removed one remaps the selection on the body
   onto its new topology through OCCT's split history, and a sub-shape the cap removes entirely
-  leaves the selection (#77).
+  leaves the selection (#77). The agent's attention marker and a pending escalation's entities
+  follow it the same way; a marker with no image is cleared, and an escalation stays pending even
+  when none of its entities has one (#85).
 - **`EscalationRequest`, `EscalationCandidate`, `EscalationResponse`**: human-in-the-loop
   escalation: `pendingEscalation` / `present(_:) async -> EscalationResponse` asks a bounded
   question grounded in specific geometry (`EscalationRequest.entities`, highlighted automatically
