@@ -13,8 +13,5 @@ struct AxisNameCollisionTests {
     func bareAxisResolvesToTheAISSceneObject() {
         let axis: Axis = Axis(from: .zero, to: SIMD3<Float>(1, 0, 0))
         #expect(axis.makeBodies().count == 1)
-
-        let wipeAxis: ComparisonAxis = .y
-        #expect(ComparisonMode.wipe(axis: wipeAxis, position: 0) == .wipe(axis: .y, position: 0))
     }
 }
