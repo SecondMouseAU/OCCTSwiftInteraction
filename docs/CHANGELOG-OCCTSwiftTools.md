@@ -4,6 +4,10 @@ Most recent first. The pre-merge repository was free to break before v1.0.0 and 
 
 ## Unreleased
 
+## 3.0.0 (2026-11-28)
+
+**Stable release of the 3.0.0 line.** Everything in `3.0.0-beta.1` (below) is in it, and it is taken with `from: "3.0.0"`, no longer by naming a pre-release. It requires OCCTSwift 4.0.0 or later and OCCTSwiftIO 2.0.0 or later: `OCCTSwift` moved from `exact: "4.0.0-beta.6"` to `from: "4.0.0"`, and `OCCTSwiftIO` from `from: "2.0.0-beta.4"` to `from: "2.0.0"`. This target has no API or behaviour change since `3.0.0-beta.1`: one source comment in `SubShape.swift` was edited.
+
 ## 3.0.0-beta.1 (2026-09-29)
 
 **Pre-release, pinned exactly to OCCTSwift 4.0.0-beta.4.** A consumer only gets this by naming it; the stable line stays at 2.0.0.

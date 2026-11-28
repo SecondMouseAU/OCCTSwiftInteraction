@@ -12,6 +12,14 @@ before upgrading. Earlier history is in the pre-merge `OCCTSwiftCADKit` reposito
 
 ## Unreleased
 
+## 3.0.0 (2026-11-28)
+
+**Stable release of the 3.0.0 line.** Everything in `3.0.0-beta.1` to `3.0.0-beta.8` (entries below) is in it, and it is taken with `from: "3.0.0"`, no longer by naming a pre-release. It requires OCCTSwift 4.0.0 or later and OCCTSwiftIO 2.0.0 or later: `OCCTSwift` moved from `exact: "4.0.0-beta.6"` to `from: "4.0.0"`, and `OCCTSwiftIO` from `from: "2.0.0-beta.4"` to `from: "2.0.0"`. The 2.0.0 line stays on OCCTSwift 3. The entries that follow are the changes since `3.0.0-beta.8`.
+
+### Fixed: a cap plane whose point is far from a body left the body uncut
+
+The cap split a body with a copy of OCCTSwift's plane split, written to keep the splitter's history. The copy centred its cutting face on the plane's point and reached twice the body's bounding-box diagonal each way, so a body further from that point than that reach was left whole and got no cap: a 4 x 4 x 4 box at x = 100 against the plane z = 0.5 through the origin came back as one solid, where `Shape.split(atPlane:normal:)` on OCCTSwift 4.0.0 gives two. OCCTSwift 4.0.0 centres the cutting face on the shape's projection onto the plane (OCCTSwift#3559) and returns the history with the pieces and the face (`Shape.splitWithFullHistory(atPlane:normal:)`), so the cap now calls that and the copy is gone. No API change. The test that holds the cap's split to `Shape.split(atPlane:normal:)` gains this case, and failed on it before the change.
+
 ### Breaking: `SelectionChangeSource` has a new case, `bodyRecut(bodyID:)`
 
 Part of [OCCTSwiftInteraction#77](https://github.com/SecondMouseAU/OCCTSwiftInteraction/issues/77),

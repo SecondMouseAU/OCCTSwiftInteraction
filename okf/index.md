@@ -21,10 +21,9 @@ timestamp: 2026-11-25
   [OCCTSwift](https://github.com/SecondMouseAU/OCCTSwift) (B-Rep kernel),
   [OCCTSwiftViewport](https://github.com/SecondMouseAU/OCCTSwiftViewport) (Metal renderer and
   `ViewportBody`, >= v1.2.0), and
-  [OCCTSwiftIO](https://github.com/SecondMouseAU/OCCTSwiftIO) (headless file I/O). Stable 2.0.0
-  takes OCCTSwift >= v3.0.0 and OCCTSwiftIO >= v1.8.0; `main` and the 3.0.0 betas pin OCCTSwift
-  exactly to a `4.0.0-beta` and take OCCTSwiftIO from a `2.0.0` beta. `Package.swift` has the
-  exact pins.
+  [OCCTSwiftIO](https://github.com/SecondMouseAU/OCCTSwiftIO) (headless file I/O). Stable 3.0.0
+  and `main` take OCCTSwift >= v4.0.0 and OCCTSwiftIO >= v2.0.0; the 2.0.0 line takes OCCTSwift
+  >= v3.0.0 and OCCTSwiftIO >= v1.8.0. `Package.swift` has the requirements.
 - **Feeds:** OCCTSwiftUX, OCCTMCP, OCCTSwiftScripts, OCCTParts, PadCAM, OCCTDesignLoop, OCCTStudio.
 - The two kernels below stay decoupled because the bridge lives here: OCCTSwiftViewport carries no
   OCCT dependency at all.

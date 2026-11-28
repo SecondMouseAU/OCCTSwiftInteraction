@@ -509,6 +509,7 @@ struct CapRecutSelectionTests {
     enum SplitCase: CaseIterable, Sendable, CustomTestStringConvertible {
         case boxCutThrough
         case boxMissed
+        case boxFarFromThePlanePoint
         case boxCutAtAnAngle
         case boxPlaneOnAFace
         case solidsInACompound
@@ -519,6 +520,7 @@ struct CapRecutSelectionTests {
             switch self {
             case .boxCutThrough: "a box, cut through"
             case .boxMissed: "a box, a plane that misses it"
+            case .boxFarFromThePlanePoint: "a box 100 from the plane's point, a plane through it"
             case .boxCutAtAnAngle: "a box, a plane at an angle"
             case .boxPlaneOnAFace: "a box, a plane on one of its faces"
             case .solidsInACompound: "three solids in a compound, cut across two of them"
@@ -531,6 +533,7 @@ struct CapRecutSelectionTests {
             switch self {
             case .boxCutThrough, .shell, .loneFace: (.zero, SIMD3(1, 0, 0))
             case .boxMissed: (SIMD3(10, 0, 0), SIMD3(1, 0, 0))
+            case .boxFarFromThePlanePoint: (SIMD3(0, 0, 0.5), SIMD3(0, 0, 1))
             case .boxCutAtAnAngle: (.zero, simd_normalize(SIMD3(1, 1, 0)))
             case .boxPlaneOnAFace: (SIMD3(0, 0, 2), SIMD3(0, 0, 1))
             case .solidsInACompound: (SIMD3(0, 2, 0), SIMD3(0, 1, 0))
@@ -542,6 +545,8 @@ struct CapRecutSelectionTests {
             switch self {
             case .boxCutThrough, .boxMissed, .boxCutAtAnAngle, .boxPlaneOnAFace:
                 return box
+            case .boxFarFromThePlanePoint:
+                return box.translated(by: SIMD3(100, 0, 0))
             case .solidsInACompound:
                 // `fuseAll` (a general fuse) of touching boxes leaves three solids in a compound.
                 guard let base = Shape.box(width: 6, height: 2, depth: 2),
@@ -558,8 +563,13 @@ struct CapRecutSelectionTests {
         }
     }
 
-    /// The cap repeats the OCCT calls of `Shape.split(atPlane:normal:)` to keep the history, so
-    /// after an OCCTSwift bump this is what notices the two diverging.
+    /// Holds the cap's split to the pieces `Shape.split(atPlane:normal:)` gives.
+    ///
+    /// The cap splits with `Shape.splitWithFullHistory(atPlane:normal:)`, which is meant to give
+    /// the same pieces, so after an OCCTSwift bump this is what notices the two diverging. Until
+    /// OCCTSwift 4.0.0 the cap repeated the OCCT calls of `split` itself, to keep the history, and
+    /// the box 100 from the plane's point is the case that copy missed: it centred the cutting
+    /// face on the plane's point, so it left that box whole.
     @MainActor
     @Test(
         "The cap's split gives the pieces Shape.split(atPlane:normal:) gives, in order",

@@ -61,7 +61,7 @@ OCCTSwiftTools is a product of the OCCTSwiftInteraction package. Add the package
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "3.0.0"),
 ```
 
 Then declare the product as a dependency of your target:

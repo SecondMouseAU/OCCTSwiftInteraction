@@ -158,8 +158,8 @@ extension CADViewportService {
     ///
     /// `OCCTSwiftViewport` has no shader-level capping (confirmed: no capping/stencil logic
     /// in its `Shaders.metal`, unlike the clip-plane discard it does have), so this is a
-    /// genuine B-Rep split (`split(_:atPlane:normal:planeID:)`, the OCCT calls
-    /// `OCCTSwift.Shape.split(atPlane:normal:)` makes) and retessellation per
+    /// genuine B-Rep split (`split(_:atPlane:normal:planeID:)`, which is
+    /// `OCCTSwift.Shape.splitWithFullHistory(atPlane:normal:)`) and retessellation per
     /// affected body, not a cheap GPU trick. `showCapSurface: false` planes still clip (via
     /// `syncClippingPlanes`'s GPU path above) but stay hollow and don't hit this cost, and
     /// nor does a body no enabled cap plane actually touches, OR a body that's already
@@ -281,8 +281,8 @@ extension CADViewportService {
     /// the side the plane's normal points toward each time.
     ///
     /// Which returned piece is "kept" is determined by testing each piece's OWN bounds-center
-    /// against the plane equation: `Shape.split(atPlane:normal:)`, whose OCCT calls
-    /// `split(_:atPlane:normal:planeID:)` repeats, documents no return-order guarantee. This is a
+    /// against the plane equation: `Shape.split(atPlane:normal:)`, whose pieces
+    /// `split(_:atPlane:normal:planeID:)` returns, documents no return-order guarantee. This is a
     /// bounds-center heuristic, not an exact interior-point test: a piece whose true bulk sits on
     /// the kept side but whose bounding-box center
     /// happens to fall just past the plane (an unusual, non-convex shape) could be
@@ -336,47 +336,30 @@ extension CADViewportService {
         return .capped(current, origins: CapOriginLookup(tracing: shape, through: steps))
     }
 
-    /// Splits `shape` at a plane exactly as `Shape.split(atPlane:normal:)` does, keeping the
-    /// splitter's history.
+    /// Splits `shape` at a plane with `Shape.splitWithFullHistory(atPlane:normal:)`, which gives
+    /// the pieces `Shape.split(atPlane:normal:)` gives together with the splitter's history and
+    /// the face it cut with.
     ///
-    /// The same OCCT calls in the same order (`OCCTShapeSplitByPlane` in OCCTSwift 4.0.0-beta.6):
-    /// a planar face through `origin` reaching twice the shape's bounding-box diagonal each way,
-    /// `BRepAlgoAPI_Splitter` with the shape as argument and that face as tool, then the solids
-    /// of the result, else its shells, else the result itself. `split(atPlane:normal:)` throws
-    /// the splitter, and with it the history, away, and OCCTSwift has no variant that returns it;
-    /// `splitWithFullHistory(by:)` keeps it but returns the children of the result rather than
-    /// the result, which is why the argument is wrapped and the solids are gathered here.
+    /// A plane whose point lies far from the shape still cuts it, since OCCTSwift 4.0.0 centres the
+    /// cutting face on the shape's projection onto the plane and not on `origin`. The pieces are
+    /// the solids of the split, else its shells, else the whole result. The history and the
+    /// cutting face are what the selection remap traces.
     ///
     /// `nil` where `split(atPlane:normal:)` returns `nil`: the shape has no bounding box, or the
     /// face or the split fails.
     ///
     /// Internal rather than private so `CapRecutSelectionTests` can hold it to
-    /// `split(atPlane:normal:)` piece for piece: after an OCCTSwift bump, that test is what notices
-    /// the two diverging.
+    /// `split(atPlane:normal:)` piece for piece, which is what notices the two diverging.
     func split(
         _ shape: OCCTSwift.Shape, atPlane origin: SIMD3<Double>, normal: SIMD3<Double>,
         planeID: String
     ) -> (pieces: [OCCTSwift.Shape], step: CapCutStep)? {
-        guard let bounds = shape.bounds else { return nil }
-        let reach = simd_length(bounds.max - bounds.min) * 2
-        // The argument is `shape` in a compound of one, not `shape` itself. The splitter returns a
-        // compound only when its result holds more than one item, and a single item on its own,
-        // so the children `splitWithFullHistory(by:)` returns were a solid's shells for a plane
-        // that misses it, or a shell's faces. Wrapped, they are always the result's own items.
-        // Sub-shape identity, and so the history, is the same either way.
         guard
-            let argument = OCCTSwift.Shape.compound([shape]),
-            let tool = OCCTSwift.Shape.faceFromPlane(
-                origin: origin, normal: normal, uRange: -reach...reach, vRange: -reach...reach),
-            let (children, history) = argument.splitWithFullHistory(by: tool)
+            let (pieces, history, cuttingFace) = shape.splitWithFullHistory(
+                atPlane: origin, normal: normal)
         else { return nil }
-        let step = CapCutStep(input: shape, tool: tool, history: history, planeID: planeID)
-        let solids = children.flatMap { $0.subShapes(ofType: .solid) }
-        if !solids.isEmpty { return (solids, step) }
-        let shells = children.flatMap { $0.subShapes(ofType: .shell) }
-        if !shells.isEmpty { return (shells, step) }
-        if children.count == 1 { return (children, step) }
-        return (OCCTSwift.Shape.compound(children).map { [$0] } ?? [], step)
+        let step = CapCutStep(input: shape, tool: cuttingFace, history: history, planeID: planeID)
+        return (pieces, step)
     }
 
     /// Two shapes with no bounding box at all are equal (nothing to tell apart); one of each

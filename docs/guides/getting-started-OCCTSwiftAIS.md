@@ -16,7 +16,7 @@ If you just want one snippet, the [OCCTSwiftAIS home page example](../index-OCCT
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "3.0.0"),
 ```
 
 Then add `.product(name: "OCCTSwiftAIS", package: "OCCTSwiftInteraction")` to your target. AIS

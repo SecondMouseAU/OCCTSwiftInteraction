@@ -385,7 +385,7 @@ This repo does **not** ship a binary. Pure Swift package. Ships its own visual a
 ```swift
 // downstream Package.swift dependencies. Since the merge (ecosystem#42) OCCTSwiftAIS is a
 // product of OCCTSwiftInteraction, so name the package and the product separately.
-.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
+.package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "3.0.0"),
 // in the target: .product(name: "OCCTSwiftAIS", package: "OCCTSwiftInteraction")
 ```
 
