@@ -27,11 +27,11 @@ repository's GitHub remote, which carries only this package's own (the three old
 still hold theirs), but older local clones of this repository still hold them, so neither a fresh
 clone nor a remote tag listing will warn you of a collision.
 
-`2.0.0` is the current stable release. `3.0.0` exists only as pre-releases (`3.0.0-beta.N`, each
-pinned exactly to an OCCTSwift `4.0.0-beta`), which a consumer gets only by naming one. It is a
-major because OCCTSwift 4.0.0 replaced the untyped GD&T types that `CADLoadResult` exposes
-(OCCTSwift#996), not because it tracks OCCTSwift's version number. The three old version lines do
-not continue here.
+`3.0.0` is the current stable release; it was `3.0.0-beta.1` to `3.0.0-beta.8` (each pinned exactly
+to an OCCTSwift `4.0.0-beta`) until OCCTSwift 4.0.0 shipped, and its requirement is now `from:
+"4.0.0"`. `2.0.0` is the last release on OCCTSwift 3. The 3.0.0 line is a major because OCCTSwift
+4.0.0 replaced the untyped GD&T types that `CADLoadResult` exposes (OCCTSwift#996), not because it
+tracks OCCTSwift's version number. The three old version lines do not continue here.
 
 ## Layering, and the one rule that matters
 

@@ -8,8 +8,8 @@ Identity, selection, and the assembled CAD viewport service for the OCCTSwift st
 
 Part of the [OCCTSwift ecosystem](https://github.com/SecondMouseAU/OCCTSwift/blob/main/docs/ecosystem.md).
 
-> Status: **2.0.0** is the current stable release. The 3.0.0 line is in beta, pinned exactly to
-> OCCTSwift 4.0.0 betas, and a consumer gets it only by naming a beta.
+> Status: **3.0.0** is the current stable release, taken with `from: "3.0.0"`. It requires
+> OCCTSwift 4.0.0 or later. The 2.0.0 line stays on OCCTSwift 3 for a consumer that has not moved.
 
 ## Three targets, one package
 

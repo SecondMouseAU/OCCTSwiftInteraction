@@ -17,7 +17,7 @@ other two targets (`OCCTSwiftTools`, `OCCTSwiftAIS`) and on `OCCTSwift`, `OCCTSw
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "2.0.0"),
+    .package(url: "https://github.com/SecondMouseAU/OCCTSwiftInteraction.git", from: "3.0.0"),
 ],
 targets: [
     .target(
@@ -27,8 +27,8 @@ targets: [
 ]
 ```
 
-This guide follows `main`, which is ahead of the stable line. The only API it uses that 2.0.0
-lacks is in section 2: `CADViewportView(service:)`, the long initializer's `onMouseDown:` and
+This guide follows the stable 3.0.0 line. The only API it uses that 2.0.0 lacks is in section 2:
+`CADViewportView(service:)`, the long initializer's `onMouseDown:` and
 `noteMouseDown(windowWasActive:)`, all first shipped in 3.0.0-beta.2. On 2.0.0, use the long
 initializer as section 3 shows it.
 

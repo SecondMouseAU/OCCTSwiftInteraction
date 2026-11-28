@@ -80,26 +80,37 @@ let package = Package(
         .library(name: "OCCTSwiftCADKit", targets: ["OCCTSwiftCADKit"]),
     ],
     dependencies: [
-        // Exactly 4.0.0-beta.6. EXACT, not `from:`: v4.0.0-kernel.N tags are pre-releases of the
-        // same package that sort ABOVE every beta, so `from: "4.0.0-beta.6"` silently resolves to
-        // the newest kernel tag (main's source). OCCTSwift 4.0.0 folds DimensionInfo/
-        // GeomToleranceInfo/DatumInfo into Document.Dimension/GeomTolerance/Datum (OCCTSwift#996),
-        // which CADFileLoader's public fields expose: the reason this package's 3.0.0 is a major.
-        // The stable 2.0.0 line takes `from: "3.0.0"` instead, where
-        // `Selector.SubShapeType.compsolid` became `.compSolid` and six bounding-box accessors
-        // became Optional (OCCTSwift docs/SEMVER.md#v300). Audited across all three targets during
-        // the v3.0.0 fanout (ecosystem#39): none needed a source change for it.
-        .package(url: "https://github.com/SecondMouseAU/OCCTSwift.git", exact: "4.0.0-beta.6"),
+        // from: "4.0.0", the first stable 4.x. A range with no pre-release bound never resolves a
+        // pre-release, and the kernel assets now live on non-semver tags (kernel-8.0.2-c1), so the
+        // exact pin that stood here (it existed because the v4.0.0-kernel.N tags sorted above every
+        // beta, so `from: "4.0.0-beta.6"` silently resolved to the newest kernel tag) is no longer
+        // needed. OCCTSwift 4.0.0 folds DimensionInfo/GeomToleranceInfo/DatumInfo into
+        // Document.Dimension/GeomTolerance/Datum (OCCTSwift#996), which CADFileLoader's public
+        // fields expose: the reason this package's 3.0.0 is a major. The stable 2.0.0 line takes
+        // `from: "3.0.0"` instead, where `Selector.SubShapeType.compsolid` became `.compSolid` and
+        // six bounding-box accessors became Optional (OCCTSwift docs/SEMVER.md#v300). Audited
+        // across all three targets during the v3.0.0 fanout (ecosystem#39): none needed a source
+        // change for it.
+        // ≥4.0.0 (OCCTSwiftInteraction#74): the build and all 513 tests (75, 230 and 208, in 53
+        // suites) pass, run serially, with OCCTSwift resolved from its URL at 4.0.0 and
+        // OCCTSwiftIO at 2.0.0, and no test expectation moved. None of the APIs whose answers
+        // changed without a compile error (Shape.solid(from:), analyze, circularPattern,
+        // FilletBuilder, offsetWire(face:)) is called here. One did matter:
+        // Shape.split(atPlane:normal:) now cuts a shape that lies far from the plane's point
+        // (OCCTSwift#3559), which the cap's own copy of it did not, so the cap calls
+        // Shape.splitWithFullHistory(atPlane:normal:) instead.
+        .package(url: "https://github.com/SecondMouseAU/OCCTSwift.git", from: "4.0.0"),
         // >=1.2.0: fixes a Swift 6 concurrency crash where unannotated MTLCommandBufferHandler
         // closures inherited @MainActor on Xcode 16.4, giving a SIGTRAP after every test reported
         // green. Real-GPU/Xcode-16.4 only, and masked locally by Xcode 26.x's NS_SWIFT_SENDABLE.
         occtDep("OCCTSwiftViewport", from: "1.2.0"),
-        // >=2.0.0-beta.4: the OCCTSwiftIO betas carry the same GD&T type change (from beta.1), and
-        // each pins one OCCTSwift beta exactly. beta.4 is the one pinned to 4.0.0-beta.6, so this
-        // floor moves with the OCCTSwift pin above. The stable 2.0.0 line takes `from: "1.8.0"`,
-        // the first release with DirectoryWatcher (OCCTSwiftIO#43), which the agent bridge uses
-        // to notice a new highlight_requests/<id>.json without polling.
-        occtDep("OCCTSwiftIO", from: "2.0.0-beta.4"),
+        // >=2.0.0: the stable OCCTSwiftIO that carries the same GD&T type change and requires
+        // OCCTSwift 4.0.0 or later, so this floor moves with the OCCTSwift requirement above. Its
+        // betas each pinned one OCCTSwift beta exactly, which is why the floor was a beta before.
+        // The stable 2.0.0 line of this package takes `from: "1.8.0"`, the first release with
+        // DirectoryWatcher (OCCTSwiftIO#43), which the agent bridge uses to notice a new
+        // highlight_requests/<id>.json without polling.
+        occtDep("OCCTSwiftIO", from: "2.0.0"),
     ],
     targets: [
         .target(
