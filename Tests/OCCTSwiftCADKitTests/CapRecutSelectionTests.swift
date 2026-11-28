@@ -563,11 +563,13 @@ struct CapRecutSelectionTests {
         }
     }
 
-    /// The cap splits with `Shape.splitWithFullHistory(atPlane:normal:)`, which is meant to give the
-    /// pieces `Shape.split(atPlane:normal:)` gives, so after an OCCTSwift bump this is what notices
-    /// the two diverging. Until OCCTSwift 4.0.0 the cap repeated the OCCT calls of `split` itself,
-    /// to keep the history, and the box 100 from the plane's point is the case that copy missed:
-    /// it centred the cutting face on the plane's point, so it left that box whole.
+    /// Holds the cap's split to the pieces `Shape.split(atPlane:normal:)` gives.
+    ///
+    /// The cap splits with `Shape.splitWithFullHistory(atPlane:normal:)`, which is meant to give
+    /// the same pieces, so after an OCCTSwift bump this is what notices the two diverging. Until
+    /// OCCTSwift 4.0.0 the cap repeated the OCCT calls of `split` itself, to keep the history, and
+    /// the box 100 from the plane's point is the case that copy missed: it centred the cutting
+    /// face on the plane's point, so it left that box whole.
     @MainActor
     @Test(
         "The cap's split gives the pieces Shape.split(atPlane:normal:) gives, in order",
